@@ -44,4 +44,8 @@ async function handleCommand(commandName, sock, chatId, msg, args, extras) {
     }
 }
 
+// Autollamado para inicializar al importar
+loadCommands();
+
 module.exports = { loadCommands, handleCommand, commands };
+

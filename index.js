@@ -978,6 +978,8 @@ async function procesarMensaje(sock, msg) {
                     case '!bj': case '!poker': emoji = '🃏'; break;
                     case '!minas': emoji = '💣'; break;
                     case '!quiz': case '!quizanime': case '!adivina': case '!bandera': emoji = '❓'; break;
+                    case '!play': case '!music': case '!musica': case '!ytmp3': case '!play2': emoji = '🎵'; break;
+
                     case '!pedir': emoji = '➕'; break;
                     case '!plantarse': case '!pl': emoji = '✋'; break;
                     case '!bienvenida': case '!setbienvenida': emoji = '👋'; break;
