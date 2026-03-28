@@ -865,7 +865,8 @@ async function procesarMensaje(sock, msg) {
                 '!prestigio', '!loteria', '!clase', '!pedir', '!plantarse', '!pl', '!trivia', '!daily', '!w', '!slut', '!canjear', '!dar',
                 '!subastar', '!subastas', '!ofertar',
                 '!waifus',
-                '!ver'
+                '!ver',
+                '!play', '!music', '!musica', '!ytmp3', '!play2'
             ];
 
             // --- SISTEMA DE ESTABILIDAD: COOLDOWN GLOBAL DE 2 SEGUNDOS ---
@@ -893,7 +894,7 @@ async function procesarMensaje(sock, msg) {
 
                 // 2. SISTEMA DE COOLDOWN (Prevención de saturación de CPU)
                 if (!isAdmin) {
-                    const heavyCmds = ['!v', '!s', '!sticker', '!trace', '!top', '!waifu', '!kill', '!slap', '!punch', '!toimg'];
+                    const heavyCmds = ['!v', '!s', '!sticker', '!trace', '!top', '!waifu', '!kill', '!slap', '!punch', '!toimg', '!play', '!music', '!musica', '!ytmp3', '!play2'];
                     if (heavyCmds.includes(start)) {
                         const wait = verificarCooldown(sender, start, 8000); // 8 segundos de cooldown para comandos pesados
                         if (wait > 0) return sock.sendMessage(chatId, { text: `⏳ Espera ${wait}s para volver a usar *${start}*.` }, { quoted: msg });
