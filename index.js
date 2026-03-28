@@ -31,7 +31,7 @@ const { handleGameResponse } = require('./gameResponder');
 const execFileAsync = promisify(execFile);
 
 // --- CONFIG ---
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT || 7860;
 const AUTH_DIR = path.join(__dirname, '.bot_session');
 const ADMIN_NUM = process.env.NUMERO_ADMIN; // El Jefe (Permisos)
 const BOT_NUMBER = process.env.NUMERO_BOT || ADMIN_NUM; // El Bot (Vinculación)

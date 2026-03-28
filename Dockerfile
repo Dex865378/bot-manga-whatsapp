@@ -22,9 +22,9 @@ COPY . .
 RUN mkdir -p .bot_session temp stickers \
     && chmod -R 777 /app
 
-# 6. Exponer puerto (Render usa 10000 por defecto)
-ENV PORT=10000
-EXPOSE 10000
+# 6. Exponer puerto (Hugging Face default)
+ENV PORT=7860
+EXPOSE 7860
 
 # 7. Comando de arranque
 CMD ["node", "index.js"]
