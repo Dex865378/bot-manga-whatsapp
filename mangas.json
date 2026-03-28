@@ -1,0 +1,156 @@
+[
+    {
+        "codigo": "001",
+        "titulo": "Amigo del Zenit",
+        "carpeta": "001_Amigo_del_Zenit",
+        "resumen": "Tras alcanzar la cima del poder, un héroe regresa a su infancia buscando una vida tranquila, pero su destino lo obliga a proteger a los suyos en un mundo lleno de artes marciales y humor.",
+        "generos": "#ArtesMarciales #Humor #Drama #Acción #Manhwa"
+    },
+    {
+        "codigo": "002",
+        "titulo": "Asesino Pietro",
+        "carpeta": "002_Asesino_Pietro",
+        "resumen": "Pietro, un sicario legendario, es traicionado por su organización tras retirarse. Milagrosamente rejuvenece y decide usar su segunda juventud para cazar a quienes lo traicionaron.",
+        "generos": "#Acción #Drama #Venganza #Sicarios #Manhwa"
+    },
+    {
+        "codigo": "003",
+        "titulo": "Blinker Academia Mágica",
+        "carpeta": "003_Blinker_Academia_Magica",
+        "resumen": "En un mundo de magos poderosos, Baek Yuseol solo puede usar el hechizo 'Flash'. Tras transmigrar a un juego abocado a la destrucción, deberá usar su única habilidad para salvar el mundo.",
+        "generos": "#Acción #Fantasía #VidaEscolar #Isekai #Reencarnación #Manhwa"
+    },
+    {
+        "codigo": "004",
+        "titulo": "Caballero Eterna Regresión",
+        "carpeta": "004_Caballero_Eterna_Regresion",
+        "resumen": "Encrid sueña con ser caballero pero carece de talento. Tras morir en batalla, despierta el mismo día una y otra vez, usando esta regresión eterna para entrenar hasta la perfección.",
+        "generos": "#Acción #Aventura #Fantasía #Regresión #Psicológico #Manhwa"
+    },
+    {
+        "codigo": "005",
+        "titulo": "Caza Dragones",
+        "carpeta": "005_Caza_Dragones",
+        "resumen": "Zeke Draker, nacido en una familia de cazadores de dragones pero sin talento para la espada, regresa al pasado con un poder inmortal para cambiar su destino y proteger a su familia.",
+        "generos": "#Acción #Fantasía #Regresión #Aventura #Magia #Manhwa"
+    },
+    {
+        "codigo": "006",
+        "titulo": "Dios Caótico Fuerza",
+        "carpeta": "006_Dios_Caotico_Fuerza",
+        "resumen": "Un asesino serial toma el lugar de un joven maestro en una poderosa mansión. Ambientada en el universo de Nano Machine, la fuerza y el caos lo siguen a donde va.",
+        "generos": "#ArtesMarciales #Murim #Acción #Aventura #Suspenso #Manhwa"
+    },
+    {
+        "codigo": "007",
+        "titulo": "Asesino Hijo del Duque",
+        "carpeta": "007_Asesino_Hijo_Duque",
+        "resumen": "Cyan Vert, el mejor asesino, es traicionado por su hermano. Reencarna como el hijo menor de un duque y decide vivir esta vida bajo sus propias reglas, buscando justicia.",
+        "generos": "#Acción #Venganza #Reencarnación #Fantasía #Manhwa"
+    },
+    {
+        "codigo": "008",
+        "titulo": "Eleceed",
+        "carpeta": "008_Eleceed",
+        "resumen": "Jiwoo, un chico con velocidad de gato, se une a Kayden, un poderoso agente atrapado en el cuerpo de un gato gordo. Juntos se enfrentan a usuarios de habilidades mundiales.",
+        "generos": "#Acción #Comedia #Fantasía #Superpoderes #Escuela #Manhwa"
+    },
+    {
+        "codigo": "009",
+        "titulo": "Emperador Mágico",
+        "carpeta": "009_Emperador_Magico",
+        "resumen": "Zhuo Yifan, el emperador demonio, reencarna en el sirviente de una familia caída. Usando su cruel sabiduría, deberá llevar a la familia Luo de vuelta a la cima del mundo.",
+        "generos": "#Acción #ArtesMarciales #Aventura #Cultivación #Maquiavélico #Manhua"
+    },
+    {
+        "codigo": "010",
+        "titulo": "Serpiente Inmortal",
+        "carpeta": "010_Serpiente_Inmortal",
+        "resumen": "Una pequeña serpiente consume un elixir milagroso que le otorga inteligencia. Ahora emprende un arduo camino de cultivación para evolucionar y alcanzar la inmortalidad.",
+        "generos": "#Acción #Cultivación #Fantasía #ArtesMarciales #Evolución #Manhua"
+    },
+    {
+        "codigo": "011",
+        "titulo": "Hijo Menor del Maestro Espada",
+        "carpeta": "011_Hijo_Menor_Maestro_Espada",
+        "resumen": "Jin Runcandel, el menos talentoso de su clan, firma un contrato con el Dios de las Sombras tras su muerte y regresa al pasado con un talento divinizando para ser el mejor.",
+        "generos": "#Acción #Fantasía #Reencarnación #Magia #Esgrima #Manhwa"
+    },
+    {
+        "codigo": "012",
+        "titulo": "Instinto Sabueso",
+        "carpeta": "012_Instinto_Sabueso",
+        "resumen": "A Yan, una marioneta del emperador, regresa en el tiempo tras su muerte. Con sus instintos de sabueso intactos, decide forjar su propio camino y buscar venganza.",
+        "generos": "#Regresión #Venganza #Acción #Drama #Suspenso #Manhwa"
+    },
+    {
+        "codigo": "013",
+        "titulo": "Jugador con Talento Insano",
+        "carpeta": "013_Jugador_Talento_Insano",
+        "resumen": "Kang Yoosung, el mejor jugador en un mundo de supervivencia, es extremadamente cínico y overpowered. Su única motivación es el dinero mientras domina cada batalla.",
+        "generos": "#Acción #Sistema #RPG #Supervivencia #ProtagonistaOP #Manhwa"
+    },
+    {
+        "codigo": "014",
+        "titulo": "Mercenario Regresado",
+        "carpeta": "014_Mercenario_Regresado",
+        "resumen": "Ghislain Perdium, el Rey Mercenario, regresa a su juventud antes de que su familia fuera destruida. Armado con sus planes y fuerza, cambiará el destino de su casa noble.",
+        "generos": "#Acción #ArtesMarciales #Aventura #Reencarnación #Estrategia #Manhwa"
+    },
+    {
+        "codigo": "015",
+        "titulo": "Raising Hell",
+        "carpeta": "015_Raising_Hell",
+        "resumen": "Un Rey Demonio intenta criar a la heroína que está destinada a derrotarlo. Lo que comienza como un plan malvado termina en una divertida historia de paternidad demoníaca.",
+        "generos": "#Comedia #Fantasía #RecuentosDeLaVida #Sobrenatural #Manhwa"
+    },
+    {
+        "codigo": "016",
+        "titulo": "Regresión Absoluta",
+        "carpeta": "016_Regresion_Absoluta",
+        "resumen": "Un guerrero despiadado que lo perdió todo usa una técnica prohibida para regresar al pasado. No se detendrá ante nada para ver a sus enemigos arder en esta nueva vida.",
+        "generos": "#Acción #Venganza #ArtesMarciales #Regresión #Drama #Manhwa"
+    },
+    {
+        "codigo": "017",
+        "titulo": "Sabueso de Sangre y Hierro",
+        "carpeta": "017_Sabueso_Sangre_Hierro",
+        "resumen": "Vikir Van Baskerville, el fiel perro de caza de su familia, es traicionado. Regresa al pasado para dejar de ser un sabueso y convertirse en el cazador de su propio clan.",
+        "generos": "#Acción #Fantasía #Venganza #Regresión #Esgrima #Manhwa"
+    },
+    {
+        "codigo": "018",
+        "titulo": "Señor de Hielo",
+        "carpeta": "018_Senor_de_Hielo",
+        "resumen": "Tras perder a su amada, el Señor del Palacio de Hielo desciende a otro mundo buscando su reencarnación. Un viaje de artes marciales y romance a través de las dimensiones.",
+        "generos": "#Acción #ArtesMarciales #Romance #Aventura #Fantasía #Manhwa"
+    },
+    {
+        "codigo": "019",
+        "titulo": "Solo Leveling",
+        "carpeta": "019_Solo_Leveling",
+        "resumen": "Sung Jinwoo, el cazador más débil, obtiene un 'Sistema' único que le permite subir de nivel. Su camino lo llevará a convertirse en el monarca más fuerte de la historia.",
+        "generos": "#Acción #Fantasía #Sistema #RPG #Aventura #Manhwa"
+    },
+    {
+        "codigo": "020",
+        "titulo": "Stream Reencarnado",
+        "carpeta": "020_Stream_Reencarnado",
+        "resumen": "Un jugador legendario traicionado reencarna 20 años después. Para exponer la verdad y recuperar su trono, decide convertirse en el streamer más viral del mundo.",
+        "generos": "#Gaming #Reencarnación #Acción #Comedia #Venganza #Streamer #Manhwa"
+    },
+    {
+        "codigo": "021",
+        "titulo": "Villano y Heroína Obsesionada",
+        "carpeta": "021_Villano_Heroina_Obsesionada",
+        "resumen": "Reencarnado como el villano de una novela, Cassian intenta evitar a la heroína para no morir, pero ella termina obsesionándose perdidamente con él.",
+        "generos": "#Romance #Comedia #Isekai #Fantasía #Aventura #Manhwa"
+    },
+    {
+        "codigo": "022",
+        "titulo": "Yu Ijin Mercenario",
+        "carpeta": "022_Yu_Ijin_Mercenario",
+        "resumen": "Tras sobrevivir 10 años como mercenario siendo niño, Ijin regresa a su vida escolar en Corea. Ahora usa sus letales habilidades para proteger a su familia de cualquier amenaza.",
+        "generos": "#Acción #VidaEscolar #Drama #Militar #Manhwa"
+    }
+]

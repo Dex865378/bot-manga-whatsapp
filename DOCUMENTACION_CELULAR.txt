@@ -1,0 +1,104 @@
+DOCUMENTACIÓN OFICIAL DEL DIKY BOT
+
+¡Bienvenido a la guía completa del Diky Bot! 
+Este documento explica detalladamente cómo funcionan todos los comandos, qué recompensas existen y cómo progresar en el juego.
+
+
+------------------------------------------
+👤 1. PERFIL Y PERSONALIZACIÓN
+------------------------------------------
+El bot incluye un sistema de perfil expansivo donde los usuarios pueden tener títulos, niveles, prestigio, matrimonios, herramientas, historial de pesca y más.
+
+• !perfil o !p : Muestra tu tarjeta de jugador con todas tus estadísticas, nivel, rango (ej. Genin, Hokage, Deidad), historial reciente y herramientas activas.
+
+• !config <tipo> <valor> : Personaliza la información de tu perfil. Se aplican de inmediato en tu perfil. Los tipos son:
+  - bio o descripcion (Ejemplo: !config bio Estudiando magia)
+  - edad (Ejemplo: !config edad 20)
+  - nombre (para cambiar tu apodo visible)
+  - nacimiento (Ejemplo: !config nacimiento 30/05/2005)
+  - altura (Ejemplo: !config altura 1.80m)
+  - power o poder (Ejemplo: !config poder Kamehameha)
+  - fav anime o fav manga (Ejemplo: !config fav manga One Piece)
+
+• !clase <nombre> : Elige una clase o profesión (Cuesta 20k Diky excepto la primera vez). Las clases dan bonificaciones:
+  - Cazador: +20% recompensas en !cazar
+  - Pescador: +30% peso en los peces de !pescar
+  - Minero: +15% de suerte extra al !minar
+  - Guerrero: +10% de daño en !duelo
+  - Apostador: +15% en el premio de !slot
+  - Empresario: Diky extra (+1,000) en !daily
+  - Hacker: 10% de descuento en la !tienda
+  - Sacerdote: +50% XP extra en toda acción
+  - Mercader: +20% de chances secretas en las subastas
+
+
+------------------------------------------
+💰 2. ECONOMÍA Y NIVEL
+------------------------------------------
+Acumula dikys (la moneda oficial) y XP para subir de rango.
+
+• !daily : Reclamas tu recompensa de oro diaria (cada 24h). Te da 5,000 Diky.
+• !w / !slut : Trabajos rápidos para ganar un poco de dinero (con tiempos de espera).
+• !dar @usuario <monto> : Transfiere tus dikys a otro usuario (incluye un 8% de impuesto).
+• !bounty @usuario <monto> : Pones precio a la cabeza de un usuario. Solo se puede hacer UNA VEZ cada 24h. Quien derrote al usuario marcado en un !duelo se lleva este dinero acumulado.
+• !prestigio : Cuando alcanzas un nivel muy alto, puedes resetear tu nivel al Nivel 1 para ganar un multiplicador automático permanentemente al conseguir dikys (+10% por Prestigio) y un nuevo Título brillante. (Cuesta mucho dinero).
+• !canjear <monto> : Canjeas tus dikys sobrantes directamente por experiencia (Ratio 2 Dikys = 1 XP).
+• !mejor : Muestra las tablas de clasificación de prestigio y dinero global.
+
+
+------------------------------------------
+🎒 3. INVENTARIO Y TIENDA
+------------------------------------------
+Necesitas comprar herramientas de la tienda para realizar exploraciones. Todo terminará en tu inventario con un LÍMITE DE 10 ACUMULACIONES por objeto.
+
+• !tienda : Ve el catálogo de objetos. Hay picos, cebos, lotería, objetos míticos, protección, anillos y Pokebolas.
+• !comprar <numero> : Usa el número del objeto de la tienda para comprarlo.
+• !inventario : Te muestra todo lo que tienes guardado (Herramientas, Minerales, Peces, Pokémon, etc).
+• !vender <item> <cantidad>  o  !vender <item> todo : Te permite vender los ítems o sobras del inventario. El bot ya conoce el valor real de cada objeto según su rareza (ej. un Megalodón vale 9,500 dikys y un Pez Payaso vale 30 dikys).
+
+¿Cómo se consigue el poder oculto y los Títulos Míticos?
+Debes comprar y consumir una Fruta del Diablo (25k) o el Grimorio Ancestral (250k) en la !tienda. Tienen un factor de probabilidad inmenso: Pueden envenenarte y hacerte perder dinero, pero también pueden otorgarte un Título Mítico único en tu perfil y subir de nivel masivamente.
+
+
+------------------------------------------
+🎮 4. CACERÍA, PESCA Y MINERÍA (FARMEO)
+------------------------------------------
+Requieren usar las herramientas de la tienda. 
+NOTA: Si pescas, minas o cazas y ya tienes 10 veces exactamente el mismo especimen en tu inventario, lo acabas vendiendo automáticamente por el doble del precio real en el mercado.
+
+• !cazar : Puedes matar desde Jabalíes y Lobos, hasta Quimeras y Dragones si tienes suerte.
+• !pescar : Requiere Cebo (!comprar 2). Mientras más grande y pesado sea el pez, se Actualizará Automáticamente tu Mejor Pesca (Récord de Peso) en tu perfil para presumir. Va desde un pez payaso, hasta un Megalodón o un Cofre Hundido. 
+• !minar : Requiere un Pico (!comprar 1). Minas fragmentos, de Piedra basura y metales preciosos (Diamante, Rubí) hasta Materia Oscura o Antimateria.
+• !pokemon : ¡Debes tener Pokebolas para participar (!comprar 14)! Lanzas una Pokebola, gastas el ítem y atrapas aleatoriamente un Pokémon que se guarda directamente a tu inventario.
+
+
+------------------------------------------
+⚔️ 5. CASINO Y MINIJUEGOS ACTIVOS
+------------------------------------------
+Estos minijuegos no requieren herramientas, solo apostar dikys y depender de tu suerte y cerebro.
+
+• Juegos Clásicos: !slot <apuesta>, !ruleta <color>, !dado <numero> <apuesta>, !ppt <tu_eleccion>.
+• !carta : Apuestas si la siguiente carta será Mayor o Menor que la actual.
+• !cofre : Eliges 1 de 3 cofres frente a ti esperando el premio y esquivando estar vacío.
+• !donde : Radar localizador aleatorio por diversión.
+• !bomba : ¿Cortar el cable verde o rojo? ¡Cortas el cable erróneo y mueres, cortas el correcto de los 4 y ganas!
+• !bandera <país> <apuesta> : (Con multiplicador x1.2) Tienes que adivinar el nombre real del país según su cultura.
+
+🛡️ Los Duelos
+• !duelo @usuario <monto> : Retas a otra persona por dinero. Durante un duelo alguien puede perder su propio inventario/ítems aleatorios.
+Si tu oponente tiene "Recompensa" activa (!bounty), el sistema solo dejará atacarlo cada 1 HORA. ¡Pero si matas al usuario que tiene una recompensa de dinero encima, te lo quedas TODO!
+
+
+------------------------------------------
+⚖️ 6. MERCADO NEGRO Y SUBASTAS
+------------------------------------------
+• !subastar <nombre del objeto> <dinero inicial> : Pones a la venta en tiempo real cualquier objeto que poseas en tu inventario. Si tienes "Pokemon: Lucario", basta con poner "!subastar lucario 500". Durará 1 HORA.
+• !ofertar <ID de Subasta> <monto a pujar> : Superar la actual puja de subasta con dinero a la mano. ¡El mejor postor cuando termine lo ganará en su inventario para siempre!
+• !subastas : Podrás escanear cómo van las guerras de mercado y su tiempo restante.
+
+
+------------------------------------------
+💖 7. MATRIMONIO VIRTUAL
+------------------------------------------
+• !marry @usuario : ¡Necesitas un Anillo de Bodas comprándolo en la tienda (!comprar 9)! Se empaqueta un compromiso local entre usuarios para siempre o hasta el divorcio.
+• !divorce : Terminación unilateral de la relación digital (sin costo).
