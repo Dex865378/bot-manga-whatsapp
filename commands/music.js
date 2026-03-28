@@ -21,6 +21,7 @@ module.exports = {
         if (!query) return sock.sendMessage(chatId, { text: '🎵 *Uso:* !play <nombre de la canción o link de YouTube>' }, { quoted: msg });
 
         try {
+            await sock.sendMessage(chatId, { react: { text: '🎵', key: msg.key } });
             await sock.sendMessage(chatId, { text: `🔍 *Buscando:* _"${query}"_...` });
 
             // 1. Buscar en YouTube

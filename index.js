@@ -1006,7 +1006,7 @@ async function procesarMensaje(sock, msg) {
                     quotedMsgId, quotedParticipant, msgType, chatWithLiquidAI
                 };
 
-                const isHeavy = ['!v', '!s', '!sticker', '!trace', '!toimg'].includes(start);
+                const isHeavy = ['!v', '!s', '!sticker', '!trace', '!toimg', '!play', '!music', '!musica', '!ytmp3', '!play2'].includes(start);
                 if (isHeavy) {
                     const gotSlot = await esperarSlotHeavy();
                     if (!gotSlot) {
