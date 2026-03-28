@@ -1,20 +1,21 @@
-FROM node:20-slim
+ FROM node:20-slim
 
-# Instalar dependencias del sistema básicas
+# Instalar ffmpeg y git (necesario para algunas dependencias npm)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copiar solo archivos esenciales primero para usar caché
+# Copiar configuración e instalar
 COPY package*.json ./
 RUN npm install --legacy-peer-deps --omit=dev && npm cache clean --force
 
-# Copiar el resto del código ignorando archivos pesados (visto en .dockerignore)
+# Copiar el resto del código
 COPY . .
 
-# Crear directorios y permisos
+# Directorios y permisos
 RUN mkdir -p .bot_session temp stickers \
     && chmod -R 777 /app
 
