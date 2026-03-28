@@ -29,4 +29,4 @@ ENV PORT=7860
 EXPOSE 7860
 
 # 6. Comando de arranque principal (No usar nodemon en producción)
-CMD ["node", "index.js"]
+CMD ["npm", "start"]

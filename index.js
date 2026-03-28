@@ -2,6 +2,7 @@
  * 🤖 DIKY BOT V2 - RENDER + TURSO EDITION
  * Motor: Baileys v7 | DB: Turso Cloud | Deploy: Render
  */
+console.log('🚀 [CORE] El servidor Node.js ha arrancado correctamente.');
 require('dotenv').config();
 const {
     default: makeWASocket,
