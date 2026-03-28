@@ -12,13 +12,14 @@ module.exports = {
 
         // !slot (Casino)
         if (start === '!slot') {
+            const pick = (v) => v[Math.floor(Math.random() * v.length)];
             const cost = Math.random() < 0.5 ? 50 : 100;
             const balance = await db.obtenerBalance(sender);
             if (balance < cost) return sock.sendMessage(chatId, { text: `💸 No tienes suficientes diky (${cost}) para jugar al Slot.` }, { quoted: msg });
             const ok = await db.deducirMonedas(sender, cost);
             if (!ok) return sock.sendMessage(chatId, { text: '❌ Error al procesar apuesta.' });
 
-            const gana = Math.random() < 0.35; // Probabilidad de ganar: 35% (Dificultad Capitalista)
+            const gana = Math.random() < 0.35; // Probabilidad de ganar: 35%
             const slots = ['🍒', '💎', '🍋', '🍎', '🔔', '⭐'];
 
             let a, b, c;
@@ -32,48 +33,93 @@ module.exports = {
 
             let m = `🎰 *[ CASINO DIKY ]* 🎰\n━━━━━━━━━━━━━━\n💰 Costo: ${cost} diky\n\n      | ${a} | ${b} | ${c} |\n━━━━━━━━━━━━━━\n`;
             if (gana) {
+                const winMsgs = [
+                    '✨ ¡JACKPOT! 🎉',
+                    '🔥 ¡ESTÁS DE SUERTE! 💰',
+                    '💎 ¡INCREÍBLE COMBINACIÓN! ✨',
+                    '🚀 ¡LAS TRAGAMONEDAS TE AMAN! 🎊',
+                    '🌟 ¡VICTORIA TOTAL! 🌟'
+                ];
                 let premio = 500;
                 if (u.clase === 'Apostador') premio = Math.floor(premio * 1.15);
                 await db.sumarMonedas(sender, premio);
-                m += `✨ ¡GANASTE! 🎉\n💰 Recompensa: *${premio}* diky.${u.clase === 'Apostador' ? '\n🎰 *(Bonus Apostador +15%)*' : ''}`;
+                m += `${pick(winMsgs)}\n💰 Recompensa: *${premio}* diky.${u.clase === 'Apostador' ? '\n🎰 *(Bonus Apostador +15%)*' : ''}`;
             } else {
-                m += `❌ Perdiste... Sigue intentando.`;
+                const lossMsgs = [
+                    '❌ Casi... Sigue intentando.',
+                    '💀 La casa siempre gana. Inténtalo de nuevo.',
+                    '📉 Hoy no es tu día de suerte.',
+                    '🧨 ¡BUM! Tu dinero se esfumó.',
+                    '😢 Un giro más y quizás ganabas...',
+                    '🚫 Nada por aquí, nada por allá.'
+                ];
+                m += pick(lossMsgs);
             }
             return sock.sendMessage(chatId, { text: m }, { quoted: msg });
         }
 
         // !ruleta
         if (start === '!ruleta') {
-            const mueres = Math.random() < 0.35; // Más arriesgado: 35% de morir
+            const pick = (v) => v[Math.floor(Math.random() * v.length)];
+            const mueres = Math.random() < 0.35;
             if (mueres) {
                 const ok = await db.deducirMonedas(sender, 100);
-                if (!ok) return sock.sendMessage(chatId, { text: '❌ No pudiste pagar la muerte (el esposo te salvó?).' });
+                if (!ok) return sock.sendMessage(chatId, { text: '❌ No pudiste pagar la muerte (¿el destino te salvó?).' });
                 await db.sumarXP(sender, -50);
-                return sock.sendMessage(chatId, { text: `🔫 *[ RULETA RUSA ]*\n\n💀 ¡BOOM! Te volaste los sesos... (-100 diky, -50 XP)` }, { quoted: msg });
+                const deathMsgs = [
+                    '💀 ¡BOOM! Te volaste los sesos...',
+                    '💀 Un disparo certero. Game over.',
+                    '💀 La bala tenía tu nombre.',
+                    '💀 Silencio sepulcral... Estás muerto.',
+                    '💀 ¡PUG! La última imagen que viste fue el cañón.'
+                ];
+                return sock.sendMessage(chatId, { text: `🔫 *[ RULETA RUSA ]*\n\n${pick(deathMsgs)}\n💸 -100 diky | 📉 -50 XP` }, { quoted: msg });
             } else {
-                return sock.sendMessage(chatId, { text: `🔫 *[ RULETA RUSA ]*\n\n💨 *[ CLICK ]*... Respiras hondo, sigues vivo.` }, { quoted: msg });
+                const survivalMsgs = [
+                    '💨 *[ CLICK ]*... Respiras hondo, sigues vivo.',
+                    '💨 *[ CLICK ]*... La suerte te sonríe una vez más.',
+                    '💨 *[ CLICK ]*... El tambor giró a tu favor.',
+                    '💨 *[ CLICK ]*... Tu corazón late a mil, pero sigues aquí.',
+                    '💨 *[ CLICK ]*... Hoy no es tu funeral.'
+                ];
+                return sock.sendMessage(chatId, { text: `🔫 *[ RULETA RUSA ]*\n\n${pick(survivalMsgs)}` }, { quoted: msg });
             }
         }
 
         // !apostar <rojo/blanco>
         if (start === '!apostar') {
+            const pick = (v) => v[Math.floor(Math.random() * v.length)];
             const apuesta = args[0]?.toLowerCase();
             if (!apuesta || (apuesta !== 'rojo' && apuesta !== 'blanco')) {
                 return sock.sendMessage(chatId, { text: '🎰 *CASINO DIKY* 🎰\n\nDebes elegir un color: *rojo* o *blanco*.' }, { quoted: msg });
             }
-            const resultado = Math.random() < 0.35 ? apuesta : (apuesta === 'rojo' ? 'blanco' : 'rojo'); // 35% de que salga tu elección
+            const resultado = Math.random() < 0.35 ? apuesta : (apuesta === 'rojo' ? 'blanco' : 'rojo');
             const gano = apuesta === resultado;
             const colorEmoji = resultado === 'rojo' ? '🔴' : '⚪';
 
             if (gano) {
+                const winMsgs = [
+                    '✨ ¡GANASTE! La moneda cayó de tu lado.',
+                    '🔥 ¡INCREÍBLE! Tu predicción fue correcta.',
+                    '💎 ¡FORTUNA! Tus dikys se multiplican.',
+                    '🚀 ¡A LAS NUBES! El color era el correcto.',
+                    '🌟 ¡BRAVO! Tienes buen ojo para el azar.'
+                ];
                 await db.sumarMonedas(sender, 150);
                 await db.sumarXP(sender, 50);
-                return sock.sendMessage(chatId, { text: `🎰 *CASINO DIKY* 🎰\n\nResultado: ${colorEmoji} *${resultado.toUpperCase()}*\n\n✨ ¡GANASTE!\n💰 +150 diky | ✨ +50 XP` }, { quoted: msg });
+                return sock.sendMessage(chatId, { text: `🎰 *CASINO DIKY* 🎰\n\nResultado: ${colorEmoji} *${resultado.toUpperCase()}*\n\n${pick(winMsgs)}\n💰 +150 diky | ✨ +50 XP` }, { quoted: msg });
             } else {
+                const lossMsgs = [
+                    '❌ ¡PERDISTE! La suerte es esquiva.',
+                    '💀 ¡OUCH! El azar te ha traicionado.',
+                    '📉 Mala suerte... tus ahorros disminuyen.',
+                    '🚫 Fallaste. El color era el otro.',
+                    '🧨 ¡EXPLOSIÓN DE PÉRDIDAS! Inténtalo de nuevo.'
+                ];
                 const ok = await db.deducirMonedas(sender, 100);
                 if (!ok) return sock.sendMessage(chatId, { text: '❌ Error al procesar pérdida.' });
                 await db.sumarXP(sender, -30);
-                return sock.sendMessage(chatId, { text: `🎰 *CASINO DIKY* 🎰\n\nResultado: ${colorEmoji} *${resultado.toUpperCase()}*\n\n❌ ¡PERDISTE!\n💸 -100 diky | 📉 -30 XP` }, { quoted: msg });
+                return sock.sendMessage(chatId, { text: `🎰 *CASINO DIKY* 🎰\n\nResultado: ${colorEmoji} *${resultado.toUpperCase()}*\n\n${pick(lossMsgs)}\n💸 -100 diky | 📉 -30 XP` }, { quoted: msg });
             }
         }
 
@@ -187,7 +233,7 @@ module.exports = {
                 let limitMsg = '';
 
                 if (currCount >= 10) {
-                    const extraMoney = (a.v || 50) * 2; // Doble del valor base como bonificación
+                    const extraMoney = (a.v || 50) * 2;
                     await db.sumarMonedas(sender, extraMoney);
                     limitMsg = `\n⚠️ *Límite de este animal (10)*.\nVendido a un cazador local por *${extraMoney}* diky.`;
                     await db.registrarHistorial(sender, `Vendió un ${a.n} (Límite 10)`);
@@ -209,7 +255,16 @@ module.exports = {
                 if (u.clase === 'Cazador') resC += `\n🏹 *(Bonus Cazador: Mejor probabilidad)*`;
                 return sock.sendMessage(chatId, { text: resC }, { quoted: msg });
             }
-            return sock.sendMessage(chatId, { text: `🍃 El animal escapó silenciosamente.` }, { quoted: msg });
+
+            const failMsgs = [
+                '🍃 El animal escapó silenciosamente entre los arbustos.',
+                '🍃 Escuchaste un ruido, pero cuando miraste, no había nada.',
+                '🍃 ¡Fallaste el tiro! Tu presa huyó asustada.',
+                '🍃 El rastro se perdió en lo profundo del bosque.',
+                '🍃 Tus pisadas eran muy ruidosas y el animal te detectó.',
+                '🍃 ¡Qué mala suerte! El arma se atascó en el momento clave.'
+            ];
+            return sock.sendMessage(chatId, { text: pick(failMsgs) }, { quoted: msg });
         }
 
         // !minar (MASSIVE 50 ITEM EXPANSION)
@@ -284,6 +339,7 @@ module.exports = {
 
         // !pescar (MASSIVE 50 ITEM EXPANSION)
         if (start === '!pescar') {
+            const pick = (v) => v[Math.floor(Math.random() * v.length)];
             const peces = [
                 { n: '🐟 Pez Payaso', v: 15, x: 8, w: 0.5, r: 'Común' }, { n: '🐠 Pez Ángel', v: 22, x: 11, w: 1.1, r: 'Común' }, { n: '🐡 Pez Globo', v: 40, x: 20, w: 2.2, r: 'Poco Común' }, { n: '🐟 Atún', v: 60, x: 30, w: 18, r: 'Poco Común' }, { n: '🦐 Camarón', v: 12, x: 6, w: 0.1, r: 'Común' },
                 { n: '🦑 Calamar', v: 130, x: 65, w: 4.5, r: 'Raro' }, { n: '🐙 Pulpo', v: 160, x: 80, w: 3.2, r: 'Raro' }, { n: '🐬 Delfín', v: 350, x: 175, w: 55, r: 'Épico' }, { n: '🦈 Tiburón', v: 900, x: 450, w: 1200, r: 'Legendario' }, { n: '🐋 Ballena', v: 2500, x: 1250, w: 7000, r: 'Mítico' },
@@ -372,6 +428,7 @@ module.exports = {
 
         // !duelo @user [monto] (COMPLETAMENTE ÉPICO)
         if (start === '!duelo') {
+            const pick = (v) => v[Math.floor(Math.random() * v.length)];
             const ment = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
             if (!ment[0]) return sock.sendMessage(chatId, { text: '⚔️ Menciona a alguien: *!duelo @user [apuesta]*' });
             if (ment[0] === sender) return sock.sendMessage(chatId, { text: '❓ No puedes pelear contigo mismo.' });
@@ -407,10 +464,20 @@ module.exports = {
                 "¡Serie Seria: Golpe Grave! 👊", "¡Gomu Gomu no Gatling! 🥊", "¡Llamas del Amaterasu! 🔥",
                 "¡Corte Espacial! ⚔️", "¡Flecha de Luz! 🏹", "¡Rugido del Dragón! 🐲", "¡Explosión de Chakra! 🎇",
                 "¡Patada Giratoria Sónica! 🌪️", "¡Danza de las Sombras! 👤", "¡Destello Amarillo! ✨",
-                "¡Muro de Hierro! 🛡️", "¡Lluvia de Meteoros! 🌠"
+                "¡Muro de Hierro! 🛡️", "¡Lluvia de Meteoros! 🌠", "¡Técnica de Invocación! 📜",
+                "¡Cero Oscuro! 🌑", "¡Poder del Geass! 👁️", "¡Expansión de Dominio! 🏯",
+                "¡Corte del Verdugo! 🩸", "¡Golpe de Una Pulgada! 💥", "¡Furia del Titán! 🦍"
             ];
 
-            let fightLog = `⚔️ *¡EL DUELO COMIENZA!* ⚔️\n━━━━━━━━━━━━━━\n🤺 *${n1}* (100 HP) \n 🆚 \n🤺 *${n2}* (100 HP)\n━━━━━━━━━━━━━━\n💰 Apuesta: *${monto}* diky\n\n📜 **LOG DE BATALLA:**\n`;
+            const introMsgs = [
+                "¡EL DUELO COMIENZA!",
+                "¡LA BATALLA INICIA AHORA!",
+                "¡SANGRE Y GLORIA EN EL ARENA!",
+                "¡QUE GANE EL MEJOR GUERRERO!",
+                "¡EL DESTINO SE DECIDE AQUÍ!"
+            ];
+
+            let fightLog = `⚔️ *${pick(introMsgs)}* ⚔️\n━━━━━━━━━━━━━━\n🤺 *${n1}* (100 HP) \n 🆚 \n🤺 *${n2}* (100 HP)\n━━━━━━━━━━━━━━\n💰 Apuesta: *${monto}* diky\n\n📜 **LOG DE BATALLA:**\n`;
 
             let turno = 1;
             let nAtacante = Math.random() < 0.5 ? 1 : 2; // Randomizar quién empieza

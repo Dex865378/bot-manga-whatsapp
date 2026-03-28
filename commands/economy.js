@@ -134,16 +134,36 @@ module.exports = {
 
         // !daily
         if (start === '!daily') {
+            const pick = (v) => v[Math.floor(Math.random() * v.length)];
             const u = await db.obtenerUsuario(sender);
             const ahora = Date.now();
             const cd = 24 * 60 * 60 * 1000;
-            if (ahora - (u.last_daily || 0) < cd) return sock.sendMessage(chatId, { text: `⏳ Vuelve mañana para tu recompensa.` }, { quoted: msg });
+
+            const waitMsgs = [
+                '⏳ *¡Paciencia!* Aún no es tiempo de tu tributo diario.',
+                '⏳ *Cálmate.* Tus arcas se están llenando, vuelve en unas horas.',
+                '⏳ *Vuelve mañana.* El banco de Diky no regala dinero dos veces al día.',
+                '⏳ *Shhh...* El recolector de impuestos está durmiendo. Vuelve mañana.',
+                '⏳ Todavía no puedes reclamar tu recompensa. ¡Sigue esforzándote!',
+                '⏳ No seas avaricioso, espera a que pase el tiempo reglamentario.'
+            ];
+
+            if (ahora - (u.last_daily || 0) < cd) return sock.sendMessage(chatId, { text: pick(waitMsgs) }, { quoted: msg });
 
             let premio = 5000;
             if (u.clase === 'Empresario') premio += 1000;
             await db.sumarMonedas(sender, premio);
             await db.actualizarUsuario(sender, { last_daily: ahora });
-            return sock.sendMessage(chatId, { text: `💰 ¡RECOMPENSA DIARIA! 💰\n\nHas recibido *${premio}* diky.\n¡Vuelve mañana para más!` }, { quoted: msg });
+
+            const winMsgs = [
+                `💰 *¡RECOMPENSA DIARIA!* 💰\n\nHas recibido *${premio}* diky por ser un ciudadano ejemplar.`,
+                ` ✨ *Diky Fortune* ✨\n\n¡Felicidades! Se han depositado *${premio}* diky en tu cuenta personal.`,
+                `💴 *Depósito Recibido* 💴\n\nTu recompensa diaria de *${premio}* diky ha sido procesada con éxito.`,
+                `💎 *Tesoro Diario* 💎\n\nHas encontrado un pequeño botín de *${premio}* diky en el camino.`,
+                `🚀 *Impulso Económico* 🚀\n\n¡Toma estos *${premio}* diky y conquista el mercado!`,
+                `🌟 *Bendición de Diky* 🌟\n\nEl dios de la economía te otorga *${premio}* diky por tu constancia.`
+            ];
+            return sock.sendMessage(chatId, { text: pick(winMsgs) + '\n\n¡Vuelve mañana para más!' }, { quoted: msg });
         }
 
         // !tienda
@@ -328,16 +348,66 @@ module.exports = {
 
         // !w, !slut
         if (start === '!w' || start === '!slut') {
+            const pick = (v) => v[Math.floor(Math.random() * v.length)];
             const u = await db.obtenerUsuario(sender);
             const ahora = Date.now();
             const esW = start === '!w';
             const cd = esW ? 3600000 : 1200000;
             const last = esW ? u.last_work : u.last_slut;
-            if (ahora - (last || 0) < cd) return sock.sendMessage(chatId, { text: '⏳ Estás cansado.' }, { quoted: msg });
+
+            const waitMsgs = [
+                '⏳ Estás agotado. Tómate un respiro antes de seguir.',
+                '⏳ Tu cuerpo no da para más. Descansa un poco.',
+                '⏳ El sindicato de Diky exige que descanses.',
+                '⏳ ¡Hey! No eres una máquina, vuelve en un rato.',
+                '⏳ Estás sudando frío del cansancio, espera un poco.',
+                '⏳ Recupera energías primero, luego seguimos con el negocio.'
+            ];
+
+            if (ahora - (last || 0) < cd) return sock.sendMessage(chatId, { text: pick(waitMsgs) }, { quoted: msg });
+
+            const workScenarios = [
+                'Trabajaste limpiando el laboratorio del Dr. Vegapunk',
+                'Fuiste guardia de seguridad en el Casino Diky',
+                'Ayudaste a Ichiraku a preparar ramen todo el día',
+                'Vendiste periódicos en las calles de Central City',
+                'Trabajaste como mercenario para la Corporación Cápsula',
+                'Fuiste extra en una película de Hollywood',
+                'Cocinaste para los Piratas del Sombrero de Paja',
+                'Ayudaste a reconstruir Konoha tras un ataque',
+                'Trabajaste como desarrollador junior en una startup de scripts',
+                'Entregaste paquetes volando en una escoba mágica',
+                'Fuiste cazador de recompensas novato en Marte',
+                'Ayudaste a Bulma a organizar sus Dragon Radars',
+                'Trabajaste como barman en el bar de Quindecim',
+                'Fuiste guía turístico en el Mundo Digital',
+                'Limpiaste el gimnasio de Saitama por unas monedas'
+            ];
+
+            const slutScenarios = [
+                'Hiciste un baile exótico en el distrito rojo de Yoshiwara',
+                'Fuiste a Kabukicho y encontraste un cliente generoso',
+                'Vendiste fotos prohibidas en tu OnlyFans secreto',
+                'Fuiste dama de compañía en una fiesta de nobles',
+                'Hiciste un streaming picante y llovieron donaciones',
+                'Aceptaste un favor "especial" de un desconocido en un callejón',
+                'Te pagaron por actuar de pareja falsa en una boda',
+                'Fuiste anfitrión/hostess en un club de lujo',
+                'Modelaste ropa interior para una marca desconocida',
+                'Te pagaron por dejarte humillar en una plaza pública',
+                'Cenas con un magnate a cambio de un "postre" privado',
+                'Hiciste un ASMR sugerente que se volvió viral',
+                'Fuiste a una "reunión privada" con un ejecutivo de alto cargo',
+                'Hiciste cosplay H para un fotógrafo pervertido',
+                'Vendiste tu tiempo en una app de citas para adultos'
+            ];
+
+            const scenario = esW ? pick(workScenarios) : pick(slutScenarios);
             const gan = esW ? 1000 : 500;
             await db.sumarMonedas(sender, gan);
             await db.actualizarUsuario(sender, esW ? { last_work: ahora } : { last_slut: ahora });
-            return sock.sendMessage(chatId, { text: `💰 ${esW ? 'Trabajaste' : 'Kabukicho'} : +${gan} diky.` }, { quoted: msg });
+
+            return sock.sendMessage(chatId, { text: `💰 *${scenario}*\n\n📈 Ganancia: *+${gan}* diky.` }, { quoted: msg });
         }
 
         if (start === '!inventario') {

@@ -52,7 +52,20 @@ module.exports = {
         if (start === '!cumplido') {
             const ment = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
             const target = ment[0] ? `@${ment[0].split('@')[0]}` : 'amig@';
-            const c = [`${target}, tu sonrisa ilumina todo.`, `${target}, eres genial.`];
+            const c = [
+                `${target}, tu sonrisa ilumina todo.`,
+                `${target}, eres genial.`,
+                `${target}, tienes una energía increíble.`,
+                `${target}, eres de esas personas que hacen el mundo mejor.`,
+                `${target}, me encanta tu forma de ser.`,
+                `${target}, eres una persona muy especial.`,
+                `${target}, tienes un corazón de oro.`,
+                `${target}, eres la definición de elegancia.`,
+                `${target}, siempre sabes qué decir.`,
+                `${target}, eres una inspiración para los demás.`,
+                `${target}, tu inteligencia es admirable.`,
+                `${target}, eres luz en medio de la oscuridad.`
+            ];
             return sock.sendMessage(chatId, { text: c[Math.floor(Math.random() * c.length)], mentions: ment });
         }
 
@@ -60,7 +73,19 @@ module.exports = {
         if (start === '!roast') {
             const ment = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
             const target = ment[0] ? `@${ment[0].split('@')[0]}` : 'tú';
-            const r = [`${target}, tienes menos carisma que una piedra.`, `${target}, eres un relleno de anime.`];
+            const r = [
+                `${target}, tienes menos carisma que una piedra.`,
+                `${target}, eres un relleno de anime.`,
+                `${target}, tu cara es la razón por la que el shampoo tiene instrucciones.`,
+                `${target}, eres como un lunes por la mañana: nadie te quiere.`,
+                `${target}, si la estupidez doliera, estarías gritando todo el día.`,
+                `${target}, eres la prueba de que Dios tiene sentido del humor.`,
+                `${target}, tu IQ es menor que la temperatura de un congelador.`,
+                `${target}, hablas tanto que hasta los sordos se quejan.`,
+                `${target}, tienes el cerebro tan nuevo que aún tiene el plástico puesto.`,
+                `${target}, eres como una moneda de chocolate: te derrites bajo presión y no vales nada.`,
+                `${target}, mi teclado tiene más personalidad que tú.`
+            ];
             return sock.sendMessage(chatId, { text: `🔥 *ROAST:* ${r[Math.floor(Math.random() * r.length)]}`, mentions: ment });
         }
 
@@ -112,7 +137,12 @@ module.exports = {
         }
         // !8ball
         if (start === '!8ball') {
-            const r = ['Sí', 'No', 'Probablemente', 'No lo sé', 'Tal vez', 'Definitivamente sí', 'Ni lo sueñes', 'Pregunta más tarde', 'Claro que sí', 'Para nada'];
+            const r = [
+                'Sí', 'No', 'Probablemente', 'No lo sé', 'Tal vez', 'Definitivamente sí', 'Ni lo sueñes', 
+                'Pregunta más tarde', 'Claro que sí', 'Para nada', 'Mis fuentes dicen que no', 
+                'Mejor no decirte ahora', 'Concéntrate y pregunta de nuevo', 'Es cierto',
+                'Como yo lo veo, sí', 'Muy dudoso', 'Sin duda alguna', 'Puedes confiar en ello'
+            ];
             const q = args.join(' ');
             if (!q) return sock.sendMessage(chatId, { text: '🎱 ¡Hazme una pregunta!' });
             return sock.sendMessage(chatId, { text: `🎱 *8-BALL* 🎱\n\n*Pregunta:* ${q}\n*Respuesta:* ${r[Math.floor(Math.random() * r.length)]}` });
@@ -202,7 +232,13 @@ module.exports = {
                 'Ponte de foto de perfil la imagen que te envíe el bot por 1 hora.',
                 'Escribe "Soy un pato" en tu estado de WhatsApp por 2 horas.',
                 'Llama a un amigo y dile que te vas a casar.',
-                'Envía un sticker de anime al azar.'
+                'Envía un sticker de anime al azar.',
+                'Escríbele a tu ex un "Hola, te extraño" y borra el mensaje a los 5 segundos (manda captura si puedes).',
+                'Hazle un cumplido a la persona que más te caiga mal del grupo.',
+                'Publica en tus estados: "Amo a Diky Bot" por 1 hora.',
+                'Habla como un pirata por los próximos 10 minutos.',
+                'Manda una foto de lo que estés comiendo ahora.',
+                'Cuenta un secreto que nadie en el grupo sepa.'
             ];
             return sock.sendMessage(chatId, { text: `🎭 *RETO DIKY* 🎭\n\nTu reto es: *${retos[Math.floor(Math.random() * retos.length)]}*` }, { quoted: msg });
         }
@@ -214,7 +250,14 @@ module.exports = {
                 '¿Cuál es tu secreto más vergonzoso?',
                 '¿Alguna vez has mentido para salir de una cita?',
                 '¿Qué es lo más asqueroso que has hecho?',
-                '¿A quién del grupo eliminarías si fuera necesario?'
+                '¿A quién del grupo eliminarías si fuera necesario?',
+                '¿Qué es lo peor que has hecho por dinero?',
+                '¿Has revisado el celular de alguien sin permiso?',
+                '¿Qué es lo más raro de lo que te has reído?',
+                '¿Quién te cae peor de este chat?',
+                '¿Cuál es tu mayor inseguridad?',
+                '¿Alguna vez te has enamorado de un dibujo animado?',
+                '¿Qué es lo más ilegal que has hecho?'
             ];
             return sock.sendMessage(chatId, { text: `🃏 *VERDAD O RETO* 🃏\n\nResponde con la verdad: *${verdades[Math.floor(Math.random() * verdades.length)]}*` }, { quoted: msg });
         }
@@ -225,7 +268,13 @@ module.exports = {
                 '— ¿Nivel de inglés? — Alto. — Traduzca "fiesta". — Party. — Úselo en una frase. — Me party de la risa.',
                 '— Jaimito, ¿si tengo 5 botellas en una mano y 6 en la otra, qué tengo? — Un problema con el alcohol, profesora.',
                 '¿Por qué los pájaros vuelan al sur? Porque caminar es muy cansado.',
-                '— ¡Papá, ya sé lo que quiero ser de mayor! — ¿Qué, hijo? — ¡Quiero ser repartidor de pizzas! — ¿Por qué? — ¡Para comer pizza gratis todos los días!'
+                '— ¡Papá, ya sé lo que quiero ser de mayor! — ¿Qué, hijo? — ¡Quiero ser repartidor de pizzas! — ¿Por qué? — ¡Para comer pizza gratis todos los días!',
+                '¿Qué le dice un jaguar a otro jaguar? — Jaguar you.',
+                '— Doctor, doctor, ¡tengo un hueso fuera! — Pues dígale que pase, que no se quede ahí esperando.',
+                '¿Por qué los esqueletos no se pelean? Porque no tienen agallas.',
+                '— Mamá, en el colegio me llaman Facebook. — ¿Y tú qué les dices? — ¡Me gusta!',
+                '¿Qué hace una abeja en el gimnasio? Zuma.',
+                '¿Cuál es el último pez? El del-fín.'
             ];
             return sock.sendMessage(chatId, { text: `😂 *CHISTE DIKY* 😂\n\n${chistes[Math.floor(Math.random() * chistes.length)]}` }, { quoted: msg });
         }
@@ -245,7 +294,11 @@ module.exports = {
                     'Leyendo tus chats... Le debes dinero a medio grupo y no piensas pagar. 🤥',
                     'Encontré tu colección de fotos de My Little Pony. No juzgaré, pero es raro. 🦄',
                     'Hackeando tu cámara... Estás haciendo caras raras frente al espejo ahora mismo. 🤳',
-                    'Robando tus diamantes de Minecraft... ¡Ahora soy el bot más rico! 💎'
+                    'Robando tus diamantes de Minecraft... ¡Ahora soy el bot más rico! 💎',
+                    'Veo que tienes guardado un pack de stickers prohibidos. ¡Te voy a acusar! 👮',
+                    'Tu fondo de pantalla es una foto tuya dándote un beso a ti mismo. Qué narcisista. 🤳',
+                    'Descubrí que ocultas este chat de tu mamá. ¡Qué rebelde! 😎',
+                    'Veo que pasas 8 horas al día en TikTok. Busca un hobby. 📱'
                 ];
                 const h = hallazgos[Math.floor(Math.random() * hallazgos.length)];
                 return sock.sendMessage(chatId, { text: `💻 *INICIANDO PROTOCOLO HACKER* 💻\n\n🔓 Objetivo: ${target}\n📡 Vulnerabilidad: Encontrada\n📂 Extrayendo archivos: 100%\n✨ *HACKEO EXITOSO*\n\n *Hallazgo:* ${h}`, mentions: ment }, { quoted: msg });
@@ -256,7 +309,11 @@ module.exports = {
                     '⚠️ Intenté entrar, pero tu antivirus me confundió con un meme de gatitos y me borró. 🐱',
                     '⚠️ Me dio pereza hackearte, mejor me fui a ver anime. 📺',
                     '⚠️ Tu celular es tan viejo que mi software de hackeo no es compatible con Android 2.0. 📱',
-                    '⚠️ ¡ALERTA! Tu mamá me vio entrando a tu carpeta y me regañó. 😰'
+                    '⚠️ ¡ALERTA! Tu mamá me vio entrando a tu carpeta y me regañó. 😰',
+                    '⚠️ Se me cayó el internet justo cuando estaba robando tus fotos. Qué mala suerte. 🌐',
+                    '⚠️ Intenté hackearte pero me dio mucha tristeza lo pobre que eres. 😭',
+                    '⚠️ Error 404: Cerebro no encontrado. No se puede hackear el vacío. 🧠❌',
+                    '⚠️ Tu contraseña es "123456" pero el sistema me pidió un captcha de semáforos y fallé. 🚦'
                 ];
                 const f = fallos[Math.floor(Math.random() * fallos.length)];
                 return sock.sendMessage(chatId, { text: `💻 *INTENTO DE HACKEO FALLIDO* 💻\n\n🚫 Objetivo: ${target}\n❌ *Resultado:* ${f}`, mentions: ment }, { quoted: msg });

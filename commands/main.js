@@ -9,15 +9,40 @@ module.exports = {
 
         // !ping
         if (start === '!ping') {
-            return sock.sendMessage(chatId, { text: '🏓 *PONG!* El bot está activo y listo.' }, { quoted: msg });
+            const pick = (v) => v[Math.floor(Math.random() * v.length)];
+            const variants = [
+                '🏓 *PONG!* El bot está activo y listo.',
+                '📡 *EN LÍNEA!* Conexión estable.',
+                '🚀 *A TODA MÁQUINA!* Listos para la acción.',
+                '⚡ *VELOCIDAD RAYO!* El bot responde.',
+                '🤖 *DIKY ACTIVO!* ¿Qué necesitas hoy?',
+                '📶 *SEÑAL FUERTE!* Latencia mínima detectada.',
+                '✅ *OPERATIVO!* Todos los sistemas al 100%.',
+                '🟢 *VERDE!* Diky Bot está en su mejor momento.',
+                '🌟 *LISTO Y BRILLANTE!* Esperando tus órdenes.',
+                '🛠️ *MANTENIMIENTO 0%!* Funcionando perfectamente.'
+            ];
+            return sock.sendMessage(chatId, { text: pick(variants) }, { quoted: msg });
         }
 
         // !menu / !menu2 (REDiseño TOTAL PROFESIONAL Y EXHAUSTIVO)
         if (start === '!menu' || start === '!menu2') {
+            const pick = (v) => v[Math.floor(Math.random() * v.length)];
+            const mottos = [
+                "¡Tu compañero digital definitivo!",
+                "¡El bot más loco de WhatsApp!",
+                "¡Divirtiéndote desde el primer día!",
+                "¡Llevando el grupo al siguiente nivel!",
+                "¡Economía, juegos y mucha diversión!",
+                "¡El bot que tu grupo merece!",
+                "¡Diky Bot: Potencia y Estilo!",
+                "¡Donde la tecnología encuentra la risa!"
+            ];
             const up = Math.floor((Date.now() - botState.startTime) / 1000);
             const h = Math.floor(up / 3600), m = Math.floor((up % 3600) / 60);
 
             let mText = `✨ *DIKY BOT V2 - PANEL MAESTRO* ✨\n`;
+            mText += `📜 _"${pick(mottos)}"_\n`;
             mText += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
             mText += `👤 *USUARIO:* ${pushName}\n`;

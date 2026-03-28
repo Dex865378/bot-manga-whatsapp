@@ -29,13 +29,6 @@ module.exports = {
             const video = search.videos[0];
             if (!video) return sock.sendMessage(chatId, { text: '❌ No encontré resultados para esa búsqueda.' });
 
-            const infoStr = `🎵 **DESCARGANDO MÚSICA** 🎵\n━━━━━━━━━━━━━━\n📌 **Título:** ${video.title}\n👤 **Canal:** ${video.author.name}\n⏱️ **Duración:** ${video.timestamp}\n👁️ **Vistas:** ${video.views.toLocaleString()}\n━━━━━━━━━━━━━━\n🚀 _Procesando audio en MP3..._`;
-
-            await sock.sendMessage(chatId, { 
-                image: { url: video.thumbnail }, 
-                caption: infoStr 
-            }, { quoted: msg });
-
             // 2. Definir rutas temporales
             const tmpDir = os.tmpdir();
             const timestamp = Date.now();
