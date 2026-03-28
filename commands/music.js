@@ -22,12 +22,25 @@ module.exports = {
 
         try {
             await sock.sendMessage(chatId, { react: { text: '🎵', key: msg.key } });
-            await sock.sendMessage(chatId, { text: `🔍 *Buscando:* _"${query}"_...` });
 
             // 1. Buscar en YouTube
             const search = await yts(query);
             const video = search.videos[0];
             if (!video) return sock.sendMessage(chatId, { text: '❌ No encontré resultados para esa búsqueda.' });
+
+            // Mostrar el preview (Stunning Aesthetics)
+            const infoTxt = `🎵 *REPRODUCIENDO:*
+📌 *Título:* ${video.title}
+⏳ *Duración:* ${video.timestamp}
+📺 *Canal:* ${video.author.name}
+🔗 *Link:* ${video.url}
+
+_Descargando audio, espera un momento..._`;
+
+            await sock.sendMessage(chatId, { 
+                image: { url: video.thumbnail }, 
+                caption: infoTxt 
+            }, { quoted: msg });
 
             // 2. Definir rutas temporales
             const tmpDir = os.tmpdir();
@@ -36,11 +49,24 @@ module.exports = {
             const outputPath = path.join(tmpDir, `music_${timestamp}.mp3`);
 
             // 3. Descargar stream (Audio only para ser más rápido)
-            // @distube/ytdl-core es más resistente a los bloqueos 403
-            const stream = ytdl(video.url, {
+            // CONFIGURACIÓN DE COOKIES PARA BYPASS DE RESTRICCIÓN DE EDAD
+            let options = {
                 quality: 'highestaudio',
                 filter: 'audioonly',
-            });
+            };
+
+            // Intentar usar cookies si existen en los Secrets de Hugging Face
+            if (process.env.YT_COOKIES) {
+                try {
+                    const cookies = JSON.parse(process.env.YT_COOKIES);
+                    options.agent = ytdl.createAgent(cookies);
+                    console.log('✅ Utilizando cookies de YouTube para bypass.');
+                } catch (e) {
+                    console.error('❌ Error parseando YT_COOKIES:', e.message);
+                }
+            }
+
+            const stream = ytdl(video.url, options);
 
             // Guardar stream temporalmente
             const fileStream = fs.createWriteStream(inputPath);
@@ -52,8 +78,7 @@ module.exports = {
                 stream.on('error', reject);
             });
 
-            // 4. Convertir a MP3 usando el FFMPEG que instalamos en el sistema
-            // Usamos 128k para que el archivo sea ligero y se envíe rápido
+            // 4. Convertir a MP3 usando FFMPEG (Estabilidad Premium)
             await execFileAsync(FFMPEG_PATH, [
                 '-i', inputPath,
                 '-vn',
@@ -63,7 +88,7 @@ module.exports = {
                 outputPath
             ]);
 
-            // 5. Enviar el audio (Formato música, no PTT)
+            // 5. Enviar el audio
             await sock.sendMessage(chatId, { 
                 audio: fs.readFileSync(outputPath), 
                 mimetype: 'audio/mp4',
@@ -79,10 +104,14 @@ module.exports = {
         } catch (e) {
             console.error('❌ [MUSIC ERROR]:', e);
             let errMsg = '❌ Ocurrió un error al descargar la música.';
-            if (e.message.includes('403')) errMsg = '❌ Error 403: YouTube bloqueó la petición. Intentando regenerar sesión...';
-            if (e.message.includes('Sign in')) errMsg = '❌ Este video tiene restricción de edad y no puedo descargarlo.';
+            if (e.message.includes('403')) {
+                errMsg = '❌ *Error 403:* YouTube bloqueó la descarga.\n💡 *Solución:* Añade tus *YouTube Cookies* en los Secrets del Bot para saltar el bloqueo.';
+            } else if (e.message.includes('Sign in') || e.message.includes('age restricted')) {
+                errMsg = '🔞 *RESTRICCIÓN DE EDAD:*\nYouTube requiere iniciar sesión para este video.\n\n🛠️ *¿Cómo solucionarlo?*\nSigue estos pasos para subir tus cookies a Hugging Face:\n1. Usa la extensión "Get cookies.txt" en tu PC.\n2. Exporta las cookies de YouTube en formato JSON.\n3. Añade un Secret en Hugging Face llamado *YT_COOKIES* con ese contenido.';
+            }
             
             return sock.sendMessage(chatId, { text: errMsg }, { quoted: msg });
         }
     }
+
 };
