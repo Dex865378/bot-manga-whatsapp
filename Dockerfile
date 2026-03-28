@@ -1,25 +1,32 @@
- FROM node:20-slim
+FROM node:20-bullseye
 
-# Instalar ffmpeg y git (necesario para algunas dependencias npm)
+# 1. Instalar dependencias del SISTEMA (FFMPEG, WebP, librerías de stickers)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     git \
+    libwebp-dev \
+    libcairo2-dev \
+    libjpeg-dev \
+    libpango1.0-dev \
+    libgif-dev \
+    librsvg2-dev \
+    imagemagick \
+    graphicsmagick \
     && rm -rf /var/lib/apt/lists/*
 
+# 2. Configurar el directorio de trabajo
 WORKDIR /app
 
-# Copiar configuración e instalar
+# 3. Cache de dependencias de Node
 COPY package*.json ./
-RUN npm install --legacy-peer-deps --omit=dev && npm cache clean --force
+RUN npm install --omit=dev && npm cache clean --force
 
-# Copiar el resto del código
+# 4. Copiar el resto del bot e ignorar lo innecesario vía .dockerignore
 COPY . .
 
-# Directorios y permisos
-RUN mkdir -p .bot_session temp stickers \
-    && chmod -R 777 /app
-
+# 5. Hugging Face usa el puerto 7860 por defecto
 ENV PORT=7860
 EXPOSE 7860
 
+# 6. Comando de arranque principal (No usar nodemon en producción)
 CMD ["node", "index.js"]
