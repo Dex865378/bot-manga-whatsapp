@@ -34,70 +34,47 @@ module.exports = {
             // 2. Rutas temporales
             const tmpDir = os.tmpdir();
             const timestamp = Date.now();
-            const inputPath = path.join(tmpDir, `yt_${timestamp}.mp4`);
             const outputPath = path.join(tmpDir, `music_${timestamp}.mp3`);
 
-            // 3. Descargar (Optimizado para evitar bloqueos)
-            const options = {
-                quality: 'highestaudio',
-                filter: 'audioonly',
-                highWaterMark: 1 << 25, // Buffer de 32MB para evitar cortes
-                requestOptions: {
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
-                        'Accept': '*/*',
-                        'Connection': 'keep-alive'
-                    }
-                }
+            // 3. Descargar y Convertir usando yt-dlp-exec (Máxima efectividad anti-bloqueos)
+            const youtubedl = require('yt-dlp-exec');
+            
+            const dlOptions = {
+                extractAudio: true,
+                audioFormat: 'mp3',
+                output: outputPath,
+                noWarnings: true,
+                addHeader: ['User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36']
             };
 
-            // Usar cookies si existen (pero sin presionar al usuario)
+            // Inyectar cookies si existen en HF Secrets (Formato String para yt-dlp)
             if (process.env.YT_COOKIES) {
-                try {
-                    options.agent = ytdl.createAgent(JSON.parse(process.env.YT_COOKIES));
-                } catch (e) { }
+                // Si el usuario guardó cookies tipo texto en YT_COOKIES
+                const cookiePath = path.join(tmpDir, 'cookies.txt');
+                fs.writeFileSync(cookiePath, process.env.YT_COOKIES);
+                dlOptions.cookies = cookiePath;
             }
 
-            const stream = ytdl(video.url, options);
-            const fileStream = fs.createWriteStream(inputPath);
-            stream.pipe(fileStream);
+            await youtubedl(video.url, dlOptions);
 
-            await new Promise((resolve, reject) => {
-                fileStream.on('finish', resolve);
-                fileStream.on('error', reject);
-                stream.on('error', reject);
-            });
-
-            // 4. Convertir a MP3 ultra rápido (128k es perfecto)
-            await execFileAsync(FFMPEG_PATH, [
-                '-i', inputPath,
-                '-vn',
-                '-ab', '128k',
-                '-ar', '44100',
-                '-y',
-                outputPath
-            ]);
-
-            // 5. Enviar audio DIRECTO para reproducir en WhatsApp
-            await sock.sendMessage(chatId, { 
-                audio: fs.readFileSync(outputPath), 
-                mimetype: 'audio/mpeg', // MPEG suele forzar el reproductor
-                ptt: false, // Asegurar que sea audio, no nota de voz
-                fileName: `${video.title}.mp3`
-            }, { quoted: msg });
-
-            // 6. Limpiar y reaccionar
-            try {
-                fs.unlinkSync(inputPath);
-                fs.unlinkSync(outputPath);
+            // 4. Enviar audio DIRECTO para reproducir en WhatsApp
+            if (fs.existsSync(outputPath)) {
+                await sock.sendMessage(chatId, { 
+                    audio: fs.readFileSync(outputPath), 
+                    mimetype: 'audio/mpeg', 
+                    ptt: false, // Asegurar que sea audio reproducible
+                    fileName: `${video.title}.mp3`
+                }, { quoted: msg });
+                
                 await sock.sendMessage(chatId, { react: { text: '✅', key: msg.key } });
-            } catch (e) { }
+                fs.unlinkSync(outputPath); // Limpiar
+            } else {
+                throw new Error("El archivo no se generó.");
+            }
 
         } catch (e) {
             console.error('❌ [MUSIC ERROR]:', e);
-            let msgF = '❌ No pude descargar esta canción. YouTube bloqueó el acceso.';
-            if (e.message.includes('Sign in')) msgF = '❌ YouTube bloqueó este link por *Restricción de Edad*.\n_Prueba con una versión que no sea el video oficial o busca por nombre._';
-            
+            let msgF = '❌ No pude descargar esta canción porque YouTube bloqueó el acceso (Error de IP en Hugging Face o Restricción de Edad).';
             return sock.sendMessage(chatId, { text: msgF }, { quoted: msg });
         }
     }

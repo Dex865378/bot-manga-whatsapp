@@ -1,9 +1,10 @@
 FROM node:20-bullseye
 
-# 1. Instalar dependencias del SISTEMA (FFMPEG, WebP, librerías de stickers)
+# 1. Instalar dependencias del SISTEMA (FFMPEG, WebP, librerías de stickers, Python para yt-dlp)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     git \
+    python3 \
     libwebp-dev \
     libcairo2-dev \
     libjpeg-dev \
@@ -13,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     imagemagick \
     graphicsmagick \
     && rm -rf /var/lib/apt/lists/*
+
 
 # 2. Configurar el directorio de trabajo
 WORKDIR /app
