@@ -45,10 +45,77 @@ try { FFMPEG_PATH = require('@ffmpeg-installer/ffmpeg').path; } catch (e) { }
 const adminCache = new Map();
 const TTL_ADMIN = 10 * 60 * 1000; // 10 minutos
 const cooldowns = new Map(); // ESCUDO ANTI-SPAM
+
+// 🧹 Limpieza de cooldowns caducados cada 10 minutos (anti memory-leak)
+setInterval(() => {
+    const ahora = Date.now();
+    const TTL_COOLDOWN = 5 * 60 * 1000; // 5 minutos = bien pasado cualquier cooldown
+    let eliminados = 0;
+    for (const [key, ts] of cooldowns.entries()) {
+        if (ahora - ts > TTL_COOLDOWN) { cooldowns.delete(key); eliminados++; }
+    }
+    if (eliminados > 0) console.log(`[GC] Cooldowns limpiados: ${eliminados} entradas | Restantes: ${cooldowns.size}`);
+}, 10 * 60 * 1000);
+
 let procesosActivos = 0; // LIMITADOR DE HARDWARE
-const MAX_PROCESOS = 5; // Máximo de tareas pesadas simultáneas (subido de 3 a 5)
+const MAX_PROCESOS = 5; // Máximo de tareas pesadas simultáneas
 const colaHeavy = []; // Cola para tareas pesadas en espera
 const MAX_COLA = 10; // Máximo de tareas encoladas
+
+// ============================================================
+//          COLA DE SALIDA (Anti rate-limit de WhatsApp)
+// ============================================================
+// El problema: si 20 usuarios usan comandos al mismo tiempo, el bot
+// intenta mandar 20 mensajes simultáneos → WhatsApp devuelve 429.
+// La solución: los mensajes salen en cola, 1 cada 250ms max.
+// Así NADIE es bloqueado, pero los mensajes salen ordenados y seguros.
+const colaSalida = new Map(); // chatId -> { cola: [], procesando: bool }
+
+async function enviarConCola(sock, chatId, content, options) {
+    if (!colaSalida.has(chatId)) {
+        colaSalida.set(chatId, { cola: [], procesando: false });
+    }
+    const estado = colaSalida.get(chatId);
+
+    return new Promise((resolve, reject) => {
+        estado.cola.push({ content, options, resolve, reject });
+        if (!estado.procesando) procesarColaSalida(sock, chatId);
+    });
+}
+
+async function procesarColaSalida(sock, chatId) {
+    const estado = colaSalida.get(chatId);
+    if (!estado || estado.procesando) return;
+    estado.procesando = true;
+
+    while (estado.cola.length > 0) {
+        const { content, options, resolve, reject } = estado.cola.shift();
+        try {
+            const result = await sock.sendMessage(chatId, content, options || {});
+            resolve(result);
+        } catch (e) {
+            // Si es rate-limit, reintentamos 1 vez después de 1 segundo
+            if (e?.data === 429 || e?.message?.includes('rate-overlimit')) {
+                await new Promise(r => setTimeout(r, 1000));
+                try {
+                    const result = await sock.sendMessage(chatId, content, options || {});
+                    resolve(result);
+                } catch (e2) { reject(e2); }
+            } else {
+                reject(e);
+            }
+        }
+        // Pausa entre mensajes: 250ms — suficiente para no hacer flood
+        if (estado.cola.length > 0) await new Promise(r => setTimeout(r, 250));
+    }
+
+    estado.procesando = false;
+    // Limpiar colas vacías después de 30s para no acumular RAM
+    setTimeout(() => {
+        const e = colaSalida.get(chatId);
+        if (e && e.cola.length === 0 && !e.procesando) colaSalida.delete(chatId);
+    }, 30000);
+}
 
 // Helper: esperar turno en la cola de tareas pesadas
 function esperarSlotHeavy() {
@@ -150,6 +217,8 @@ const botState = {
     startTime: Date.now(),
     msgCount: 0,
     juegos: {},       // Para trivias y ahorcado
+    duelos: {},       // Retos de duelo pendientes { targetJid: { retador, apuesta, expira } }
+    propuestasBodas: {}, // Propuestas de matrimonio pendientes { targetJid: { de, expira } }
     modoAdmin: {},    // Grupos con modo solo-admins activo
     configIA: {},      // Caché de configuración de IA por grupo
     cacheTrad: {},     // Caché de traducciones
@@ -434,7 +503,7 @@ async function startBot() {
     const sock = makeWASocket({
         auth: authState,
         printQRInTerminal: false,
-        logger: pino({ level: 'silent' }),
+        logger: pino({ level: 'fatal' }), // 🤫 Silenciado: oculta los errores inofensivos de "failed to decrypt message"
         browser: ["Ubuntu", "Chrome", "20.0.04"],
         version: waVersion,
         connectTimeoutMs: 120000,
@@ -581,8 +650,8 @@ async function startBot() {
                     return;
                 }
 
-                // Reconectar con espera gradual
-                const waitTime = errores401 * 10000;
+                // Reconectar con espera gradual más larga para proteger la base de datos
+                const waitTime = Math.min(errores401 * 20000, 60000); // Max 1 minuto
                 console.log(`🔄 Reintentando conexión en ${waitTime / 1000}s...`);
                 botState.status = `Error 401 (${errores401}/5). Reintentando...`;
                 setTimeout(startBot, waitTime);
@@ -611,15 +680,20 @@ async function startBot() {
 
     // --- MENSAJES ---
     sock.ev.on('messages.upsert', async (upsert) => {
+        // CRÍTICO: Solo procesar mensajes NUEVOS. 'append' es historial de WhatsApp y causa
+        // respuestas duplicadas o perdidas. Sin este filtro, el bot procesa mensajes viejos
+        // como si fueran nuevos cada vez que reconecta.
+        if (upsert.type !== 'notify') return;
+
         const messages = upsert.messages || [];
         const ahora = Math.floor(Date.now() / 1000);
 
         for (const msg of messages) {
             if (!msg.message) continue;
 
-            // IGNORAR mensajes extremadamente viejos (más de 1 hora) para evitar lag
+            // IGNORAR mensajes extremadamente viejos (más de 5 minutos) para evitar lag
             const msgTime = msg.messageTimestamp;
-            if (ahora - msgTime > 3600) continue;
+            if (ahora - msgTime > 300) continue;
 
             const fromMe = msg.key.fromMe;
             if (fromMe) {
@@ -630,8 +704,7 @@ async function startBot() {
                 if (!texto.trim().startsWith('!')) continue;
             }
 
-            // PROCESAMIENTO CONCURRENTE: No esperamos a que termine uno para empezar el otro
-            // Esto reduce drásticamente el lag cuando llegan varios mensajes a la vez
+            // PROCESAMIENTO CONCURRENTE
             procesarMensaje(sock, msg)
                 .then(() => { botState.msgCount++; })
                 .catch(e => console.error('❌ Error procesando mensaje:', e.message));
@@ -851,28 +924,34 @@ async function procesarMensaje(sock, msg) {
                 '!profile', '!p', '!perfil', '!config', '!marry', '!divorce',
                 '!catalogo', '!manga', '!leer', '!buscar',
                 '!decir', '!waifu', '!trace', '!personaje', '!anime', '!proximo', '!estrenos', '!temporada', '!wiki', '!estudio', '!recomendar', '!random',
-                '!quiz', '!quizanime', '!adivina', '!matematicas', '!bandera', '!ahorcado', '!pescar', '!pokemon', '!duelo',
-                '!slot', '!ppt', '!pptx', '!minar', '!apostar', '!dado', '!moneda', '!8ball', '!ruleta',
+                '!quiz', '!quizanime', '!adivina', '!matematicas', '!bandera', '!ahorcado', '!pescar', '!pokemon', '!duelo', '!duelo_real', '!aceptar',
+                '!slot', '!ruleta', '!ruleta_rusa', '!ppt', '!pptx', '!minar', '!apostar', '!dado', '!moneda', '!8ball',
+                '!bj', '!blackjack', '!poker', '!minas', '!carta', '!donde', '!deljuego', '!suelten', '!carrera',
+                '!puente', '!mazmorra', '!cofre', '!bomba', '!cazar',
                 '!roast', '!cumplido', '!ship', '!love', '!gay', '!iq', '!suerte', '!top', '!horoscopo', '!seria', '!kill', '!chiste', '!hacker', '!reto', '!verdad',
                 '!pat', '!hug', '!kiss', '!slap', '!punch', '!cry', '!dance', '!bite', '!highfive',
                 '!fumar', '!cafe', '!puchero', '!sonrojar', '!baka', '!dormir', '!comiendo', '!pensar',
                 '!patear', '!celebrar', '!aburrido', '!risa', '!smug', '!stare',
                 '!tag', '!reglas', '!kick', '!adm', '!bot', '!bienvenida', '!setbienvenida', '!news', '!sorteo', '!ia',
-                '!bj', '!poker', '!minas', '!carta', '!donde', '!deljuego', '!suelten', '!carrera',
-                '!puente', '!mazmorra', '!cofre', '!bomba', '!cazar',
-                '!tienda', '!comprar', '!vender', '!inventario', '!mejor', '!bounty', '!regalar', '!regalaritem',
+                '!tienda', '!comprar', '!vender', '!inventario', '!mejor', '!bounty', '!regalar', '!regalaritem', '!dar',
                 '!antispam', '!mododios',
-                '!prestigio', '!loteria', '!clase', '!pedir', '!plantarse', '!pl', '!trivia', '!daily', '!w', '!slut', '!canjear', '!dar',
+                '!prestigio', '!loteria', '!clase', '!pedir', '!plantarse', '!pl', '!trivia', '!daily', '!w', '!slut', '!canjear',
                 '!subastar', '!subastas', '!ofertar',
-                '!waifus',
+                '!waifus', '!mascotas', '!alimentar', '!casar', '!proponer', '!divorce', '!logros', '!tareas',
                 '!ver',
                 '!play', '!music', '!musica', '!ytmp3', '!play2'
             ];
 
-            // --- SISTEMA DE ESTABILIDAD: COOLDOWN GLOBAL DE 2 SEGUNDOS ---
-            const globalWait = verificarCooldown(sender, 'global', 2000);
-            if (globalWait > 0 && !isAdmin) {
-                return; // Silencioso para no saturar
+            // --- COOLDOWN GLOBAL (anti-spam / anti rate-limit de WhatsApp) ---
+            // Admins: sin límite (la cola de salida protege el rate-limit)
+            // Usuarios: 1 segundo mínimo entre comandos
+            const cooldownMs = isAdmin ? 0 : 1000;
+            if (cooldownMs > 0) {
+                const globalWait = verificarCooldown(sender, 'global', cooldownMs);
+                if (globalWait > 0) {
+                    sock.sendMessage(chatId, { react: { text: '⏳', key: msg.key } }).catch(() => {});
+                    return;
+                }
             }
 
             if (comandosValidos.includes(start)) {
@@ -892,11 +971,21 @@ async function procesarMensaje(sock, msg) {
                 }
                 const groupConf = groupConfig.active;
 
-                // 2. SISTEMA DE COOLDOWN (Prevención de saturación de CPU)
+                // 2. SISTEMA DE COOLDOWN POR COMANDO
+                // RPG: 6 segundos POR USUARIO (no bloquea a otros usuarios del grupo)
+                const rpgCmds = ['!pescar', '!minar', '!cazar', '!duelo_real', '!pokemon'];
+                if (rpgCmds.includes(start)) {
+                    const rpgWait = verificarCooldown(sender, start, 6000);
+                    if (rpgWait > 0 && !isAdmin) {
+                        return sock.sendMessage(chatId, { text: `⏳ Espera *${rpgWait}s* para volver a usar *${start}*.` }, { quoted: msg });
+                    }
+                }
+
+                // Multimedia pesados: 8 seg para usuarios normales
                 if (!isAdmin) {
                     const heavyCmds = ['!v', '!s', '!sticker', '!trace', '!top', '!waifu', '!kill', '!slap', '!punch', '!toimg', '!play', '!music', '!musica', '!ytmp3', '!play2'];
                     if (heavyCmds.includes(start)) {
-                        const wait = verificarCooldown(sender, start, 8000); // 8 segundos de cooldown para comandos pesados
+                        const wait = verificarCooldown(sender, start, 8000);
                         if (wait > 0) return sock.sendMessage(chatId, { text: `⏳ Espera ${wait}s para volver a usar *${start}*.` }, { quoted: msg });
                     }
                 }
@@ -984,6 +1073,13 @@ async function procesarMensaje(sock, msg) {
                     case '!plantarse': case '!pl': emoji = '✋'; break;
                     case '!bienvenida': case '!setbienvenida': emoji = '👋'; break;
                     case '!waifus': emoji = '🎀'; break;
+                    case '!mascotas': emoji = '🐾'; break;
+                    case '!comprar_mascota': emoji = '🐕'; break;
+                    case '!alimentar': emoji = '🥩'; break;
+                    case '!casar': emoji = '💍'; break;
+                    case '!divorciar': emoji = '💔'; break;
+                    case '!aceptar': emoji = '✅'; break;
+                    case '!duelo_real': emoji = '⚔️'; break;
                 }
 
                 // Efecto de Grimorio (Solo si es un comando que suele usar economía)
@@ -1002,6 +1098,18 @@ async function procesarMensaje(sock, msg) {
 
                 // 5. EJECUTAR COMANDO MODULAR
                 const args = txt.split(' ').slice(1);
+
+                // Proxy de sock: intercepta sendMessage y lo pasa por la cola de salida
+                // Esto hace que TODOS los módulos usen la cola automáticamente sin cambiar nada en ellos.
+                const sockProxy = new Proxy(sock, {
+                    get(target, prop) {
+                        if (prop === 'sendMessage') {
+                            return (jid, content, opts) => enviarConCola(target, jid, content, opts);
+                        }
+                        return typeof target[prop] === 'function' ? target[prop].bind(target) : target[prop];
+                    }
+                });
+
                 const extras = {
                     start, cmd, txt, args, sender, pushName, isGroup, isAdmin, isGlobalAdmin,
                     botState, db, delay, FFMPEG_PATH, ADMIN_NUM,
@@ -1018,7 +1126,7 @@ async function procesarMensaje(sock, msg) {
                 }
 
                 try {
-                    const mExecuted = await handler.handleCommand(start, sock, chatId, msg, args, extras);
+                    const mExecuted = await handler.handleCommand(start, sockProxy, chatId, msg, args, extras);
                     if (mExecuted) return;
                 } catch (e) {
                     console.error(`Error en handler ${start}:`, e.message);
@@ -1066,7 +1174,7 @@ async function procesarMensaje(sock, msg) {
             }
         }
     } catch (e) {
-        console.error('❌ Error fatal en procesarMensaje:', e);
+        console.error('❌ Error fatal en procesarMensaje:', e.message);
     }
 }
 
@@ -1090,10 +1198,10 @@ process.on('SIGTERM', async () => {
 
 // --- MANEJO DE ERRORES GLOBALES (Para evitar crashes silenciosos en Render) ---
 process.on('uncaughtException', (err) => {
-    console.error('❌ [FATAL ERROR] Uncaught Exception:', err);
+    console.error('❌ [FATAL ERROR] Uncaught Exception:', err.message);
 });
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('❌ [FATAL ERROR] Unhandled Rejection at:', promise, 'reason:', reason);
+process.on('unhandledRejection', (reason) => {
+    console.error('❌ [FATAL ERROR] Unhandled Rejection:', reason?.message || reason);
 });
 
 // HF Re-trigger build log

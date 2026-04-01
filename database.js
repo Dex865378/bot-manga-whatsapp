@@ -103,6 +103,14 @@ async function crearTablas() {
             'ALTER TABLE usuarios ADD COLUMN clase_fin INTEGER DEFAULT 0',
             'ALTER TABLE usuarios ADD COLUMN last_bounty INTEGER DEFAULT 0',
             'ALTER TABLE usuarios ADD COLUMN historial TEXT DEFAULT "[]"',
+            'ALTER TABLE usuarios ADD COLUMN antispam INTEGER DEFAULT 1',
+            'ALTER TABLE usuarios ADD COLUMN modo_admin INTEGER DEFAULT 0',
+            'ALTER TABLE usuarios ADD COLUMN pareja TEXT DEFAULT NULL',
+            'ALTER TABLE usuarios ADD COLUMN mascota_tipo TEXT DEFAULT NULL',
+            'ALTER TABLE usuarios ADD COLUMN mascota_nombre TEXT DEFAULT "Mascota"',
+            'ALTER TABLE usuarios ADD COLUMN mascota_hambre INTEGER DEFAULT 100',
+            'ALTER TABLE usuarios ADD COLUMN mascota_last_fed BIGINT DEFAULT 0',
+            'ALTER TABLE grupos_activados ADD COLUMN flash_enabled INTEGER DEFAULT 0',
             'ALTER TABLE grupos_activados ADD COLUMN antispam INTEGER DEFAULT 1',
             'ALTER TABLE grupos_activados ADD COLUMN modo_admin INTEGER DEFAULT 0'
         ];
@@ -233,9 +241,13 @@ async function actualizarUsuario(userId, campos) {
 async function sumarMonedas(userId, cantidad) {
     const u = await obtenerUsuario(userId);
     if (!u) return false;
-    const mult = 1 + ((u.prestigio || 0) * 0.1);
+    
+    // El multiplicador de prestigio solo debe aplicar a las GANANCIAS, no a las pérdidas/restas.
+    const mult = cantidad > 0 ? (1 + ((u.prestigio || 0) * 0.1)) : 1;
     const final = Math.floor(cantidad * mult);
-    const nuevas = (u.monedas || 0) + final;
+    
+    // Asegurar que el balance nunca baje de 0
+    const nuevas = Math.max(0, (u.monedas || 0) + final);
     return await actualizarUsuario(userId, { monedas: nuevas });
 }
 
@@ -303,22 +315,20 @@ async function sumarXP(userId, cantidad) {
         cantidadFinal = Math.floor(cantidadFinal * 1.5);
     }
 
+    // ✅ FIX: Sumar el XP al acumulado actual
     nx += cantidadFinal;
 
-    while (true) {
-        const req = nl * 200;
-        if (nx >= req) {
-            nx -= req;
-            nl++;
-            subio = true;
-        } else if (nx < 0 && nl > 1) {
-            nl--;
-            nx = (nl * 200) + nx;
-        } else break;
+    // ✅ FIX: Calcular subida de nivel (cada nivel requiere nivel*100 XP)
+    const xpParaSiguienteNivel = () => nl * 100;
+    while (nx >= xpParaSiguienteNivel()) {
+        nx -= xpParaSiguienteNivel();
+        nl++;
+        subio = true;
     }
+    if (nx < 0) nx = 0; // Nunca negativo
 
     await actualizarUsuario(userId, { xp: nx, nivel: nl });
-    return subio;
+    return subio; // true si subió de nivel
 }
 
 async function registrarVictoriaDuelo(userId) {
@@ -607,6 +617,22 @@ async function desactivarModoAdmin(chatId) {
         });
         return true;
     } catch (e) { return false; }
+}
+
+async function obtenerGruposConFlash() {
+    if (!connected) await init();
+    try {
+        const res = await dbClient.execute("SELECT group_id FROM config_grupos WHERE flash_enabled = 1");
+        return res.rows.map(r => r.group_id);
+    } catch (e) { return []; }
+}
+
+async function obtenerUsuariosGrupo(gId) {
+    if (!connected) await init();
+    try {
+        const res = await dbClient.execute("SELECT user_id FROM usuarios WHERE xp > 0 LIMIT 50");
+        return res.rows.map(r => r.user_id);
+    } catch (e) { return []; }
 }
 
 module.exports = {

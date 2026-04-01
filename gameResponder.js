@@ -11,7 +11,10 @@ async function handleGameResponse(sock, msg, context) {
     const citaMensajeCorrecto = (quotedMsgId === juego.msgId);
     const esDueño = (juego.responder === sender || juego.pareja === sender || juego.solicitante === sender);
 
-    const esRespuestaValida = (juego.tipo === 'ahorcado') || citaMensajeCorrecto || (esDueño && !isCommand) || (esDueño && ['pedir', 'plantarse', 'pl', 'p', 'seguir', 'retirarse'].includes(cmd.replace('!', '')));
+    // La respuesta es válida si:
+    // 1. Es el juego del ahorcado (global)
+    // 2. Es el DUEÑO del juego Y (ha citado el mensaje correcto O no es un comando)
+    const esRespuestaValida = (juego.tipo === 'ahorcado') || (esDueño && (citaMensajeCorrecto || !isCommand)) || (esDueño && ['pedir', 'plantarse', 'pl', 'p', 'seguir', 'retirarse'].includes(cmd.replace('!', '')));
 
     if (!esRespuestaValida) return false;
 
@@ -19,6 +22,8 @@ async function handleGameResponse(sock, msg, context) {
 
     // Caso Trivia / Quiz / QuizAnime
     if (['quiz', 'quizanime', 'trivia'].includes(juego.tipo)) {
+        if (sender !== juego.responder) return false;
+        if (isCommand) return false;
         const norm = (s) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
         const uAns = norm(cmd);
         const tAns = norm(juego.respuesta);
@@ -100,6 +105,15 @@ async function handleGameResponse(sock, msg, context) {
 
     // Caso Banderas
     if (juego.tipo === 'bandera') {
+        // Solo el jugador que inició el desafío puede responder para evitar robos de apuesta
+        if (sender !== juego.responder) {
+            // Si es un comando, lo dejamos pasar para que el intruso pueda usar otras funciones del bot
+            // Pero si es una respuesta al mensaje del juego, la capturamos
+            if (quotedMsgId === juego.msgId) return true; 
+            return false;
+        }
+        if (isCommand) return false;
+
         const norm = (s) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
         const userAns = norm(cmd);
         const targetAns = norm(juego.pais || juego.palabra || juego.respuesta || "");
@@ -107,7 +121,10 @@ async function handleGameResponse(sock, msg, context) {
         // Limpiar el temporizador al recibir respuesta (sea correcta o no)
         if (juego.timer) clearTimeout(juego.timer);
 
-        if (userAns.length > 0 && (userAns === targetAns || targetAns.includes(userAns))) {
+        // Ajuste de precisión: Acepta si es exacto o si tiene más de 3 letras y está contenido (ej. "Dominicana" para "República Dominicana")
+        const esCorrecto = (userAns === targetAns) || (userAns.length >= 4 && targetAns.includes(userAns));
+
+        if (userAns.length > 0 && esCorrecto) {
             delete botState.juegos[chatId];
             const subtipo = juego.subtipo || 'lugar';
             const premioBase = 60;
@@ -115,7 +132,7 @@ async function handleGameResponse(sock, msg, context) {
             let premioTotal = premioBase;
 
             if (juego.apuesta > 0) {
-                premioTotal = Math.floor(juego.apuesta * 1.5);
+                premioTotal = Math.min(Math.floor(juego.apuesta * 1.5), 1000000);
             }
 
             await db.sumarXP(sender, xpBase);
@@ -168,6 +185,7 @@ async function handleGameResponse(sock, msg, context) {
 
     // Caso Blackjack
     if (juego.tipo === 'bj') {
+        if (sender !== juego.responder) return false;
         const action = cmd.startsWith('!') ? cmd.substring(1) : cmd;
         const deck = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
         const getVal = (c) => (['J', 'Q', 'K'].includes(c) ? 10 : c === 'A' ? 11 : parseInt(c));
@@ -236,6 +254,7 @@ async function handleGameResponse(sock, msg, context) {
 
     // Puente Logic
     if (juego.tipo === 'puente') {
+        if (sender !== juego.responder) return false;
         const choice = cmd.toLowerCase();
         if (!['izq', 'der'].includes(choice)) return false;
         const winProb = juego.winRate || 0.5;
@@ -258,6 +277,7 @@ async function handleGameResponse(sock, msg, context) {
 
     // Bomba Logic
     if (juego.tipo === 'bomba') {
+        if (sender !== juego.responder) return false;
         const choice = cmd.toLowerCase();
         const colores = ['rojo', 'azul', 'verde', 'amarillo'];
         if (!colores.includes(choice)) return false;
@@ -273,6 +293,7 @@ async function handleGameResponse(sock, msg, context) {
 
     // Mazmorra Logic
     if (juego.tipo === 'mazmorra') {
+        if (sender !== juego.responder) return false;
         const choice = cmd.toLowerCase().trim();
 
         if (choice === 'retirarse') {

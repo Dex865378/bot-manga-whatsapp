@@ -1,10 +1,10 @@
 FROM node:20-bullseye
 
-# 1. Instalar dependencias del SISTEMA (FFMPEG, WebP, librerías de stickers, Python para yt-dlp)
+# 1. Instalar dependencias del SISTEMA (SIN Python - ya no lo necesitamos)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     git \
-    python3 \
+    curl \
     libwebp-dev \
     libcairo2-dev \
     libjpeg-dev \
@@ -15,20 +15,23 @@ RUN apt-get update && apt-get install -y \
     graphicsmagick \
     && rm -rf /var/lib/apt/lists/*
 
+# 2. Descargar binario INDEPENDIENTE de yt-dlp (NO necesita Python, lo trae integrado)
+RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o /usr/local/bin/yt-dlp \
+    && chmod +x /usr/local/bin/yt-dlp
 
-# 2. Configurar el directorio de trabajo
+# 3. Configurar el directorio de trabajo
 WORKDIR /app
 
-# 3. Cache de dependencias de Node
+# 4. Cache de dependencias de Node
 COPY package*.json ./
 RUN npm install --omit=dev && npm cache clean --force
 
-# 4. Copiar el resto del bot e ignorar lo innecesario vía .dockerignore
+# 5. Copiar el resto del bot
 COPY . .
 
-# 5. Hugging Face usa el puerto 7860 por defecto
+# 6. Hugging Face usa el puerto 7860
 ENV PORT=7860
 EXPOSE 7860
 
-# 6. Comando de arranque principal (No usar nodemon en producción)
+# 7. Comando de arranque
 CMD ["npm", "start"]

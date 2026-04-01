@@ -94,11 +94,15 @@ module.exports = {
 
         // !bandera [pais/provincia/capitales] [apuesta]
         if (start === '!bandera') {
-            const { paises, provincias, capitales } = require('./triviaData');
+            const { paises, provincias, capitales } = require('../data/triviaData');
             const sub = args[0]?.toLowerCase();
             const apuesta = parseInt(args[1]) || 0;
 
+            const MAX_APUESTA = 1000000;
             if (apuesta > 0) {
+                if (apuesta > MAX_APUESTA) {
+                    return sock.sendMessage(chatId, { text: `🚫 *Apuesta demasiado alta.*\nEl límite máximo es *1,000,000 diky* por partida.` }, { quoted: msg });
+                }
                 const bal = await db.obtenerBalance(sender);
                 if (bal < apuesta) return sock.sendMessage(chatId, { text: '💸 No tienes suficientes diky para esta apuesta.' }, { quoted: msg });
                 const ok = await db.deducirMonedas(sender, apuesta);

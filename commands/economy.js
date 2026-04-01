@@ -4,7 +4,7 @@
 module.exports = {
     name: 'economy',
     isMultiple: true,
-    names: ['!daily', '!w', '!slut', '!perfil', '!p', '!profile', '!config', '!tienda', '!comprar', '!inventario', '!mejor', '!bounty', '!dar', '!canjear', '!marry', '!divorce', '!regalaritem', '!regalar', '!clase', '!prestigio', '!loteria'],
+    names: ['!daily', '!w', '!slut', '!perfil', '!p', '!profile', '!tienda', '!comprar', '!inventario', '!mejor', '!bounty', '!dar', '!canjear', '!marry', '!divorce', '!regalaritem', '!regalar', '!clase', '!prestigio', '!loteria', '!alimentar', '!mascotas'],
     async execute(sock, chatId, msg, args, { start, cmd, txt, sender, isGroup, isGlobalAdmin, db, botState, delay, ADMIN_NUM }) {
 
         // !clase <nombre>
@@ -125,6 +125,13 @@ module.exports = {
 
             if (u.record_pesca) pText += `🎣 **Mejor Pesca:** ${u.record_pesca}\n`;
             pText += `💍 **Casad@:** ${u.pareja ? '@' + u.pareja.split('@')[0] : 'Solter@'}\n`;
+            
+            // --- MOSTRAR MASCOTA ---
+            if (u.mascota_tipo) {
+                pText += `🐾 **Mascota:** [${u.mascota_tipo}] *${u.mascota_nombre}* (❤️ ${u.mascota_hambre}%)\n`;
+            } else {
+                pText += `🐾 **Mascota:** Ninguna\n`;
+            }
 
             pText += `📝 **Bio:** _${bio}_\n`;
             pText += `━━━━━━━━━━━━━━`;
@@ -184,6 +191,7 @@ module.exports = {
                 '11. Brújula del Destino - 🧭 12k (50 usos)',
                 '12. Poción de Suerte - 🍀 25k (+Luck en juegos 2h)',
                 '14. Pokebola - 🔴 2k',
+                '15. Comida Mascota - 🥩 500 (Sacia el hambre)',
                 '\n💎 **MÍTICOS**',
                 '10. Grimorio de Diky - 📖 250k (Poder ancestral)',
                 '13. Fragmento Estelar - ✨ 500k (¿?)'
@@ -193,8 +201,50 @@ module.exports = {
 
         // !comprar
         if (start === '!comprar') {
-            const num = parseInt(args[0]);
             const u = await db.obtenerUsuario(sender);
+            const num = parseInt(args[0]);
+            const pType = args[0]?.toLowerCase();
+            const petTypes = {
+                // Perro — múltiples alias
+                'comun': { e: '🐶', n: 'Perro', p: 5000 },
+                'perro': { e: '🐶', n: 'Perro', p: 5000 },
+                'dog': { e: '🐶', n: 'Perro', p: 5000 },
+                // Gato
+                'gato': { e: '🐱', n: 'Gato', p: 5000 },
+                'cat': { e: '🐱', n: 'Gato', p: 5000 },
+                // Lobo
+                'lobo': { e: '🐺', n: 'Lobo Hunter', p: 15000 },
+                'wolf': { e: '🐺', n: 'Lobo Hunter', p: 15000 },
+                // Zorro
+                'zorro': { e: '🦊', n: 'Zorro Astuto', p: 12000 },
+                'fox': { e: '🦊', n: 'Zorro Astuto', p: 12000 },
+                // Dragón
+                'dragon': { e: '🐲', n: 'Dragón Imperial', p: 100000 },
+                'dragón': { e: '🐲', n: 'Dragón Imperial', p: 100000 },
+                // Fénix
+                'fenix': { e: '🔥', n: 'Fénix Renacido', p: 80000 },
+                'fénix': { e: '🔥', n: 'Fénix Renacido', p: 80000 },
+                'phoenix': { e: '🔥', n: 'Fénix Renacido', p: 80000 },
+                // Pikachu
+                'pikachu': { e: '⚡', n: 'Pikachu', p: 50000 },
+                'pika': { e: '⚡', n: 'Pikachu', p: 50000 },
+                // Mewtwo
+                'mewtwo': { e: '👾', n: 'Mewtwo', p: 250000 }
+            };
+
+            const balance = await db.obtenerBalance(sender);
+
+            // Normalizar input: quitar tildes y convertir a minúsculas para evitar fallos
+            const pTypeNorm = (pType || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+            if (isNaN(num) && petTypes[pTypeNorm]) {
+                const pet = petTypes[pTypeNorm];
+                if (u.mascota_tipo) return sock.sendMessage(chatId, { text: `⚠️ Ya tienes una mascota (${u.mascota_tipo} ${u.mascota_nombre}). Usa !perfil para verla.` }, { quoted: msg });
+                if (balance < pet.p) return sock.sendMessage(chatId, { text: `💸 No tienes los *${pet.p.toLocaleString()}* diky necesarios para adoptar un ${pet.n}.\n💰 Tu saldo: *${balance.toLocaleString()}* diky.` }, { quoted: msg });
+                await db.deducirMonedas(sender, pet.p);
+                await db.actualizarUsuario(sender, { mascota_tipo: pet.e, mascota_nombre: pet.n, mascota_hambre: 100 });
+                return sock.sendMessage(chatId, { text: `🎉 ¡Has adoptado un *${pet.n}* ${pet.e}!\n\n❤️ Hambre: 100%\n\n💡 Cuídalo bien con *!alimentar*.\n🍖 Compra comida con *!comprar 15*.` }, { quoted: msg });
+            }
             const items = {
                 1: { n: 'Pico de Platino', p: 10000, key: 'pico_usos', type: 'uses', amount: 50 },
                 2: { n: 'Cebo Legendario', p: 5000, key: 'cebo_usos', type: 'uses', amount: 50 },
@@ -209,15 +259,15 @@ module.exports = {
                 11: { n: 'Brújula del Destino', p: 12000, key: 'brujula_usos', type: 'uses', amount: 50 },
                 12: { n: 'Poción de Suerte', p: 25000, key: 'luck_fin', type: 'timer', duration: 7200000 },
                 13: { n: 'Fragmento Estelar', p: 500000, key: 'fragmento', type: 'item' },
-                14: { n: 'Pokebola', p: 2000, key: 'pokebola', type: 'item' }
+                14: { n: 'Pokebola', p: 2000, key: 'pokebola', type: 'item' },
+                15: { n: 'Comida Mascota', p: 500, key: 'comida', type: 'item_food' }
             };
             const it = items[num];
-            if (!it) return sock.sendMessage(chatId, { text: '❌ Item no válido o no existe en stock.' });
+            if (!it) return sock.sendMessage(chatId, { text: '❌ Item o mascota no válida. Usa !tienda o !mascotas p/ ver.' });
 
             let finalPrice = it.p;
             if (u.clase === 'Hacker') finalPrice = Math.floor(it.p * 0.9);
 
-            const balance = await db.obtenerBalance(sender);
             if (balance < finalPrice) return sock.sendMessage(chatId, { text: '💸 No tienes suficiente capital (ni con tu pareja).' });
 
             const ok = await db.deducirMonedas(sender, finalPrice);
@@ -236,6 +286,12 @@ module.exports = {
                     const currentUses = u[it.key] || 0;
                     await db.actualizarUsuario(sender, { [it.key]: currentUses + it.amount });
                     logMsg = `✅ ¡Has comprado **${it.n.toUpperCase()}**!\n🔋 Tienes *${currentUses + it.amount}* usos disponibles.`;
+                    break;
+                case 'item_food':
+                    const invF = JSON.parse(u.inventario || '{}');
+                    invF.comida = (invF.comida || 0) + 1;
+                    await db.actualizarUsuario(sender, { inventario: JSON.stringify(invF) });
+                    logMsg = `✅ ¡Has comprado **COMIDA PARA MASCOTA**! Úsala con *!alimentar*.`;
                     break;
                 case 'loteria':
                     if (!botState.loteria) botState.loteria = { participantes: [], pozo: 0 };
@@ -455,13 +511,10 @@ module.exports = {
             const b = await db.obtenerBalance(sender);
             if (b < monto) return sock.sendMessage(chatId, { text: '❌ No tienes suficiente.' });
 
-            const tax = Math.floor(monto * 0.08);
-            const montoReal = monto - tax;
-
             await db.deducirMonedas(sender, monto);
-            await db.sumarMonedas(ment[0], montoReal);
+            await db.sumarMonedas(ment[0], monto);
             return sock.sendMessage(chatId, {
-                text: `💸 Enviado: ${monto} diky\n📊 Impuesto (8%): -${tax} diky\n✅ @${ment[0].split('@')[0]} recibió: *${montoReal}* diky.`,
+                text: `💸 *¡TRANSFERENCIA EXITOSA!*\n━━━━━━━━━━━━━━\n💰 @${sender.split('@')[0]} le envió *${monto.toLocaleString()}* diky a @${ment[0].split('@')[0]}\n✨ Sin impuestos (100% al destinatario)`,
                 mentions: ment
             });
         }
@@ -471,21 +524,36 @@ module.exports = {
             const filter = args[0] || 'all';
             const topM = await db.obtenerTopMonedas(20);
             const topN = await db.obtenerTopNivel(20);
-            let m = '';
+
+            const formatStat = (num) => {
+                if (num >= 1000000000) return (num / 1000000000).toFixed(1).replace(/\.0$/, '') + 'b';
+                if (num >= 1000000) return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'm';
+                if (num >= 1000) return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+                return (num || 0).toLocaleString('es-ES');
+            };
+
+            let m = '🏆 *LEADERBOARD GLOBAL* 🏆\n━━━━━━━━━━━━━━━\n\n';
+
             if (filter === 'lvl' || filter === 'all') {
-                m += '🔥 **TOP NIVEL** 🔥\n';
-                topN.forEach((u, i) => {
-                    const isG = u.nivel >= 9999;
-                    m += `${i + 1}. ${u.nombre_wa || u.user_id.split('@')[0]} - Lvl ${isG ? '∞' : u.nivel}\n`;
+                m += '👑 *LEVEL TOP*\n';
+                topN.slice(0, 10).forEach((u, i) => {
+                    const name = u.nombre_wa || u.user_id.split('@')[0];
+                    const lvl = formatStat(u.nivel);
+                    m += `[ ✨ *${lvl}* ] ➔ ${name}\n`;
                 });
+                if (filter === 'all') m += '\n';
             }
+
             if (filter === 'diky' || filter === 'all') {
-                m += '\n💰 **TOP RIQUEZA** 💰\n';
-                topM.forEach((u, i) => {
-                    const isG = u.nivel >= 9999;
-                    m += `${i + 1}. ${u.nombre_wa || u.user_id.split('@')[0]} - ${isG ? '∞' : u.monedas} diky\n`;
+                m += '💰 *DIKY TYCOONS*\n';
+                topM.slice(0, 10).forEach((u, i) => {
+                    const name = u.nombre_wa || u.user_id.split('@')[0];
+                    const bal = formatStat(u.monedas);
+                    m += `[ 💎 *${bal}* ] ➔ ${name}\n`;
                 });
             }
+
+            m += '\n━━━━━━━━━━━━━━━\n💡 _¡Usa !perfil para tus stats!_';
             return sock.sendMessage(chatId, { text: m });
         }
 
@@ -527,7 +595,7 @@ module.exports = {
         // !config <tipo> <valor>
         if (start === '!config') {
             const type = args[0]?.toLowerCase();
-            const val = args.slice(1).join(' ');
+            let val = args.slice(1).join(' ');
             if (!type || !val) {
                 return sock.sendMessage(chatId, { text: '⚙️ **CONFIGURACIÓN DE PERFIL**\n━━━━━━━━━━━━━━\n• *!config bio <texto>*\n• *!config edad <número>*\n• *!config nombre <texto>*\n• *!config nacimiento <fecha>*\n• *!config altura <texto>*\n• *!config fav manga/anime <texto>*\n• *!config power <texto>*\n━━━━━━━━━━━━━━' });
             }
@@ -542,9 +610,14 @@ module.exports = {
 
             let field = mapper[type];
             if (!field && type === 'fav') {
-                if (args[1]?.toLowerCase() === 'manga') { field = 'manga_fav'; args.splice(1, 1); }
-                else if (args[1]?.toLowerCase() === 'anime') { field = 'anime_fav'; args.splice(1, 1); }
-                val = args.slice(1).join(' ');
+                if (args[1]?.toLowerCase() === 'manga') { 
+                    field = 'manga_fav'; 
+                    val = args.slice(2).join(' ');
+                }
+                else if (args[1]?.toLowerCase() === 'anime') { 
+                    field = 'anime_fav'; 
+                    val = args.slice(2).join(' ');
+                }
             }
 
             if (!field) return sock.sendMessage(chatId, { text: '❌ Tipo de configuración no válido.' });
@@ -560,7 +633,6 @@ module.exports = {
             else return sock.sendMessage(chatId, { text: '❌ Error al guardar en la base de datos.' });
         }
 
-        // !canjear
         if (start === '!canjear') {
             const val = args[0];
             const u = await db.obtenerUsuario(sender);
@@ -568,14 +640,24 @@ module.exports = {
             let monto = (val === 'all') ? balance : parseInt(val);
 
             if (!monto || isNaN(monto) || monto <= 0) {
-                return sock.sendMessage(chatId, { text: '🎫 **CANJE DE DIKYS**\nIntercambia dikys por XP (Ratio 2:1)\nUso: *!canjear <monto>*' });
+                return sock.sendMessage(chatId, {
+                    text: `🎫 *CANJE DE DIKYS*\n━━━━━━━━━━━━━━\n📊 Ratio: *100 diky = 75 XP*\n💰 Tu saldo: *${balance.toLocaleString()}* diky\n\nUso: *!canjear <monto>* o *!canjear all*`
+                }, { quoted: msg });
             }
-            if (balance < monto) return sock.sendMessage(chatId, { text: '❌ No tienes suficiente.' });
+            if (balance < monto) return sock.sendMessage(chatId, { text: `❌ No tienes suficiente. Tienes *${balance.toLocaleString()}* diky.` }, { quoted: msg });
 
-            const xpGanada = Math.floor(monto / 2);
-            await db.deducirMonedas(sender, monto);
-            await db.sumarXP(sender, xpGanada);
-            return sock.sendMessage(chatId, { text: `🎫 **CANJE EXITOSO**\n💰 -${monto} diky\n✨ +${xpGanada} XP` });
+            const xpGanada = Math.floor(monto * 0.75);
+
+            // Primero deducir, luego sumar XP
+            const okDeducir = await db.deducirMonedas(sender, monto);
+            if (!okDeducir) return sock.sendMessage(chatId, { text: '❌ Error al procesar el canje. Inténtalo de nuevo.' }, { quoted: msg });
+
+            const subioNivel = await db.sumarXP(sender, xpGanada);
+
+            let resMsg = `🎫 *¡CANJE EXITOSO!*\n━━━━━━━━━━━━━━\n💰 -*${monto.toLocaleString()}* diky\n✨ +*${xpGanada.toLocaleString()}* XP`;
+            if (subioNivel) resMsg += `\n\n🆙 *¡SUBISTE DE NIVEL!* ¡Felicidades!`;
+
+            return sock.sendMessage(chatId, { text: resMsg }, { quoted: msg });
         }
 
         // !loteria (Ver estado)
@@ -632,6 +714,133 @@ module.exports = {
             return sock.sendMessage(chatId, {
                 text: `💔 @${sender.split('@')[0]} se ha divorciado de @${ex.split('@')[0]}. La relación ha terminado.`,
                 mentions: [sender, ex]
+            }, { quoted: msg });
+        }
+
+        // !regalar @user <monto> — Alias de !dar (sin impuesto)
+        if (start === '!regalar') {
+            const monto = Math.abs(parseInt(args[0]));
+            const ment = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+            if (isNaN(monto) || !ment[0]) return sock.sendMessage(chatId, { text: '🎁 Uso: *!regalar <monto> @user*' });
+            if (monto < 100) return sock.sendMessage(chatId, { text: '💸 Mínimo 100 diky.' });
+
+            const b = await db.obtenerBalance(sender);
+            if (b < monto) return sock.sendMessage(chatId, { text: '❌ No tienes suficientes diky.' });
+
+            await db.deducirMonedas(sender, monto);
+            await db.sumarMonedas(ment[0], monto);
+            return sock.sendMessage(chatId, {
+                text: `🎁 *¡REGALO ENVIADO!*\n━━━━━━━━━━━━━━\n💰 @${sender.split('@')[0]} le regaló *${monto}* diky a @${ment[0].split('@')[0]}\n✨ Sin impuestos (es un regalo de corazón 💖)`,
+                mentions: [sender, ment[0]]
+            }, { quoted: msg });
+        }
+
+        // !regalaritem @user <item> — Regalar un item del inventario
+        if (start === '!regalaritem') {
+            const u = await db.obtenerUsuario(sender);
+            const ment = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+            if (!ment[0]) return sock.sendMessage(chatId, { text: '🎁 Uso: *!regalaritem @user <nombre_item>*' });
+            if (ment[0] === sender) return sock.sendMessage(chatId, { text: '❓ No puedes regalarte a ti mismo.' });
+
+            const itemName = args.slice(1).join(' ').toLowerCase();
+            if (!itemName) return sock.sendMessage(chatId, { text: '❓ Especifica el nombre del item: *!regalaritem @user pico_usos*' });
+
+            let inv = {};
+            try { inv = JSON.parse(u.inventario || '{}'); } catch (e) { }
+
+            // Buscar el item por nombre parcial
+            const itemKey = Object.keys(inv).find(k => k.toLowerCase().includes(itemName) && inv[k] > 0);
+            if (!itemKey) return sock.sendMessage(chatId, { text: `❌ No tienes *${itemName}* en tu inventario o ya no te queda ninguno.` });
+
+            inv[itemKey] -= 1;
+            await db.actualizarUsuario(sender, { inventario: JSON.stringify(inv) });
+
+            // Dar al destinatario
+            const targetU = await db.obtenerUsuario(ment[0]);
+            let invT = {};
+            try { invT = JSON.parse(targetU.inventario || '{}'); } catch (e) { }
+            invT[itemKey] = (invT[itemKey] || 0) + 1;
+            await db.actualizarUsuario(ment[0], { inventario: JSON.stringify(invT) });
+
+            return sock.sendMessage(chatId, {
+                text: `🎁 *¡ITEM REGALADO!*\n━━━━━━━━━━━━━━\n📦 @${sender.split('@')[0]} le regaló *1x ${itemKey.toUpperCase()}* a @${ment[0].split('@')[0]}`,
+                mentions: [sender, ment[0]]
+            }, { quoted: msg });
+        }
+
+        // !mascotas — Ver mascotas disponibles para comprar
+        if (start === '!mascotas') {
+            const u = await db.obtenerUsuario(sender);
+            const lista = [
+                { e: '🐶', n: 'Perro',             tipo: 'comun',    p: 5000,   desc: 'Leal y común' },
+                { e: '🐱', n: 'Gato',              tipo: 'gato',     p: 5000,   desc: 'Independiente y curioso' },
+                { e: '🐺', n: 'Lobo Hunter',       tipo: 'lobo',     p: 15000,  desc: 'Feroz y leal' },
+                { e: '🦊', n: 'Zorro Astuto',      tipo: 'zorro',    p: 12000,  desc: 'Inteligente y pícaro' },
+                { e: '🐲', n: 'Dragón Imperial',   tipo: 'dragon',   p: 100000, desc: 'Majestuoso y poderoso' },
+                { e: '🔥', n: 'Fénix Renacido',    tipo: 'fenix',    p: 80000,  desc: 'Inmortal y ardiente' },
+                { e: '⚡', n: 'Pikachu',            tipo: 'pikachu',  p: 50000,  desc: 'Eléctrico y entrañable' },
+                { e: '👾', n: 'Mewtwo',             tipo: 'mewtwo',   p: 250000, desc: 'Legendario y terrorífico' },
+            ];
+
+            let m = `🐾 *TIENDA DE MASCOTAS* 🐾\n━━━━━━━━━━━━━━\n`;
+            lista.forEach(pet => {
+                m += `${pet.e} *${pet.n}* — ${pet.p.toLocaleString()} diky\n   _${pet.desc}_\n   👉 !comprar ${pet.tipo}\n\n`;
+            });
+            m += `━━━━━━━━━━━━━━\n`;
+
+            if (u.mascota_tipo) {
+                m += `🐾 Tu mascota actual: *${u.mascota_nombre}* ${u.mascota_tipo} (❤️ ${u.mascota_hambre}% hambre)\n`;
+                m += `🍖 Aliméntala con *!alimentar*`;
+            } else {
+                m += `💡 No tienes mascota. ¡Adopta una!`;
+            }
+
+            return sock.sendMessage(chatId, { text: m }, { quoted: msg });
+        }
+
+        // !alimentar — Alimentar a tu mascota
+        if (start === '!alimentar') {
+            const u = await db.obtenerUsuario(sender);
+
+            if (!u.mascota_tipo) {
+                return sock.sendMessage(chatId, {
+                    text: `🐾 No tienes ninguna mascota.\n💡 Compra una en *!mascotas*`
+                }, { quoted: msg });
+            }
+
+            // Revisar si tiene comida en inventario
+            let inv = {};
+            try { inv = JSON.parse(u.inventario || '{}'); } catch (e) { }
+
+            if (!inv.comida || inv.comida <= 0) {
+                return sock.sendMessage(chatId, {
+                    text: `🍖 No tienes comida para *${u.mascota_nombre}* ${u.mascota_tipo}.\n\n💡 Compra comida en la *!tienda* (item #15) — 500 diky.`
+                }, { quoted: msg });
+            }
+
+            // Consumir 1 comida
+            inv.comida -= 1;
+            const hambreActual = u.mascota_hambre || 0;
+            const nuevoHambre = Math.min(100, hambreActual + 40);
+            const bonusXP = 30;
+
+            await db.actualizarUsuario(sender, {
+                inventario: JSON.stringify(inv),
+                mascota_hambre: nuevoHambre
+            });
+            await db.sumarXP(sender, bonusXP);
+
+            const mensajes = [
+                `😋 *${u.mascota_nombre}* ${u.mascota_tipo} devoró la comida con entusiasmo.`,
+                `🍗 *${u.mascota_nombre}* ${u.mascota_tipo} meneó la cola de felicidad al comer.`,
+                `✨ *${u.mascota_nombre}* ${u.mascota_tipo} ronroneó/ladró con satisfacción.`,
+                `💖 *${u.mascota_nombre}* ${u.mascota_tipo} te miró con amor después de comer.`
+            ];
+            const msg_pet = mensajes[Math.floor(Math.random() * mensajes.length)];
+
+            const comidaRestante = inv.comida || 0;
+            return sock.sendMessage(chatId, {
+                text: `🍖 *¡MASCOTA ALIMENTADA!* 🐾\n━━━━━━━━━━━━━━\n${msg_pet}\n\n❤️ Hambre: *${hambreActual}%* → *${nuevoHambre}%*\n✨ +${bonusXP} XP por cuidar a tu mascota\n🍗 Comidas restantes: *${comidaRestante}*\n━━━━━━━━━━━━━━`
             }, { quoted: msg });
         }
     }
