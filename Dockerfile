@@ -1,6 +1,6 @@
 FROM node:20-bullseye
 
-# 1. Instalar dependencias del SISTEMA (SIN Python - ya no lo necesitamos)
+# 1. Instalar dependencias del sistema
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     git \
@@ -15,21 +15,24 @@ RUN apt-get update && apt-get install -y \
     graphicsmagick \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Descargar binario INDEPENDIENTE de yt-dlp (NO necesita Python, lo trae integrado)
-RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o /usr/local/bin/yt-dlp \
-    && chmod +x /usr/local/bin/yt-dlp
+# 2. Instalar yt-dlp como binario independiente (NO necesita Python)
+#    Se descarga siempre la última versión para máxima compatibilidad con YouTube
+RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux \
+    -o /usr/local/bin/yt-dlp \
+    && chmod +x /usr/local/bin/yt-dlp \
+    && yt-dlp --version
 
 # 3. Configurar el directorio de trabajo
 WORKDIR /app
 
-# 4. Cache de dependencias de Node
+# 4. Cache de dependencias de Node (capa separada para builds más rápidos)
 COPY package*.json ./
 RUN npm install --omit=dev && npm cache clean --force
 
-# 5. Copiar el resto del bot
+# 5. Copiar el código del bot
 COPY . .
 
-# 6. Hugging Face usa el puerto 7860
+# 6. Hugging Face Spaces usa el puerto 7860
 ENV PORT=7860
 EXPOSE 7860
 
