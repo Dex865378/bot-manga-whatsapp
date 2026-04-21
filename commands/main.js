@@ -5,7 +5,7 @@ module.exports = {
     name: 'main',
     isMultiple: true,
     names: ['!menu', '!menu2', '!ping', '!s', '!sticker', '!toimg'],
-    async execute(sock, chatId, msg, args, { start, cmd, txt, isGroup, sender, pushName, downloadMediaMessage, convertirAWebp, FFMPEG_PATH, botState }) {
+    async execute(sock, chatId, msg, args, { start, cmd, txt, isGroup, sender, pushName, downloadMediaMessage, convertirAWebp, FFMPEG_PATH, botState, obtenerImagenesRecientes }) {
 
         // !ping
         if (start === '!ping') {
@@ -54,14 +54,12 @@ module.exports = {
             mText += `• !bot <on/off>\n`;
             mText += `• !adm <on/off>\n`;
             mText += `• !antispam <on/off>\n`;
-            mText += `• !mododios (Stats infinitas)\n`;
             mText += `• !tag (Mencionar a todos)\n`;
             mText += `• !kick (Eliminar usuario)\n`;
             mText += `• !bienvenida (Configurar)\n`;
             mText += `• !setbienvenida (Msj personal)\n`;
             mText += `• !reglas (Ver/Configurar)\n`;
-            mText += `• !sorteo (Azar por comas)\n`;
-            mText += `• !sincronizar (Base de datos)\n\n`;
+            mText += `• !sorteo (Azar por comas)\n\n`;
 
             mText += `👤 *[ PERFIL Y SOCIAL ]*\n`;
             mText += `• !perfil / !p / !profile\n`;
@@ -86,6 +84,7 @@ module.exports = {
             mText += `• !loteria (Participar/Ver)\n`;
             mText += `• !w (Trabajar - 1h de CO)\n`;
             mText += `• !slut (Ganancia rápida)\n`;
+            mText += `• !robar (75-250 diky / 15min)\n`;
             mText += `• !tienda (Ver lista de items)\n`;
             mText += `• !comprar <número>\n\n`;
 
@@ -171,11 +170,79 @@ module.exports = {
             return sock.sendMessage(chatId, { text: mText }, { quoted: msg });
         }
 
-        // !sticker / !s
+        // !sticker / !s - Ahora soporta múltiples imágenes
         if (start === '!sticker' || start === '!s') {
             const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+            const arg = args[0]?.toLowerCase();
+            
+            // === MODO MÚLTIPLE: !s all o !s last N ===
+            if (arg === 'all' || arg === 'todo' || arg?.startsWith('last')) {
+                const cantidad = arg?.startsWith('last') ? parseInt(arg.replace('last', '')) || 5 : 10;
+                const maxImages = Math.min(Math.max(cantidad, 1), 15); // Entre 1 y 15
+                
+                // Notificar inicio
+                await sock.sendMessage(chatId, { 
+                    text: `🖼️ *Buscando últimas ${maxImages} imágenes...*` 
+                }, { quoted: msg });
+                
+                // Usar el cache de imágenes recientes (implementado en index.js)
+                let imagenesEncontradas = [];
+                if (obtenerImagenesRecientes) {
+                    imagenesEncontradas = obtenerImagenesRecientes(chatId, maxImages);
+                }
+                
+                if (imagenesEncontradas.length === 0) {
+                    return sock.sendMessage(chatId, { 
+                        text: '🖼️ No encontré imágenes recientes en el cache.\n💡 Manda unas imágenes primero, o usa *!s* respondiendo a una imagen específica.' 
+                    }, { quoted: msg });
+                }
+                
+                // Procesar imágenes encontradas
+                await sock.sendMessage(chatId, { 
+                    text: `🖼️ *Creando ${imagenesEncontradas.length} stickers...*\n⏳ Uno por uno para no saturar.` 
+                }, { quoted: msg });
+                
+                let exitosos = 0;
+                let fallidos = 0;
+                
+                for (let i = 0; i < imagenesEncontradas.length; i++) {
+                    try {
+                        const m = imagenesEncontradas[i];
+                        const buffer = await downloadMediaMessage(m, 'buffer', {});
+                        if (!buffer) {
+                            fallidos++;
+                            continue;
+                        }
+                        
+                        const stiker = await convertirAWebp(buffer, false);
+                        if (stiker) {
+                            await sock.sendMessage(chatId, { sticker: stiker });
+                            exitosos++;
+                            // Delay entre stickers
+                            if (i < imagenesEncontradas.length - 1) await new Promise(r => setTimeout(r, 600));
+                        } else {
+                            fallidos++;
+                        }
+                    } catch (e) {
+                        console.error(`[STICKER BATCH] Error en imagen ${i + 1}:`, e.message);
+                        fallidos++;
+                    }
+                }
+                
+                // Resumen final
+                let resumen = `✅ *Stickers creados: ${exitosos}/${imagenesEncontradas.length}*`;
+                if (fallidos > 0) resumen += `\n❌ Fallidos: ${fallidos}`;
+                resumen += `\n\n💡 *Tip:* Usa *!s* respondiendo a una imagen específica, o *!s last 5* para las últimas 5.`;
+                return sock.sendMessage(chatId, { text: resumen }, { quoted: msg });
+            }
+            
+            // === MODO INDIVIDUAL (comportamiento original) ===
             const media = msg.message?.imageMessage || msg.message?.videoMessage || quoted?.imageMessage || quoted?.videoMessage;
-            if (!media) return sock.sendMessage(chatId, { text: '🖼️ Responde a una imagen o video con *!sticker*' });
+            if (!media) {
+                return sock.sendMessage(chatId, { 
+                    text: '🖼️ *Cómo usar el sticker maker:*\n\n1️⃣ Responde a una imagen/video con *!s*\n2️⃣ O usa *!s all* para las últimas 10 imágenes\n3️⃣ O usa *!s last 5* para las últimas 5 imágenes\n\n⚠️ Videos máximo 10 segundos.' 
+                }, { quoted: msg });
+            }
 
             // Validación estricta: Limitar videos a 10 segundos
             const videoInfo = msg.message?.videoMessage || quoted?.videoMessage;
@@ -187,7 +254,10 @@ module.exports = {
                 const buffer = await downloadMediaMessage(quoted ? { message: quoted } : msg, 'buffer', {});
                 const stiker = await convertirAWebp(buffer, !!(msg.message?.videoMessage || quoted?.videoMessage));
                 if (stiker) return sock.sendMessage(chatId, { sticker: stiker }, { quoted: msg });
-            } catch (e) { return sock.sendMessage(chatId, { text: '❌ Error al crear sticker.' }); }
+            } catch (e) { 
+                console.error('[STICKER] Error:', e.message);
+                return sock.sendMessage(chatId, { text: '❌ Error al crear sticker.' }); 
+            }
         }
 
         // !toimg

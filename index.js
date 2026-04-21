@@ -28,15 +28,22 @@ const { useTursoAuthState } = require('./turso-auth');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const handler = require('./commandHandler');
 const { handleGameResponse } = require('./gameResponder');
-// MangaDex removido (no necesario para funcionalidad core)
 const execFileAsync = promisify(execFile);
 
-// --- CONFIG ---
-const PORT = process.env.PORT || 7860;
-const AUTH_DIR = path.join(__dirname, '.bot_session');
-const ADMIN_NUM = process.env.NUMERO_ADMIN; // El Jefe (Permisos)
-const BOT_NUMBER = process.env.NUMERO_BOT || ADMIN_NUM; // El Bot (Vinculación)
-const RENDER_URL = process.env.RENDER_EXTERNAL_URL;
+// 🧰 Utils modularizados
+const { LRUCache, fetchWithRetry, createLogger } = require('./utils');
+const { CONFIG } = require('./config');
+const { aiService } = require('./services');
+
+// Logger para el core
+const logger = createLogger('core');
+
+// --- CONFIG (Centralizada desde config/index.js) ---
+const PORT = CONFIG.PORT;
+const AUTH_DIR = CONFIG.AUTH_DIR;
+const ADMIN_NUM = CONFIG.ADMIN_NUM;
+const BOT_NUMBER = CONFIG.BOT_NUMBER;
+const RENDER_URL = CONFIG.RENDER_URL;
 
 let FFMPEG_PATH = 'ffmpeg';
 try { FFMPEG_PATH = require('@ffmpeg-installer/ffmpeg').path; } catch (e) { }
@@ -55,12 +62,12 @@ setInterval(() => {
         if (ahora - ts > TTL_COOLDOWN) { cooldowns.delete(key); eliminados++; }
     }
     if (eliminados > 0) console.log(`[GC] Cooldowns limpiados: ${eliminados} entradas | Restantes: ${cooldowns.size}`);
-}, 10 * 60 * 1000);
+}, 15 * 60 * 1000);
 
 let procesosActivos = 0; // LIMITADOR DE HARDWARE
-const MAX_PROCESOS = 5; // Máximo de tareas pesadas simultáneas
+const MAX_PROCESOS = 15; // Máximo de tareas pesadas simultáneas (aumentado para mejor rendimiento)
 const colaHeavy = []; // Cola para tareas pesadas en espera
-const MAX_COLA = 10; // Máximo de tareas encoladas
+const MAX_COLA = 30; // Máximo de tareas encoladas (aumentado para grupos activos)
 
 // ============================================================
 //          COLA DE SALIDA (Anti rate-limit de WhatsApp)
@@ -70,6 +77,65 @@ const MAX_COLA = 10; // Máximo de tareas encoladas
 // La solución: los mensajes salen en cola, 1 cada 250ms max.
 // Así NADIE es bloqueado, pero los mensajes salen ordenados y seguros.
 const colaSalida = new Map(); // chatId -> { cola: [], procesando: bool }
+global.colaSalida = colaSalida; // Exponer para diagnósticos
+
+// Cache de imágenes recientes por chat (para !s all) - OPTIMIZADO
+// Solo guardamos el msg.key (metadata), no todo el mensaje, para ahorrar RAM
+const imagenesRecientes = new Map(); // chatId -> Array de {remoteJid, id, timestamp}
+const MAX_IMAGENES_CACHE = 15; // Máximo 15 imágenes por chat
+const TTL_IMAGENES_CACHE = 5 * 60 * 1000; // 5 minutos de vida
+
+// Función para guardar referencia a imagen (ligera, solo metadata)
+function guardarImagenReciente(chatId, msg) {
+    if (!imagenesRecientes.has(chatId)) {
+        imagenesRecientes.set(chatId, []);
+    }
+    const cache = imagenesRecientes.get(chatId);
+    
+    // Solo guardamos los datos necesarios para descargar la imagen después
+    // Esto es MUCHO más liviano que guardar todo el objeto msg
+    const imageRef = {
+        remoteJid: msg.key?.remoteJid || chatId,
+        id: msg.key?.id,
+        timestamp: Date.now()
+    };
+    
+    // Agregar al inicio (más reciente)
+    cache.unshift(imageRef);
+    
+    // Limpiar duplicados (mismo id) y limitar tamaño
+    const seen = new Set();
+    const limpio = cache.filter(item => {
+        if (!item.id || seen.has(item.id)) return false;
+        seen.add(item.id);
+        return true;
+    }).slice(0, MAX_IMAGENES_CACHE);
+    
+    imagenesRecientes.set(chatId, limpio);
+}
+
+// Función para obtener referencias a imágenes recientes
+// Devuelve objetos compatibles con downloadMediaMessage
+function obtenerImagenesRecientes(chatId, cantidad = 10) {
+    const cache = imagenesRecientes.get(chatId) || [];
+    const ahora = Date.now();
+    
+    // Filtrar por TTL y devolver los más recientes
+    const validas = cache.filter(item => {
+        return (ahora - item.timestamp) < TTL_IMAGENES_CACHE;
+    }).slice(0, cantidad);
+    
+    // Devolvemos objetos con la estructura mínima que necesita downloadMediaMessage
+    return validas.map(item => ({
+        key: {
+            remoteJid: item.remoteJid,
+            id: item.id,
+            fromMe: false
+        }
+    }));
+}
+
+const MAX_COLA_SALIDA = 50; // Límite máximo de mensajes en cola por chat
 
 async function enviarConCola(sock, chatId, content, options) {
     if (!colaSalida.has(chatId)) {
@@ -78,6 +144,12 @@ async function enviarConCola(sock, chatId, content, options) {
     const estado = colaSalida.get(chatId);
 
     return new Promise((resolve, reject) => {
+        // Si la cola está llena, descartar el mensaje más antiguo (evitar colapso)
+        if (estado.cola.length >= MAX_COLA_SALIDA) {
+            const dropped = estado.cola.shift();
+            dropped.reject(new Error('Cola saturada - mensaje descartado'));
+            console.log(`[COLA WARN] Chat ${chatId}: cola llena, mensaje descartado`);
+        }
         estado.cola.push({ content, options, resolve, reject });
         if (!estado.procesando) procesarColaSalida(sock, chatId);
     });
@@ -105,8 +177,13 @@ async function procesarColaSalida(sock, chatId) {
                 reject(e);
             }
         }
-        // Pausa entre mensajes: 250ms — suficiente para no hacer flood
-        if (estado.cola.length > 0) await new Promise(r => setTimeout(r, 250));
+        // Pausa entre mensajes: ultra-dinámica según carga
+        // 50ms modo turbo (>10 msgs), 100ms normal, 250ms protección flood
+        let delayMs;
+        if (estado.cola.length > 10) delayMs = 50;      // Modo turbo: cola colapsada
+        else if (estado.cola.length > 5) delayMs = 100; // Normal
+        else delayMs = 250;                             // Protección flood
+        if (estado.cola.length > 0) await new Promise(r => setTimeout(r, delayMs));
     }
 
     estado.procesando = false;
@@ -186,8 +263,8 @@ async function flushStatsBatch() {
     if (comandosCopy.size > 0) console.log(`📊 [Batch] Sincronizados ${comandosCopy.size} usuarios, ${rachasCopy.size} rachas.`);
 }
 
-// Flush automático cada 2 minutos
-setInterval(flushStatsBatch, 2 * 60 * 1000);
+// Flush automático cada 1 minuto (para grupos grandes, que se vea más rápido)
+setInterval(flushStatsBatch, 1 * 60 * 1000);
 
 // Flush al apagar el proceso para no perder datos
 process.on('SIGTERM', async () => { await flushStatsBatch(); process.exit(0); });
@@ -203,6 +280,62 @@ function verificarCooldown(userId, comando, ms = 3000) {
     return 0;
 }
 
+// ============================================================
+//              FUNCIÓN DE BIENVENIDA (Reutilizable)
+// ============================================================
+// Usada por: group-participants.update (admin) y mensajes de sistema (sin admin)
+async function enviarBienvenida(sock, groupId, participantJid) {
+    try {
+        const conf = await db.tieneBienvenida(groupId);
+        if (!conf.activa) return;
+        
+        const nombre = participantJid.split('@')[0];
+        
+        let defaultMsg = `¡Hola @${nombre}! 🎉\nBienvenid@ al grupo.\n\n📜 Escribe *!menu* para ver todos los comandos.\n🎮 Hay juegos, stickers, anime y mucho más.\n\n¡Diviértete! 🐱✨`;
+        let customMsg = conf.mensaje || defaultMsg;
+        
+        // Reemplazar variables
+        customMsg = customMsg.replace(/{usuario}/gi, `@${nombre}`).replace(/{user}/gi, `@${nombre}`);
+        
+        // Agregar mención si no existe
+        if (!customMsg.includes(`@${nombre}`)) {
+            customMsg = `¡Hola @${nombre}!\n\n` + customMsg;
+        }
+        
+        // Enviar imagen de bienvenida
+        const imgPath = path.join(__dirname, 'imagen_bienvenida.png');
+        if (fs.existsSync(imgPath)) {
+            try {
+                const captionFinal = `╔══════════════════════╗\n║    😺 *¡BIENVENID@!* 😺    ║\n╚══════════════════════╝\n\n${customMsg}`;
+                await sock.sendMessage(groupId, {
+                    image: fs.readFileSync(imgPath),
+                    caption: captionFinal,
+                    mentions: [participantJid]
+                });
+                console.log(`📸 Bienvenida enviada a ${nombre}`);
+            } catch (eImg) {
+                console.error(`❌ Error imagen bienvenida:`, eImg.message);
+                await sock.sendMessage(groupId, { text: customMsg, mentions: [participantJid] });
+            }
+        } else {
+            await sock.sendMessage(groupId, { text: customMsg, mentions: [participantJid] });
+        }
+        
+        // Pausa y sticker
+        await delay(1500);
+        const stickerPath = path.join(__dirname, 'sticker_bienvenida.webp');
+        if (fs.existsSync(stickerPath)) {
+            try {
+                await sock.sendMessage(groupId, { sticker: fs.readFileSync(stickerPath) });
+            } catch (eStk) {
+                console.error(`❌ Error sticker bienvenida:`, eStk.message);
+            }
+        }
+    } catch (e) {
+        console.error('❌ Error en enviarBienvenida:', e.message);
+    }
+}
+
 if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
 
 // --- IA CONFIG ---
@@ -216,36 +349,38 @@ const botState = {
     isConnected: false,
     startTime: Date.now(),
     msgCount: 0,
-    juegos: {},       // Para trivias y ahorcado
+    juegos: {},       // Para trivias y ahorcado (se limpian al terminar)
     duelos: {},       // Retos de duelo pendientes { targetJid: { retador, apuesta, expira } }
     propuestasBodas: {}, // Propuestas de matrimonio pendientes { targetJid: { de, expira } }
     modoAdmin: {},    // Grupos con modo solo-admins activo
-    configIA: {},      // Caché de configuración de IA por grupo
-    cacheTrad: {},     // Caché de traducciones
-    mangaInfo: {},     // Caché de descripciones de mangas
-    silenciados: {},   // Usuarios silenciados por tiempo { userId: endTime }
+    
+    // 🧠 Cachés LRU con límites desde CONFIG (anti memory-leak)
+    configIA: new LRUCache(100, 30 * 60 * 1000),                    // Configuración IA
+    cacheTrad: new LRUCache(CONFIG.CACHE.TRADUCCIONES.max, CONFIG.CACHE.TRADUCCIONES.ttl),
+    mangaInfo: new LRUCache(CONFIG.CACHE.MANGA_INFO.max, CONFIG.CACHE.MANGA_INFO.ttl),
+    silenciados: new LRUCache(CONFIG.CACHE.SILENCIADOS.max, CONFIG.CACHE.SILENCIADOS.ttl),
+    
     antiSpam: {
-        active: true, // Activado por defecto
-        limit: 100,    // 100 comandos
-        interval: 60 * 60 * 1000, // 1 hora
-        banTime: 2 * 60 * 60 * 1000, // 2 horas
-        tracker: new Map() // { userId: { count, startTime } }
+        active: CONFIG.FEATURES.ANTI_SPAM,
+        limit: 100,
+        interval: 60 * 60 * 1000,
+        banTime: 2 * 60 * 60 * 1000,
+        tracker: new Map()
     },
-    seConectoAlgunaVez: false, // Flag para evitar nukear sesiones vivas
+    seConectoAlgunaVez: false,
     instanceId: Math.random().toString(36).substring(7).toUpperCase(),
-    bounties: {},
-    escudos: {},
-    groupCache: new Map(), // Caché de configuración de grupos
-    adminCache: new Map()  // Caché de administradores
+    bounties: new LRUCache(CONFIG.CACHE.TRADUCCIONES.max, 7 * 24 * 60 * 60 * 1000),
+    escudos: new LRUCache(200, 24 * 60 * 60 * 1000),
+    groupCache: new LRUCache(CONFIG.CACHE.GROUP_CONFIG.max, CONFIG.CACHE.GROUP_CONFIG.ttl),
+    adminCache: new LRUCache(CONFIG.CACHE.ADMIN_CACHE.max, CONFIG.CACHE.ADMIN_CACHE.ttl)
 };
 
 const TTL_CONFIG = 5 * 60 * 1000; // 5 minutos para caché de config
 
-// Helper para obtener configuración de grupo con caché agresiva
+// Helper para obtener configuración de grupo con caché LRU
 async function obtenerConfigGrupo(chatId) {
-    const ahora = Date.now();
     const cached = botState.groupCache.get(chatId);
-    if (cached && (ahora - cached.time < TTL_CONFIG)) return cached.data;
+    if (cached) return cached;
 
     try {
         const [active, ai] = await Promise.all([
@@ -254,10 +389,10 @@ async function obtenerConfigGrupo(chatId) {
         ]);
 
         const config = { active, ai };
-        botState.groupCache.set(chatId, { data: config, time: ahora });
+        botState.groupCache.set(chatId, config);
         return config;
     } catch (e) {
-        return cached ? cached.data : { active: null, ai: { activado: false } };
+        return { active: null, ai: { activado: false } };
     }
 }
 
@@ -312,80 +447,29 @@ async function traducirConCache(texto, tipo = 'resumen') {
     }
 }
 
-const MAX_AI_CONCURRENT = 2; // Máximo de llamadas a IA simultáneas
-let currentAICalls = 0;
-
+// 🔄 Wrapper del servicio de IA (migrado a services/aiService.js)
 async function chatWithLiquidAI(texto, contexto = '') {
-    if (currentAICalls >= MAX_AI_CONCURRENT) {
-        return "⚠️ *IA OCUPADA:* Demasiadas peticiones simultáneas. Reintenta en breve.";
+    const prompt = contexto 
+        ? `Contexto: ${contexto}\n\nUsuario: ${texto}`
+        : texto;
+    
+    const response = await aiService.chatWithAI(prompt, 'auto');
+    
+    // Limpiar tags de thinking si existen
+    if (typeof response === 'string') {
+        return response.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
     }
-
-    currentAICalls++;
-    try {
-        const rawKeys = process.env.OPENROUTER_KEY || '';
-        const keys = rawKeys.split(',').map(k => k.trim()).filter(k => k);
-
-        if (keys.length === 0) {
-            // Si no hay OpenRouter, intentamos Gemini directamente
-            if (aiModel) return await chatWithGemini(texto, contexto);
-            return "⚠️ Sin llaves de IA configuradas.";
-        }
-
-        // Rotación de llaves OpenRouter
-        for (let i = 0; i < keys.length; i++) {
-            const key = keys[i];
-            try {
-                const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-                    model: 'liquid/lfm-2.5-1.2b-thinking:free',
-                    messages: [
-                        { role: 'system', content: `Eres Diky Bot, un bot de WhatsApp amigable. ${contexto}` },
-                        { role: 'user', content: texto }
-                    ],
-                    temperature: 0.7,
-                    max_tokens: 1000
-                }, {
-                    headers: {
-                        'Authorization': `Bearer ${key}`,
-                        'HTTP-Referer': `https://github.com/Dex865378/bot-manga-whatsapp`,
-                        'X-Title': `Diky Bot V2`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: 15000
-                });
-
-                let content = response.data?.choices?.[0]?.message?.content;
-                if (content) {
-                    const cleanContent = content.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
-                    return cleanContent || content;
-                }
-            } catch (e) {
-                console.error(`⚠️ Llave OpenRouter ${i + 1} falló:`, e.response?.data?.error?.message || e.message);
-                // Si no es la última llave, continuamos al siguiente intento
-                if (i < keys.length - 1) continue;
-            }
-        }
-
-        // Si todo falla, intentamos con Gemini como respaldo final
-        if (aiModel) {
-            console.log('🔄 Usando Gemini como respaldo...');
-            return await chatWithGemini(texto, contexto);
-        }
-
-    } finally {
-        currentAICalls = Math.max(0, currentAICalls - 1);
-    }
+    
+    return response;
 }
 
-// Función de respaldo con Gemini
+// 🔄 Gemini wrapper (delegado a servicio)
 async function chatWithGemini(texto, contexto = '') {
-    try {
-        const prompt = `Eres Diky Bot, un bot de WhatsApp divertido. Instrucciones: ${contexto}\n\nUsuario dice: ${texto}`;
-        const result = await aiModel.generateContent(prompt);
-        return (await result.response).text().trim();
-    } catch (e) {
-        console.error('❌ Error Gemini:', e.message);
-        return "❌ Error total: OpenRouter y Gemini están fuera de servicio.";
-    }
+    const prompt = contexto
+        ? `Eres Diky Bot, un bot de WhatsApp divertido. Instrucciones: ${contexto}\n\nUsuario dice: ${texto}`
+        : `Eres Diky Bot, un bot de WhatsApp divertido.\n\nUsuario dice: ${texto}`;
+    
+    return await aiService.chatWithGoogleAI(prompt);
 }
 
 // --- Fallback local para mangas ---
@@ -567,6 +651,12 @@ async function startBot() {
             botState.seConectoAlgunaVez = true; // Marcar que SÍ logró conectarse
             errores401 = 0; // Reset del contador de errores al conectar exitosamente
 
+            // 🔄 Cargar comandos explícitamente (evita problemas de carga circular)
+            handler.loadCommands();
+
+            // 🔄 Registrar validaciones de comandos (después de cargar todos los comandos)
+            handler.registerAllValidations();
+
             // --- GESTOR DE SUBASTAS (Segundo Plano) ---
             setInterval(async () => {
                 try {
@@ -695,7 +785,34 @@ async function startBot() {
             const msgTime = msg.messageTimestamp;
             if (ahora - msgTime > 300) continue;
 
+            // Detectar mensajes de sistema de unión al grupo (alternativa sin ser admin)
+            const isGroupMsg = msg.key.remoteJid?.endsWith('@g.us');
+            if (isGroupMsg) {
+                const groupNotif = msg.message?.groupParticipantAddMessage || 
+                                   msg.message?.groupParticipantAddedMessage;
+                if (groupNotif) {
+                    const participants = groupNotif.participants || [];
+                    const groupId = msg.key.remoteJid;
+                    console.log(`👥 [SISTEMA] Detectada entrada de ${participants.length} usuario(s) a ${groupId}`);
+                    
+                    // Procesar bienvenida para cada participante
+                    for (const p of participants) {
+                        await enviarBienvenida(sock, groupId, p);
+                    }
+                    continue; // No procesar como mensaje normal
+                }
+            }
+
             const fromMe = msg.key.fromMe;
+            
+            // GUARDAR imágenes recientes en cache (para !s all)
+            const chatId = msg.key.remoteJid;
+            const isImage = msg.message?.imageMessage || 
+                          msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage;
+            if (isImage && !fromMe) {
+                guardarImagenReciente(chatId, msg);
+            }
+
             if (fromMe) {
                 const tipo = getContentType(msg.message);
                 let texto = '';
@@ -711,72 +828,16 @@ async function startBot() {
         }
     });
 
-    // --- BIENVENIDAS ---
+    // --- BIENVENIDAS (Evento admin - legacy) ---
     sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
-        console.log(`👥 Evento grupo: ${action} en ${id} para ${participants.length} usuarios`);
+        console.log(`👥 [ADMIN] Evento grupo: ${action} en ${id} para ${participants.length} usuarios`);
         if (action !== 'add') return;
-        try {
-            const conf = await db.tieneBienvenida(id);
-            console.log(`✨ Bienvenida en ${id}: ${conf.activa}`);
-            if (!conf.activa) return;
-            for (const p of participants) {
-                const nombre = p.split('@')[0];
-
-                let defaultMsg = `¡Hola @${nombre}! 🎉\nBienvenid@ al grupo.\n\n📜 Escribe *!menu* para ver todos los comandos.\n🎮 Hay juegos, stickers, anime y mucho más.\n\n¡Diviértete! 🐱✨`;
-                let customMsg = conf.mensaje || defaultMsg;
-                // Reemplazar {usuario} o {user} por el @ y el número
-                customMsg = customMsg.replace(/{usuario}/gi, `@${nombre}`).replace(/{user}/gi, `@${nombre}`);
-
-                // Si el mensaje custom NO incluye el @nombre, se lo agregamos al principio para mencionarlo forzosamente
-                if (!customMsg.includes(`@${nombre}`)) {
-                    customMsg = `¡Hola @${nombre}!\n\n` + customMsg;
-                }
-
-                // 1. Enviar imagen de bienvenida con descripción
-                const imgPath = path.join(__dirname, 'imagen_bienvenida.png');
-                if (fs.existsSync(imgPath)) {
-                    try {
-                        const captionFinal = `╔══════════════════════╗\n║    😺 *¡BIENVENID@!* 😺    ║\n╚══════════════════════╝\n\n${customMsg}`;
-                        await sock.sendMessage(id, {
-                            image: fs.readFileSync(imgPath),
-                            caption: captionFinal,
-                            mentions: [p]
-                        });
-                        console.log(`📸 Imagen de bienvenida enviada a ${nombre}`);
-                    } catch (eImg) {
-                        console.error(`❌ Error enviando imagen de bienvenida:`, eImg.message);
-                        // Fallback: solo texto si la imagen falla
-                        await sock.sendMessage(id, {
-                            text: customMsg,
-                            mentions: [p]
-                        });
-                    }
-                } else {
-                    // Sin imagen: solo texto
-                    await sock.sendMessage(id, {
-                        text: customMsg,
-                        mentions: [p]
-                    });
-                }
-
-                // 2. Pausa para evitar bloqueo de WhatsApp
-                await delay(1500);
-
-                // 3. Enviar sticker de bienvenida
-                const stickerPath = path.join(__dirname, 'sticker_bienvenida.webp');
-                if (fs.existsSync(stickerPath)) {
-                    try {
-                        await sock.sendMessage(id, { sticker: fs.readFileSync(stickerPath) });
-                        console.log(`🏷️ Sticker de bienvenida enviado a ${nombre}`);
-                    } catch (eStk) {
-                        console.error(`❌ Error enviando sticker de bienvenida:`, eStk.message);
-                    }
-                }
-
-                // 4. Pausa entre usuarios si hay varios
-                if (participants.length > 1) await delay(2000);
-            }
-        } catch (e) { console.error('❌ Error bienvenida:', e.message); }
+        
+        for (const p of participants) {
+            await enviarBienvenida(sock, id, p);
+            // Pausa entre usuarios si hay varios
+            if (participants.length > 1) await delay(2000);
+        }
     });
 
     // Keep-alive para Render
@@ -844,7 +905,8 @@ async function procesarMensaje(sock, msg) {
         const msgType = getContentType(msg.message);
 
         // --- SILENCIO CHECK ---
-        if (botState.silenciados[sender] && Date.now() < botState.silenciados[sender]) return;
+        const silenciadoHasta = botState.silenciados.get(sender);
+        if (silenciadoHasta && Date.now() < silenciadoHasta) return;
 
         // --- EXTRACCIÓN Y LIMPIEZA ---
         const quotedMsgId = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage ?
@@ -919,8 +981,10 @@ async function procesarMensaje(sock, msg) {
 
         if (isCommand) {
             const start = cmd.split(' ')[0];
+            // 🔍 DEBUG LOG — Eliminar cuando todo funcione
+            console.log(`[CMD] ${start} | sender=${sender} | isGlobalAdmin=${isGlobalAdmin} | isGroup=${isGroup} | chatId=${chatId?.slice(-10)}`);
             const comandosValidos = [
-                '!menu', '!menu2', '!ping', '!s', '!sticker', '!v', '!toimg', '!ascii',
+                '!menu', '!menu2', '!help', '!ping', '!s', '!sticker', '!v', '!toimg', '!ascii',
                 '!profile', '!p', '!perfil', '!config', '!marry', '!divorce',
                 '!catalogo', '!manga', '!leer', '!buscar',
                 '!decir', '!waifu', '!trace', '!personaje', '!anime', '!proximo', '!estrenos', '!temporada', '!wiki', '!estudio', '!recomendar', '!random',
@@ -932,20 +996,23 @@ async function procesarMensaje(sock, msg) {
                 '!pat', '!hug', '!kiss', '!slap', '!punch', '!cry', '!dance', '!bite', '!highfive',
                 '!fumar', '!cafe', '!puchero', '!sonrojar', '!baka', '!dormir', '!comiendo', '!pensar',
                 '!patear', '!celebrar', '!aburrido', '!risa', '!smug', '!stare',
-                '!tag', '!reglas', '!kick', '!adm', '!bot', '!bienvenida', '!setbienvenida', '!news', '!sorteo', '!ia',
+                '!tag', '!reglas', '!kick', '!adm', '!promover', '!bot', '!bienvenida', '!setbienvenida', '!news', '!sorteo', '!ia',
                 '!tienda', '!comprar', '!vender', '!inventario', '!mejor', '!bounty', '!regalar', '!regalaritem', '!dar',
                 '!antispam', '!mododios',
-                '!prestigio', '!loteria', '!clase', '!pedir', '!plantarse', '!pl', '!trivia', '!daily', '!w', '!slut', '!canjear',
+                '!prestigio', '!loteria', '!clase', '!pedir', '!plantarse', '!pl', '!trivia', '!daily', '!w', '!slut', '!robar', '!canjear',
                 '!subastar', '!subastas', '!ofertar',
                 '!waifus', '!mascotas', '!alimentar', '!casar', '!proponer', '!divorce', '!logros', '!tareas',
                 '!ver',
-                '!play', '!music', '!musica', '!ytmp3', '!play2'
+                '!play', '!music', '!musica', '!ytmp3', '!play2', '!cancion', '!audio',
+                '!dinosaurios', '!aves', '!dragones', '!acuaticos', '!salvajes', '!miticos',
+                '!parque', '!principal', '!lucha', '!escudo',
+                '!aceptar_lucha', '!rechazar_lucha'
             ];
 
             // --- COOLDOWN GLOBAL (anti-spam / anti rate-limit de WhatsApp) ---
             // Admins: sin límite (la cola de salida protege el rate-limit)
-            // Usuarios: 1 segundo mínimo entre comandos
-            const cooldownMs = isAdmin ? 0 : 1000;
+            // Usuarios: 300ms mínimo entre comandos (balance entre velocidad y protección)
+            const cooldownMs = isAdmin ? 0 : 300;
             if (cooldownMs > 0) {
                 const globalWait = verificarCooldown(sender, 'global', cooldownMs);
                 if (globalWait > 0) {
@@ -1011,16 +1078,22 @@ async function procesarMensaje(sock, msg) {
                     }
                     botState.antiSpam.tracker.set(sender, stats);
 
+                    // Límite de tamaño del tracker para evitar memory leak
+                    if (botState.antiSpam.tracker.size > 1000) {
+                        const oldest = botState.antiSpam.tracker.keys().next().value;
+                        botState.antiSpam.tracker.delete(oldest);
+                    }
+
                     if (stats.count > botState.antiSpam.limit) {
-                        botState.silenciados[sender] = ahora + botState.antiSpam.banTime;
+                        botState.silenciados.set(sender, ahora + botState.antiSpam.banTime);
                         botState.antiSpam.tracker.delete(sender); // Limpiar rastro tras baneo
                         return sock.sendMessage(chatId, {
                             text: `🚫 *SISTEMA ANTI-SPAM:* Has superado el límite de 100 comandos por hora.\n⚡ Quedarás silenciado por las próximas *2 horas*.\n\n_Diky Bot prefiere calidad antes que cantidad._`
                         }, { quoted: msg });
                     }
 
-                    // Limpieza periódica del Map (para no saturar RAM)
-                    if (Math.random() < 0.05) { // 5% de probabilidad en cada comando
+                    // Limpieza periódica del Map (para no saturar RAM) - 20% probabilidad
+                    if (Math.random() < 0.20) {
                         for (const [uid, s] of botState.antiSpam.tracker.entries()) {
                             if (ahora - s.startTime > botState.antiSpam.interval) botState.antiSpam.tracker.delete(uid);
                         }
@@ -1068,6 +1141,7 @@ async function procesarMensaje(sock, msg) {
                     case '!minas': emoji = '💣'; break;
                     case '!quiz': case '!quizanime': case '!adivina': case '!bandera': emoji = '❓'; break;
                     case '!play': case '!music': case '!musica': case '!ytmp3': case '!play2': emoji = '🎵'; break;
+                    case '!robar': emoji = '🦹‍♂️'; break;
 
                     case '!pedir': emoji = '➕'; break;
                     case '!plantarse': case '!pl': emoji = '✋'; break;
@@ -1080,6 +1154,20 @@ async function procesarMensaje(sock, msg) {
                     case '!divorciar': emoji = '💔'; break;
                     case '!aceptar': emoji = '✅'; break;
                     case '!duelo_real': emoji = '⚔️'; break;
+                    // 🐾 Mascotas v2.0
+                    case '!dinosaurios': emoji = '🦖'; break;
+                    case '!aves': emoji = '🦅'; break;
+                    case '!dragones': emoji = '🐉'; break;
+                    case '!acuaticos': emoji = '🌊'; break;
+                    case '!salvajes': emoji = '🐾'; break;
+                    case '!miticos': emoji = '🌟'; break;
+                    case '!comprar_mascota': emoji = '🛍️'; break;
+                    case '!parque': emoji = '🌳'; break;
+                    case '!principal': emoji = '⭐'; break;
+                    case '!lucha': emoji = '⚔️'; break;
+                    case '!escudo': emoji = '🛡️'; break;
+                    case '!aceptar_lucha': emoji = '✅'; break;
+                    case '!rechazar_lucha': emoji = '❌'; break;
                 }
 
                 // Efecto de Grimorio (Solo si es un comando que suele usar economía)
@@ -1114,7 +1202,9 @@ async function procesarMensaje(sock, msg) {
                     start, cmd, txt, args, sender, pushName, isGroup, isAdmin, isGlobalAdmin,
                     botState, db, delay, FFMPEG_PATH, ADMIN_NUM,
                     traducirConCache, convertirAWebp, downloadMediaMessage,
-                    quotedMsgId, quotedParticipant, msgType, chatWithLiquidAI
+                    quotedMsgId, quotedParticipant, msgType, chatWithLiquidAI,
+                    sockOriginal: sock, // Para comandos express que necesitan bypass de cola
+                    obtenerImagenesRecientes // Para !s all
                 };
 
                 const isHeavy = ['!v', '!s', '!sticker', '!trace', '!toimg', '!play', '!music', '!musica', '!ytmp3', '!play2'].includes(start);
@@ -1126,7 +1216,13 @@ async function procesarMensaje(sock, msg) {
                 }
 
                 try {
+                    const cmdStartTime = Date.now();
                     const mExecuted = await handler.handleCommand(start, sockProxy, chatId, msg, args, extras);
+                    const cmdDuration = Date.now() - cmdStartTime;
+                    // Log comandos lentos (>1s) para identificar bottlenecks
+                    if (cmdDuration > 1000) {
+                        console.log(`[SLOW CMD] ${start}: ${cmdDuration}ms - posible bottleneck`);
+                    }
                     if (mExecuted) return;
                 } catch (e) {
                     console.error(`Error en handler ${start}:`, e.message);

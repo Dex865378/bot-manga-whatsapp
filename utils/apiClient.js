@@ -1,0 +1,101 @@
+/**
+ * 🌐 Cliente API con Retry + Circuit Breaker
+ * Evita fallos por API caída o rate limits
+ */
+
+const axios = require('axios');
+
+class CircuitBreaker {
+    constructor(threshold = 5, timeout = 60000) {
+        this.failureThreshold = threshold;
+        this.timeout = timeout;
+        this.state = 'CLOSED'; // CLOSED, OPEN, HALF_OPEN
+        this.failureCount = 0;
+        this.lastFailureTime = null;
+    }
+
+    async execute(fn) {
+        if (this.state === 'OPEN') {
+            if (Date.now() - this.lastFailureTime > this.timeout) {
+                this.state = 'HALF_OPEN';
+            } else {
+                throw new Error('Circuit Breaker is OPEN');
+            }
+        }
+
+        try {
+            const result = await fn();
+            this.onSuccess();
+            return result;
+        } catch (error) {
+            this.onFailure();
+            throw error;
+        }
+    }
+
+    onSuccess() {
+        this.failureCount = 0;
+        this.state = 'CLOSED';
+    }
+
+    onFailure() {
+        this.failureCount++;
+        this.lastFailureTime = Date.now();
+        
+        if (this.failureCount >= this.failureThreshold) {
+            this.state = 'OPEN';
+            console.warn(`🔴 Circuit Breaker OPEN - API falló ${this.failureCount} veces`);
+        }
+    }
+}
+
+async function fetchWithRetry(url, options = {}, retries = 3, backoff = 1000) {
+    const circuitBreaker = new CircuitBreaker();
+    
+    for (let i = 0; i < retries; i++) {
+        try {
+            return await circuitBreaker.execute(() => axios.get(url, {
+                timeout: 10000,
+                ...options
+            }));
+        } catch (error) {
+            const isLastAttempt = i === retries - 1;
+            
+            // No reintentar en errores 4xx (cliente)
+            if (error.response && error.response.status >= 400 && error.response.status < 500) {
+                throw error;
+            }
+
+            if (isLastAttempt) {
+                console.error(`❌ API failed after ${retries} attempts: ${url}`);
+                throw error;
+            }
+
+            // Exponential backoff: 1s, 2s, 4s
+            const delay = backoff * Math.pow(2, i);
+            console.warn(`⚠️ API attempt ${i + 1} failed, retrying in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+}
+
+// Circuit breakers por dominio (para no mezclar fallos de APIs distintas)
+const circuitBreakers = new Map();
+
+function getCircuitBreaker(domain) {
+    if (!circuitBreakers.has(domain)) {
+        circuitBreakers.set(domain, new CircuitBreaker());
+    }
+    return circuitBreakers.get(domain);
+}
+
+async function safeApiCall(domain, fn) {
+    const cb = getCircuitBreaker(domain);
+    return cb.execute(fn);
+}
+
+module.exports = { 
+    fetchWithRetry, 
+    CircuitBreaker, 
+    safeApiCall 
+};

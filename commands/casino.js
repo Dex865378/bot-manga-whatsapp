@@ -375,25 +375,81 @@ module.exports = {
             return sock.sendMessage(chatId, { text: resP }, { quoted: msg });
         }
 
-        // !duelo @user [monto] — Reta a alguien, acepta con !aceptar
+        // !duelo @user [monto] — Duelo instantáneo con catálogo de técnicas
         if (start === '!duelo') {
+            if (!isGroup) return sock.sendMessage(chatId, { text: '👥 Este comando solo funciona en grupos.' }, { quoted: msg });
             const ment = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-            if (!ment[0]) return sock.sendMessage(chatId, { text: '⚔️ Menciona a alguien: *!duelo @user [apuesta]*' });
-            if (ment[0] === sender) return sock.sendMessage(chatId, { text: '❓ No puedes pelear contigo mismo.' });
+            if (!ment[0]) return sock.sendMessage(chatId, { text: '⚔️ Menciona a alguien: *!duelo @user [apuesta]*' }, { quoted: msg });
+            if (ment[0] === sender) return sock.sendMessage(chatId, { text: '❓ No puedes pelear contigo mismo.' }, { quoted: msg });
 
-            const apuesta = Math.abs(parseInt(args[1])) || 500;
+            const apuesta = Math.min(Math.abs(parseInt(args[1])) || 500, 1000000);
             const b1 = await db.obtenerBalance(sender);
             const b2 = await db.obtenerBalance(ment[0]);
+            const target = await db.obtenerUsuario(ment[0]);
 
-            if (b1 < apuesta) return sock.sendMessage(chatId, { text: '💸 Fondos insuficientes para apostar.' });
-            if (b2 < apuesta) return sock.sendMessage(chatId, { text: '💸 Tu oponente no tiene suficientes dikys.' });
+            if (b1 < apuesta) return sock.sendMessage(chatId, { text: '💸 No tienes suficientes dikys para apostar.' }, { quoted: msg });
+            if (b2 < apuesta) return sock.sendMessage(chatId, { text: '💸 Tu oponente no tiene suficientes dikys.' }, { quoted: msg });
 
-            botState.duelos[ment[0]] = { retador: sender, apuesta, expira: Date.now() + 60000 };
-            return sock.sendMessage(chatId, {
-                text: `⚔️ *¡RETO DE DUELO!* ⚔️\n━━━━━━━━━━━━━━\n🥊 @${sender.split('@')[0]} reta a @${ment[0].split('@')[0]}\n💰 Apuesta: *${apuesta}* diky\n━━━━━━━━━━━━━━\n👉 @${ment[0].split('@')[0]}, escribe *!aceptar* para pelear.\n⏳ Expira en 60 segundos.`,
-                mentions: [sender, ment[0]]
-            }, { quoted: msg });
+            const n1 = u.nombre_wa || u.nombre || sender.split('@')[0];
+            const n2 = target?.nombre_wa || target?.nombre || ment[0].split('@')[0];
+
+            const intros = [
+                '🔥 ¡La arena está en llamas!', '⚡ ¡El choque de titanes comienza!',
+                '🌩️ ¡Una tormenta de poder se desata!', '🐲 ¡Los dragones de guerra han despertado!'
+            ];
+            const tecs = [
+                '🌀 ¡Rasengan Mond!', '⚡ ¡Chidori Máximo!', '🗡️ ¡Getsuga Tensho!', '💥 ¡Kamehameha Final!',
+                '👊 ¡Golpe Serio!', '🥊 ¡Gomu Gatling!', '🔥 ¡Amaterasu!', '⚔️ ¡Corte Espacial!',
+                '🏹 ¡Flecha Divina!', '🐲 ¡Rugido del Dragón!', '🎇 ¡Bala de Chakra!', '🌠 ¡Meteoro!',
+                '🛑 ¡Barrera de Hierro!', '✨ ¡Destello Final!', '👤 ¡Sombra Divina!', '🌀 ¡Torbellino de Plata!'
+            ];
+
+            const getAtk = (usr) => {
+                let base = 15 + Math.floor(Math.random() * 20);
+                if (usr?.clase === 'Guerrero') base = Math.floor(base * 1.2);
+                if (usr?.clase === 'Cazador') base = Math.floor(base * 1.1);
+                return base;
+            };
+
+            let hp1 = 120, hp2 = 120;
+            let fightLog = `⚔️ *¡DUELO!* ⚔️\n${intros[Math.floor(Math.random() * intros.length)]}\n━━━━━━━━━━━━━━\n`;
+            fightLog += `🤺 *${n1}* [120HP]  🆚  🤺 *${n2}* [120HP]\n💰 Apuesta: *${apuesta.toLocaleString()}* diky\n━━━━━━━━━━━━━━\n`;
+
+            let turno = 1, atk = Math.random() < 0.5 ? 1 : 2;
+            while (hp1 > 0 && hp2 > 0 && turno <= 15) {
+                const atacante = atk === 1 ? n1 : n2;
+                const defensor = atk === 1 ? n2 : n1;
+                const usrAtk = atk === 1 ? u : target;
+                let dmg = getAtk(usrAtk);
+                const crit = Math.random() < 0.1;
+                if (crit) dmg = Math.floor(dmg * 1.8);
+                if (atk === 1) hp2 -= dmg; else hp1 -= dmg;
+                if (hp1 < 0) hp1 = 0; if (hp2 < 0) hp2 = 0;
+                const tech = tecs[Math.floor(Math.random() * tecs.length)];
+                fightLog += `🔹 *R${turno}:* ${atacante} ${tech}${crit ? ' [🔥 CRIT!]' : ''} → -${dmg}HP 👉 ${defensor} (${atk===1?hp2:hp1}HP)\n`;
+                if (hp1 <= 0 || hp2 <= 0) break;
+                atk = atk === 1 ? 2 : 1;
+                turno++;
+            }
+
+            const gana1 = hp1 >= hp2;
+            const ganador = gana1 ? sender : ment[0];
+            const perdedor = gana1 ? ment[0] : sender;
+            const gName = gana1 ? n1 : n2;
+            const pName = gana1 ? n2 : n1;
+
+            await db.sumarMonedas(ganador, apuesta);
+            await db.deducirMonedas(perdedor, apuesta);
+            await db.registrarVictoriaDuelo(ganador);
+            await db.registrarDerrotaDuelo(perdedor);
+            await db.sumarXP(ganador, 300);
+            await db.sumarXP(perdedor, 50);
+
+            fightLog += `\n━━━━━━━━━━━━━━\n📊 HP Final → *${n1}*: ${hp1} | *${n2}*: ${hp2}\n\n🏆 *GANADOR: ${gName}*\n   💰 +${apuesta.toLocaleString()} diky | ✨ +300 XP\n🗡️ *${pName}* → -${apuesta.toLocaleString()} diky | +50 XP`;
+
+            return sock.sendMessage(chatId, { text: fightLog, mentions: [ganador, perdedor] }, { quoted: msg });
         }
+
 
         // !duelo_real @user [monto] — Duelo instantáneo sin esperar aceptación
         if (start === '!duelo_real') {

@@ -1,6 +1,9 @@
 /**
  * 🛠️ MÓDULO DE CONFIGURACIÓN Y ADMINISTRACIÓN DE GRUPOS
  */
+const path = require('path');
+const fs = require('fs');
+
 module.exports = {
     name: 'settings',
     isMultiple: true,

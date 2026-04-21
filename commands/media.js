@@ -1,33 +1,22 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const { fetchWithRetry } = require('../utils/apiClient');
+const { LRUCache } = require('../utils/lruCache');
 
 // ============================================================
 //     CAHÉ DE APIs EXTERNAS (Jikan, Wikipedia, etc.)
 // ============================================================
 // Evita repetir llamadas a APIs externas si el mismo dato fue pedido recientemente.
 // TTL de 30 minutos. Reduce latencia de 2-3s a 0.001s en hits.
-const apiCache = new Map();
-const API_CACHE_TTL = 30 * 60 * 1000; // 30 minutos
-const API_CACHE_MAX = 100;
+const apiCache = new LRUCache(100, 30 * 60 * 1000); // 100 entradas, 30min TTL
 
 function getApiCache(key) {
-    const entry = apiCache.get(key);
-    if (!entry) return null;
-    if (Date.now() - entry.time > API_CACHE_TTL) {
-        apiCache.delete(key);
-        return null;
-    }
-    return entry.data;
+    return apiCache.get(key);
 }
 
 function setApiCache(key, data) {
-    apiCache.set(key, { data, time: Date.now() });
-    // Limpiar gradualmente las más viejas si pasa el límite
-    while (apiCache.size > API_CACHE_MAX) {
-        const oldest = apiCache.keys().next().value;
-        apiCache.delete(oldest);
-    }
+    apiCache.set(key, data);
 }
 
 module.exports = {
@@ -158,7 +147,7 @@ module.exports = {
                         'Referer': 'https://translate.google.com/'
                     }
                 });
-                return sock.sendMessage(chatId, { audio: Buffer.from(audioRes.data), mimetype: 'audio/mp4', ptt: true }, { quoted: msg });
+                return sock.sendMessage(chatId, { audio: Buffer.from(audioRes.data), mimetype: 'audio/ogg; codecs=opus', ptt: true }, { quoted: msg });
             } catch (ttsErr) {
                 console.error('❌ [decir] TTS Error:', ttsErr.message);
                 // Fallback: enviar como texto si TTS falla
@@ -201,7 +190,7 @@ module.exports = {
 
             // 2. Buscar Online (Jikan)
             try {
-                const res = await axios.get(`https://api.jikan.moe/v4/manga?q=${encodeURIComponent(q)}&limit=1`);
+                const res = await fetchWithRetry(`https://api.jikan.moe/v4/manga?q=${encodeURIComponent(q)}&limit=1`, { timeout: 8000 }, 3, 1000);
                 if (!res.data.data[0]) return sock.sendMessage(chatId, { text: '❌ No se encontró ese manga en la base de datos mundial.' });
                 const m = res.data.data[0];
                 const sinopsis = await traducirConCache(m.synopsis, 'resumen');
@@ -235,22 +224,42 @@ module.exports = {
 
             const files = fs.readdirSync(p)
                 .filter(f => f.endsWith('.pdf') || f.endsWith('.jpg') || f.endsWith('.png') || f.endsWith('.webp') || f.endsWith('.jpeg'))
-                .filter(f => f !== 'portada.png') // No enviar la portada de nuevo si está ahí
-                .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })) // Ordenar alfanuméricamente
+                .filter(f => f !== 'portada.png')
+                .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
                 .slice(0, 15);
 
             if (files.length === 0) return sock.sendMessage(chatId, { text: '❌ No hay capítulos o páginas disponibles en esta carpeta.' });
 
-            await sock.sendMessage(chatId, { text: `📚 Enviando contenido de *${m.titulo}*...` });
-            for (const f of files) {
-                const fp = path.join(p, f);
-                if (f.endsWith('.pdf')) {
-                    await sock.sendMessage(chatId, { document: fs.readFileSync(fp), mimetype: 'application/pdf', fileName: f });
-                } else {
-                    await sock.sendMessage(chatId, { image: fs.readFileSync(fp), caption: f });
+            // 🚀 Envío async no bloqueante
+            await sock.sendMessage(chatId, { text: `📚 Enviando *${m.titulo}* (${files.length} archivos)...\n⏳ Esto puede tardar unos segundos.` });
+            
+            // Procesar en background para no bloquear el bot
+            (async () => {
+                for (const f of files) {
+                    try {
+                        const fp = path.join(p, f);
+                        const fileBuffer = fs.readFileSync(fp);
+                        
+                        if (f.endsWith('.pdf')) {
+                            await sock.sendMessage(chatId, { 
+                                document: fileBuffer, 
+                                mimetype: 'application/pdf', 
+                                fileName: f 
+                            });
+                        } else {
+                            await sock.sendMessage(chatId, { 
+                                image: fileBuffer, 
+                                caption: f 
+                            });
+                        }
+                        // Delay no bloqueante para evitar rate limits
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+                    } catch (err) {
+                        console.error(`❌ Error enviando ${f}:`, err.message);
+                    }
                 }
-                await delay(1500);
-            }
+            })();
+            
             return;
         }
 
@@ -338,7 +347,7 @@ module.exports = {
                 const cacheKey = `anime:${q.toLowerCase()}`;
                 let a = getApiCache(cacheKey);
                 if (!a) {
-                    const res = await axios.get(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(q)}&limit=1`);
+                    const res = await fetchWithRetry(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(q)}&limit=1`, { timeout: 8000 }, 3, 1000);
                     if (!res.data.data[0]) return sock.sendMessage(chatId, { text: '❌ No encontrado.' });
                     a = res.data.data[0];
                     setApiCache(cacheKey, a);
@@ -370,15 +379,36 @@ module.exports = {
             if (!q) return sock.sendMessage(chatId, { text: '👤 Uso: !personaje <nombre>' }, { quoted: msg });
             try {
                 const cacheKey = `char:${q.toLowerCase()}`;
-                let c = getApiCache(cacheKey);
-                if (!c) {
-                    const res = await axios.get(`https://api.jikan.moe/v4/characters?q=${encodeURIComponent(q)}&limit=1`, { timeout: 8000 });
-                    if (!res.data.data[0]) return sock.sendMessage(chatId, { text: '❌ No encontrado.' }, { quoted: msg });
-                    c = res.data.data[0];
-                    setApiCache(cacheKey, c);
+                let characters = getApiCache(cacheKey);
+                
+                if (!characters) {
+                    // Buscar hasta 5 resultados para encontrar el mejor match
+                    const res = await fetchWithRetry(`https://api.jikan.moe/v4/characters?q=${encodeURIComponent(q)}&limit=5`, { timeout: 8000 }, 3, 1000);
+                    if (!res.data.data || res.data.data.length === 0) {
+                        return sock.sendMessage(chatId, { text: '❌ No se encontró ese personaje.' }, { quoted: msg });
+                    }
+                    characters = res.data.data;
+                    setApiCache(cacheKey, characters);
                 }
-                const bio = await traducirConCache(c.about, 'biografía');
-                const caption = `👤 *${c.name}*\n🎌 *Jp:* ${c.name_kanji || '?'}\n📖 *Bio:* ${bio}`;
+                
+                // Buscar el mejor match por nombre exacto o coincidencia parcial
+                const qLower = q.toLowerCase();
+                let c = characters.find(ch => 
+                    ch.name.toLowerCase() === qLower || 
+                    (ch.name_kanji && ch.name_kanji.toLowerCase() === qLower)
+                ) || characters.find(ch => 
+                    ch.name.toLowerCase().includes(qLower) || 
+                    (ch.name_kanji && ch.name_kanji.toLowerCase().includes(qLower))
+                ) || characters[0]; // fallback al primero si no hay match exacto
+                
+                // Asegurar que la bio sea traducida a español
+                let bioText = c.about || 'Sin descripción disponible.';
+                const bio = await traducirConCache(bioText, 'biografía');
+                
+                // Limitar bio para WhatsApp
+                const bioCorta = bio.length > 400 ? bio.substring(0, 400) + '...' : bio;
+                
+                const caption = `👤 *${c.name}*\n🎌 *Nombre JP:* ${c.name_kanji || 'N/A'}\n⭐ *Favoritos:* ${c.favorites || 0}\n\n📖 *Biografía:*\n${bioCorta}`;
 
                 if (c.images?.jpg?.image_url) {
                     return sock.sendMessage(chatId, { image: { url: c.images.jpg.image_url }, caption }, { quoted: msg });
@@ -386,7 +416,7 @@ module.exports = {
                 return sock.sendMessage(chatId, { text: caption }, { quoted: msg });
             } catch (e) {
                 console.error('❌ [personaje] Error:', e.message);
-                return sock.sendMessage(chatId, { text: '❌ Error de conexión al buscar personaje.' }, { quoted: msg });
+                return sock.sendMessage(chatId, { text: '❌ Error al buscar personaje. Intenta con otro nombre.' }, { quoted: msg });
             }
         }
 
@@ -397,7 +427,7 @@ module.exports = {
                 const cacheKey = `studio:${q.toLowerCase()}`;
                 let s = getApiCache(cacheKey);
                 if (!s) {
-                    const res = await axios.get(`https://api.jikan.moe/v4/producers?q=${encodeURIComponent(q)}&limit=1`, { timeout: 8000 });
+                    const res = await fetchWithRetry(`https://api.jikan.moe/v4/producers?q=${encodeURIComponent(q)}&limit=1`, { timeout: 8000 }, 3, 1000);
                     if (!res.data.data[0]) return sock.sendMessage(chatId, { text: '❌ No encontrado.' }, { quoted: msg });
                     s = res.data.data[0];
                     setApiCache(cacheKey, s);
@@ -416,59 +446,112 @@ module.exports = {
 
         if (start === '!proximo') {
             const q = args.join(' ');
-            const res = await axios.get(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(q)}&limit=1`);
-            if (!res.data.data[0]) return sock.sendMessage(chatId, { text: '❌ No encontrado.' });
-            const a = res.data.data[0];
-            return sock.sendMessage(chatId, { text: `📺 *${a.title}*\n📡 *Emisión:* ${a.broadcast?.string || 'No disponible'}` });
+            try {
+                const res = await fetchWithRetry(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(q)}&limit=1`, { timeout: 8000 }, 3, 1000);
+                if (!res.data.data[0]) return sock.sendMessage(chatId, { text: '❌ No encontrado.' });
+                const a = res.data.data[0];
+                return sock.sendMessage(chatId, { text: `📺 *${a.title}*\n📡 *Emisión:* ${a.broadcast?.string || 'No disponible'}` });
+            } catch (e) {
+                return sock.sendMessage(chatId, { text: '❌ Error al buscar información.' }, { quoted: msg });
+            }
         }
 
         if (start === '!estrenos') {
-            const res = await axios.get(`https://api.jikan.moe/v4/schedules`);
-            const hoy = res.data.data.slice(0, 10);
-            let m = '📅 *ANIME HOY*\n\n';
-            hoy.forEach(a => { m += `• ${a.title} (${a.broadcast?.time || '?'})\n`; });
-            return sock.sendMessage(chatId, { text: m });
+            try {
+                const res = await fetchWithRetry(`https://api.jikan.moe/v4/schedules`, { timeout: 8000 }, 3, 1000);
+                const hoy = res.data.data.slice(0, 10);
+                let m = '📅 *ANIME HOY*\n\n';
+                hoy.forEach(a => { m += `• ${a.title} (${a.broadcast?.time || '?'})\n`; });
+                return sock.sendMessage(chatId, { text: m });
+            } catch (e) {
+                return sock.sendMessage(chatId, { text: '❌ Error al obtener estrenos.' }, { quoted: msg });
+            }
         }
 
         if (start === '!temporada') {
-            const res = await axios.get(`https://api.jikan.moe/v4/seasons/now?limit=15`);
-            let m = '🌟 *ANIME DE TEMPORADA*\n\n';
-            res.data.data.forEach(a => { m += `• ${a.title} [★${a.score || '?'}]\n`; });
-            return sock.sendMessage(chatId, { text: m });
+            try {
+                const res = await fetchWithRetry(`https://api.jikan.moe/v4/seasons/now?limit=15`, { timeout: 8000 }, 3, 1000);
+                let m = '🌟 *ANIME DE TEMPORADA*\n\n';
+                res.data.data.forEach(a => { m += `• ${a.title} [★${a.score || '?'}]\n`; });
+                return sock.sendMessage(chatId, { text: m });
+            } catch (e) {
+                return sock.sendMessage(chatId, { text: '❌ Error al obtener temporada actual.' }, { quoted: msg });
+            }
         }
 
         if (start === '!recomendar') {
             try {
-                const cacheKey = 'top_anime_list';
-                let topList = getApiCache(cacheKey);
-                if (!topList) {
-                    const res = await axios.get(`https://api.jikan.moe/v4/top/anime?limit=25`, { timeout: 8000 });
-                    topList = res.data.data;
-                    setApiCache(cacheKey, topList);
+                const cacheKey = 'recomendaciones_anime';
+                let animeList = getApiCache(cacheKey);
+                
+                if (!animeList) {
+                    // Usar endpoint de temporada actual con buena puntuación
+                    const res = await fetchWithRetry(`https://api.jikan.moe/v4/seasons/now?filter=tv&limit=25`, { timeout: 10000 }, 3, 1000);
+                    // Filtrar solo animes con score >= 7 para recomendaciones de calidad
+                    animeList = res.data.data.filter(a => a.score && a.score >= 7);
+                    if (animeList.length === 0) animeList = res.data.data; // fallback si no hay con score alto
+                    setApiCache(cacheKey, animeList);
                 }
-                const a = topList[Math.floor(Math.random() * topList.length)];
-                const sinopsis = await traducirConCache(a.synopsis, 'resumen');
-                const caption = `💡 *Te recomiendo:* ${a.title}\n\n📖 ${sinopsis}`;
+                
+                const a = animeList[Math.floor(Math.random() * animeList.length)];
+                
+                // Asegurar sinopsis en español
+                let synopsisText = a.synopsis || 'Sin sinopsis disponible.';
+                const sinopsis = await traducirConCache(synopsisText, 'resumen');
+                const sinopsisCorta = sinopsis.length > 300 ? sinopsis.substring(0, 300) + '...' : sinopsis;
+                
+                const generos = a.genres?.map(g => g.name).join(', ') || 'Desconocido';
+                const caption = `💡 *Te recomiendo:* ${a.title}\n\n⭐ *Calificación:* ${a.score || 'N/A'}/10\n🎭 *Géneros:* ${generos}\n� *Episodios:* ${a.episodes || '?'}\n\n�📖 *Sinopsis:*\n${sinopsisCorta}`;
 
                 if (a.images?.jpg?.image_url) {
                     return sock.sendMessage(chatId, { image: { url: a.images.jpg.image_url }, caption }, { quoted: msg });
                 }
                 return sock.sendMessage(chatId, { text: caption }, { quoted: msg });
-            } catch (e) { return sock.sendMessage(chatId, { text: '❌ Error interno.' }, { quoted: msg }); }
+            } catch (e) { 
+                console.error('❌ [recomendar] Error:', e.message);
+                return sock.sendMessage(chatId, { text: '❌ Error al obtener recomendación. Intenta de nuevo.' }, { quoted: msg }); 
+            }
         }
 
         if (start === '!random') {
             try {
-                const res = await axios.get(`https://api.jikan.moe/v4/random/anime`, { timeout: 8000 });
-                const a = res.data.data;
-                const sinopsis = await traducirConCache(a.synopsis, 'resumen');
-                const caption = `🎲 *Azar:* ${a.title}\n📖 ${sinopsis}`;
+                // Intentar hasta 3 veces si falla
+                let a = null;
+                let attempts = 0;
+                const maxAttempts = 3;
+                
+                while (!a && attempts < maxAttempts) {
+                    try {
+                        const res = await fetchWithRetry(`https://api.jikan.moe/v4/random/anime`, { timeout: 10000 }, 2, 500);
+                        a = res.data.data;
+                        // Ignorar resultados sin título o sin imagen
+                        if (!a || !a.title) a = null;
+                    } catch (err) {
+                        attempts++;
+                        if (attempts < maxAttempts) await delay(500);
+                    }
+                }
+                
+                if (!a) {
+                    return sock.sendMessage(chatId, { text: '❌ No se pudo obtener un anime aleatorio. Intenta de nuevo.' }, { quoted: msg });
+                }
+                
+                // Asegurar sinopsis en español
+                let synopsisText = a.synopsis || 'Sin sinopsis disponible.';
+                const sinopsis = await traducirConCache(synopsisText, 'resumen');
+                const sinopsisCorta = sinopsis.length > 300 ? sinopsis.substring(0, 300) + '...' : sinopsis;
+                
+                const generos = a.genres?.map(g => g.name).join(', ') || 'Desconocido';
+                const caption = `🎲 *Anime al Azar:* ${a.title}\n\n⭐ *Calificación:* ${a.score || 'N/A'}/10\n🎭 *Géneros:* ${generos}\n📺 *Episodios:* ${a.episodes || '?'}\n📅 *Estado:* ${a.status || '?'}\n\n📖 *Sinopsis:*\n${sinopsisCorta}`;
 
                 if (a.images?.jpg?.image_url) {
                     return sock.sendMessage(chatId, { image: { url: a.images.jpg.image_url }, caption }, { quoted: msg });
                 }
                 return sock.sendMessage(chatId, { text: caption }, { quoted: msg });
-            } catch (e) { return sock.sendMessage(chatId, { text: '❌ Error interno.' }, { quoted: msg }); }
+            } catch (e) { 
+                console.error('❌ [random] Error:', e.message);
+                return sock.sendMessage(chatId, { text: '❌ Error al obtener anime aleatorio.' }, { quoted: msg }); 
+            }
         }
 
         if (start === '!trace') {
@@ -529,3 +612,28 @@ module.exports = {
         }
     }
 };
+
+// ============================================================
+//     REGISTRO DE VALIDACIONES (se hace DESPUÉS de cargar comandos)
+// ============================================================
+
+function registerMediaValidations(registerFn) {
+    // Comandos que requieren término de búsqueda
+    const searchCommands = ['!anime', '!personaje', '!estudio', '!manga', '!proximo', '!wiki'];
+    searchCommands.forEach(cmd => {
+        registerFn(cmd, {
+            args: { min: 1 },
+            query: { min: 2, max: 100, fieldName: 'Término de búsqueda' },
+            usage: `${cmd} <nombre>`
+        });
+    });
+
+    // Comandos que no requieren argumentos
+    registerFn('!recomendar', { args: { min: 0, max: 0 } });
+    registerFn('!random', { args: { min: 0, max: 0 } });
+    registerFn('!estrenos', { args: { min: 0, max: 0 } });
+    registerFn('!temporada', { args: { min: 0, max: 0 } });
+    registerFn('!waifu', { args: { min: 0, max: 1 } });
+}
+
+module.exports.registerMediaValidations = registerMediaValidations;

@@ -4,80 +4,8 @@
 module.exports = {
     name: 'utilities',
     isMultiple: true,
-    names: ['!config', '!tag', '!reglas', '!kick', '!adm', '!bot', '!bienvenida', '!setbienvenida', '!news', '!sorteo'],
+    names: ['!config', '!kick', '!promover', '!news', '!sorteo'],
     async execute(sock, chatId, msg, args, { start, cmd, txt, sender, isGroup, isAdmin, isGlobalAdmin, db, botState, delay, ADMIN_NUM }) {
-
-        // ==========================================
-        //  !bot on/off — Activar/Desactivar bot
-        // ==========================================
-        if (start === '!bot') {
-            if (!isAdmin) return sock.sendMessage(chatId, { text: '🚫 Solo *administradores* pueden hacer esto.' }, { quoted: msg });
-            const op = args[0]?.toLowerCase();
-
-            if (op === 'on') {
-                await db.activarGrupo(chatId, sender);
-                return sock.sendMessage(chatId, {
-                    text: `✅ *Bot activado en este grupo.*\n\n🤖 Ya puedo responder comandos aquí.\nEscribe *!menu* para ver todo lo que puedo hacer.`
-                }, { quoted: msg });
-            }
-            if (op === 'off') {
-                await db.desactivarGrupo(chatId);
-                return sock.sendMessage(chatId, {
-                    text: `🔴 *Bot desactivado en este grupo.*\n\nYa no responderé comandos aquí hasta que un admin use *!bot on*.`
-                }, { quoted: msg });
-            }
-            return sock.sendMessage(chatId, {
-                text: `🤖 *CONTROL DEL BOT*\n━━━━━━━━━━━━━━\n• *!bot on* — Activar bot en el grupo\n• *!bot off* — Desactivar bot en el grupo`
-            }, { quoted: msg });
-        }
-
-        // ==========================================
-        //  !bienvenida on/off — Sistema de bienvenida
-        // ==========================================
-        if (start === '!bienvenida') {
-            if (!isAdmin) return sock.sendMessage(chatId, { text: '🚫 Solo *administradores* pueden hacer esto.' }, { quoted: msg });
-            const op = args[0]?.toLowerCase();
-
-            if (op === 'on') {
-                await db.activarBienvenida(chatId);
-                const conf = await db.tieneBienvenida(chatId);
-                const msgActual = conf.mensaje || '(mensaje por defecto)';
-                return sock.sendMessage(chatId, {
-                    text: `✅ *Bienvenidas ACTIVADAS.*\n\n📝 Mensaje actual:\n_${msgActual}_\n\n💡 Personaliza con *!setbienvenida <texto>*\nUsa *{usuario}* para mencionar al nuevo miembro.`
-                }, { quoted: msg });
-            }
-            if (op === 'off') {
-                await db.desactivarBienvenida(chatId);
-                return sock.sendMessage(chatId, {
-                    text: `🔴 *Bienvenidas DESACTIVADAS.*\n\nYa no enviaré mensajes cuando alguien entre al grupo.`
-                }, { quoted: msg });
-            }
-            // Sin argumento: mostrar estado actual
-            const conf = await db.tieneBienvenida(chatId);
-            return sock.sendMessage(chatId, {
-                text: `👋 *SISTEMA DE BIENVENIDA*\n━━━━━━━━━━━━━━\n📊 Estado: *${conf.activa ? '✅ ACTIVADO' : '🔴 DESACTIVADO'}*\n📝 Mensaje: _${conf.mensaje || 'predeterminado'}_\n━━━━━━━━━━━━━━\n• *!bienvenida on* — Activar\n• *!bienvenida off* — Desactivar\n• *!setbienvenida <texto>* — Personalizar mensaje`
-            }, { quoted: msg });
-        }
-
-        // ==========================================
-        //  !setbienvenida <mensaje> — Personalizar mensaje
-        // ==========================================
-        if (start === '!setbienvenida') {
-            if (!isAdmin) return sock.sendMessage(chatId, { text: '🚫 Solo *administradores* pueden hacer esto.' }, { quoted: msg });
-
-            const mensaje = args.join(' ').trim();
-            if (!mensaje) {
-                return sock.sendMessage(chatId, {
-                    text: `📝 *PERSONALIZAR BIENVENIDA*\n━━━━━━━━━━━━━━\nUso: *!setbienvenida <tu mensaje>*\n\n🔠 Variables disponibles:\n• *{usuario}* — Menciona al nuevo miembro\n\nEjemplo:\n_!setbienvenida ¡Bienvenid@ {usuario}! 🎉 Aquí somos una familia._`
-                }, { quoted: msg });
-            }
-
-            await db.setMensajeBienvenida(chatId, mensaje);
-
-            return sock.sendMessage(chatId, {
-                text: `✅ *¡Mensaje de bienvenida guardado!*\n\n📝 Nuevo mensaje:\n_${mensaje}_\n\n⚠️ Las bienvenidas ya están *activadas*.\nSe enviará este mensaje cuando alguien entre al grupo.`
-            }, { quoted: msg });
-        }
 
         // ==========================================
         //  !kick @usuario — Expulsar del grupo
@@ -110,15 +38,15 @@ module.exports = {
         }
 
         // ==========================================
-        //  !adm @usuario — Promover/Degradar admin
+        //  !promover @usuario — Promover/Degradar admin
         // ==========================================
-        if (start === '!adm') {
+        if (start === '!promover') {
             if (!isAdmin) return sock.sendMessage(chatId, { text: '🚫 Solo *administradores* pueden hacer esto.' }, { quoted: msg });
             if (!isGroup) return sock.sendMessage(chatId, { text: '❌ Este comando solo funciona en grupos.' }, { quoted: msg });
 
             const mencionados = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
             if (mencionados.length === 0) {
-                return sock.sendMessage(chatId, { text: '👑 Menciona al usuario al que quieres dar/quitar admin.\nEjemplo: *!adm @usuario*' }, { quoted: msg });
+                return sock.sendMessage(chatId, { text: '👑 Menciona al usuario al que quieres dar/quitar admin.\nEjemplo: *!promover @usuario*\n_Para quitar: !promover @usuario remove_' }, { quoted: msg });
             }
 
             const action = args[1]?.toLowerCase() === 'remove' ? 'demote' : 'promote';
@@ -136,48 +64,6 @@ module.exports = {
                 }
             }
             return;
-        }
-
-        // ==========================================
-        //  !tag — Mencionar a todos
-        // ==========================================
-        if (start === '!tag') {
-            if (!isAdmin) return sock.sendMessage(chatId, { text: '🚫 Solo *administradores* pueden usar esto.' }, { quoted: msg });
-            if (!isGroup) return sock.sendMessage(chatId, { text: '❌ Este comando solo funciona en grupos.' }, { quoted: msg });
-
-            try {
-                const meta = await sock.groupMetadata(chatId);
-                const participants = meta.participants.map(p => p.id);
-                const mentions = participants;
-                const mensaje = args.join(' ').trim() || '📢 *Atención a todos*';
-                const texto = `${mensaje}\n\n` + participants.map(p => `@${p.split('@')[0]}`).join(' ');
-
-                return sock.sendMessage(chatId, { text: texto, mentions });
-            } catch (e) {
-                return sock.sendMessage(chatId, { text: '❌ No pude obtener la lista de miembros del grupo.' }, { quoted: msg });
-            }
-        }
-
-        // ==========================================
-        //  !reglas — Mostrar/Establecer reglas
-        // ==========================================
-        if (start === '!reglas') {
-            if (!isGroup) return;
-
-            const texto = args.join(' ').trim();
-            if (texto && isAdmin) {
-                // Guardar reglas en botState (en RAM — se reinicia con el bot)
-                if (!botState.reglas) botState.reglas = {};
-                botState.reglas[chatId] = texto;
-                return sock.sendMessage(chatId, {
-                    text: `📜 *Reglas del grupo actualizadas.*\n\n${texto}`
-                }, { quoted: msg });
-            }
-
-            const reglas = botState.reglas?.[chatId] || 'No hay reglas definidas. Un admin puede establecerlas con *!reglas <texto>*.';
-            return sock.sendMessage(chatId, {
-                text: `📜 *REGLAS DEL GRUPO*\n━━━━━━━━━━━━━━\n${reglas}`
-            });
         }
 
         // ==========================================

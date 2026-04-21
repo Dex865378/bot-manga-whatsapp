@@ -49,7 +49,7 @@ async function crearTablas() {
             racha_diaria INTEGER DEFAULT 0, ultima_actividad_racha INTEGER DEFAULT 0,
             total_comandos INTEGER DEFAULT 0, shenlong_invocado INTEGER DEFAULT 0,
             karma INTEGER DEFAULT 0, pocion_exp_fin INTEGER DEFAULT 0, cazarrecompensas_fin INTEGER DEFAULT 0,
-            last_daily INTEGER DEFAULT 0, last_work INTEGER DEFAULT 0, last_slut INTEGER DEFAULT 0,
+            last_daily INTEGER DEFAULT 0, last_work INTEGER DEFAULT 0, last_slut INTEGER DEFAULT 0, last_robar INTEGER DEFAULT 0,
             record_pesca TEXT, inventario TEXT DEFAULT '{}', nombre_wa TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )`,
         `CREATE TABLE IF NOT EXISTS auctions (
@@ -62,6 +62,20 @@ async function crearTablas() {
             highest_bidder_id TEXT,
             end_time INTEGER,
             status TEXT DEFAULT 'active'
+        )`,
+        `CREATE TABLE IF NOT EXISTS mascotas_usuario (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id       TEXT    NOT NULL,
+            tipo          TEXT    NOT NULL,
+            categoria     TEXT    NOT NULL,
+            nombre        TEXT    DEFAULT '',
+            version       INTEGER DEFAULT 0,
+            comidas_total INTEGER DEFAULT 0,
+            hambre        INTEGER DEFAULT 100,
+            es_principal  INTEGER DEFAULT 0,
+            cantidad      INTEGER DEFAULT 1,
+            escudo_activo INTEGER DEFAULT 0,
+            escudo_expira BIGINT  DEFAULT 0
         )`
     ];
     try {
@@ -89,6 +103,7 @@ async function crearTablas() {
             'ALTER TABLE usuarios ADD COLUMN last_daily INTEGER DEFAULT 0',
             'ALTER TABLE usuarios ADD COLUMN last_work INTEGER DEFAULT 0',
             'ALTER TABLE usuarios ADD COLUMN last_slut INTEGER DEFAULT 0',
+            'ALTER TABLE usuarios ADD COLUMN last_robar INTEGER DEFAULT 0',
             'ALTER TABLE usuarios ADD COLUMN clase TEXT DEFAULT "Novato"',
             'ALTER TABLE usuarios ADD COLUMN logros TEXT DEFAULT "{}"',
             'ALTER TABLE usuarios ADD COLUMN recompensa INTEGER DEFAULT 0',
@@ -117,6 +132,19 @@ async function crearTablas() {
         for (const sql of allCols) {
             try { await dbClient.execute(sql); } catch (e) { }
         }
+        // Migración automática: pasar mascota vieja (usuarios.mascota_tipo) a mascotas_usuario
+        try {
+            const old = await dbClient.execute("SELECT user_id, mascota_tipo, mascota_nombre, mascota_hambre FROM usuarios WHERE mascota_tipo IS NOT NULL");
+            for (const row of old.rows) {
+                const exists = await dbClient.execute({ sql: 'SELECT id FROM mascotas_usuario WHERE user_id = ? AND tipo = ?', args: [row.user_id, row.mascota_tipo] });
+                if (exists.rows.length === 0) {
+                    await dbClient.execute({
+                        sql: 'INSERT INTO mascotas_usuario (user_id, tipo, categoria, nombre, hambre, es_principal) VALUES (?, ?, ?, ?, ?, 1)',
+                        args: [row.user_id, row.mascota_tipo, 'legacy', row.mascota_nombre || '', row.mascota_hambre || 100]
+                    });
+                }
+            }
+        } catch(_) {}
         console.log('📦 [DB] Estructura verificada.');
     } catch (e) { console.error('❌ [DB] Error en tablas:', e.message); }
 }
@@ -179,42 +207,64 @@ async function obtenerSubasta(id) {
 // ========== FUNCIONES DE USUARIO (EL CORAZÓN) ==========
 
 async function obtenerUsuario(userId) {
-    // LRU: si existe, mover al final (más reciente)
-    if (userCache.has(userId)) {
-        const val = userCache.get(userId);
-        userCache.delete(userId);
-        userCache.set(userId, val);
-        return val;
-    }
     if (!connected) return null;
+    const cached = userCache.get(userId);
+    if (cached && (Date.now() - cached.time < 30000)) return cached.data; // 30 seg cache
 
     try {
         const rs = await dbClient.execute({ sql: 'SELECT * FROM usuarios WHERE user_id = ?', args: [userId] });
-        let user;
-        if (rs.rows.length > 0) {
-            user = rs.rows[0];
-        } else {
-            console.log(`🆕 [DB] Creando usuario: ${userId}`);
-            await dbClient.execute({
-                sql: 'INSERT INTO usuarios (user_id, monedas, xp, nivel) VALUES (?, 100, 0, 1)',
-                args: [userId]
-            });
-            const nuevo = await dbClient.execute({ sql: 'SELECT * FROM usuarios WHERE user_id = ?', args: [userId] });
-            user = nuevo.rows[0];
-        }
+        const data = rs.rows.length > 0 ? rs.rows[0] : null;
+        if (data) userCache.set(userId, { data, time: Date.now() });
+        return data;
+    } catch (e) { return null; }
+}
 
-        if (user) {
-            userCache.set(userId, user);
-            // Evicción LRU gradual: eliminar los más viejos si pasa de 500
-            while (userCache.size > 500) {
-                const oldest = userCache.keys().next().value;
-                userCache.delete(oldest);
-            }
+async function obtenerUsuariosBatch(userIds) {
+    if (!connected || !userIds || userIds.length === 0) return {};
+    
+    // Filtrar duplicados y normalizar
+    const uniqueIds = [...new Set(userIds)].filter(id => id);
+    if (uniqueIds.length === 0) return {};
+    
+    // Verificar caché primero
+    const resultados = {};
+    const idsToFetch = [];
+    const ahora = Date.now();
+    
+    for (const id of uniqueIds) {
+        const cached = userCache.get(id);
+        if (cached && (ahora - cached.time < 30000)) {
+            resultados[id] = cached.data;
+        } else {
+            idsToFetch.push(id);
         }
-        return user;
+    }
+    
+    if (idsToFetch.length === 0) return resultados;
+    
+    // Batch query con IN clause
+    try {
+        const placeholders = idsToFetch.map(() => '?').join(', ');
+        const rs = await dbClient.execute({
+            sql: `SELECT * FROM usuarios WHERE user_id IN (${placeholders})`,
+            args: idsToFetch
+        });
+        
+        for (const row of rs.rows) {
+            userCache.set(row.user_id, { data: row, time: ahora });
+            resultados[row.user_id] = row;
+        }
+        
+        // Evicción LRU gradual: eliminar los más viejos si pasa de 500
+        while (userCache.size > 500) {
+            const oldest = userCache.keys().next().value;
+            userCache.delete(oldest);
+        }
+        
+        return resultados;
     } catch (e) {
-        console.error(`❌ [DB] Error obtenerUsuario (${userId}):`, e.message);
-        return null;
+        console.error('❌ [DB] Error en batch query:', e.message);
+        return resultados;
     }
 }
 
@@ -234,6 +284,24 @@ async function actualizarUsuario(userId, campos) {
         return true;
     } catch (e) {
         console.error(`❌ [DB] Error actualizarUsuario:`, e.message);
+        return false;
+    }
+}
+
+// OPTIMIZACIÓN: Incremento atómico sin SELECT previo (más rápido, 1 query en lugar de 2)
+// Usar para operaciones simples donde no se necesita el valor actual
+async function incrementarCampo(userId, campo, valor) {
+    if (!connected) return false;
+    try {
+        await dbClient.execute({
+            sql: `UPDATE usuarios SET ${campo} = ${campo} + ? WHERE user_id = ?`,
+            args: [valor, userId]
+        });
+        // Invalidar caché ya que el valor cambió en DB
+        userCache.delete(userId);
+        return true;
+    } catch (e) {
+        console.error(`❌ [DB] Error incrementarCampo:`, e.message);
         return false;
     }
 }
@@ -356,14 +424,16 @@ async function agregarItem(userId, itemName, cantidad = 1) {
 
 async function removerItem(userId, itemName, cantidad = 1) {
     const u = await obtenerUsuario(userId);
-    if (!u) return false;
+    if (!u) return { ok: false, restante: 0 };
     let inv = {};
     try { inv = JSON.parse(u.inventario || '{}'); } catch (e) { inv = {}; }
     const current = (inv[itemName.toLowerCase()] || 0);
-    if (current < cantidad) return false;
+    if (current < cantidad) return { ok: false, restante: current };
     inv[itemName.toLowerCase()] = current - cantidad;
-    if (inv[itemName.toLowerCase()] <= 0) delete inv[itemName.toLowerCase()];
-    return await actualizarUsuario(userId, { inventario: JSON.stringify(inv) });
+    const restante = inv[itemName.toLowerCase()];
+    if (restante <= 0) delete inv[itemName.toLowerCase()];
+    const ok = await actualizarUsuario(userId, { inventario: JSON.stringify(inv) });
+    return { ok, restante: ok ? restante : current };
 }
 
 async function registrarComando(userId) {
@@ -619,6 +689,150 @@ async function desactivarModoAdmin(chatId) {
     } catch (e) { return false; }
 }
 
+// ========== FUNCIONES DE MASCOTAS ==========
+
+async function getMascotasUsuario(userId) {
+    if (!connected) return [];
+    try {
+        const rs = await dbClient.execute({ sql: 'SELECT * FROM mascotas_usuario WHERE user_id = ? ORDER BY es_principal DESC, id ASC', args: [userId] });
+        return rs.rows;
+    } catch (e) { return []; }
+}
+
+// Caché para mascota principal (reduce consultas a Turso)
+const mascotaPrincipalCache = new Map();
+const TTL_MASCOTA_PRINCIPAL = 60 * 1000; // 1 minuto
+
+async function getMascotaPrincipal(userId) {
+    if (!connected) return null;
+    
+    // Verificar caché
+    const cached = mascotaPrincipalCache.get(userId);
+    if (cached && (Date.now() - cached.time < TTL_MASCOTA_PRINCIPAL)) {
+        return cached.data;
+    }
+    
+    try {
+        const rs = await dbClient.execute({ sql: 'SELECT * FROM mascotas_usuario WHERE user_id = ? AND es_principal = 1 LIMIT 1', args: [userId] });
+        const data = rs.rows[0] || null;
+        
+        // Guardar en caché
+        mascotaPrincipalCache.set(userId, { data, time: Date.now() });
+        
+        // Limpiar caché si crece demasiado
+        if (mascotaPrincipalCache.size > 500) {
+            const oldest = mascotaPrincipalCache.keys().next().value;
+            mascotaPrincipalCache.delete(oldest);
+        }
+        
+        return data;
+    } catch (e) { return null; }
+}
+
+async function getCantidadMascota(userId, tipo) {
+    if (!connected) return 0;
+    try {
+        const rs = await dbClient.execute({ sql: 'SELECT cantidad FROM mascotas_usuario WHERE user_id = ? AND tipo = ?', args: [userId, tipo] });
+        return rs.rows[0]?.cantidad || 0;
+    } catch (e) { return 0; }
+}
+
+async function agregarMascota(userId, tipo, categoria, nombre = '') {
+    if (!connected) return { ok: false, msg: 'Sin conexión' };
+    try {
+        // Verificar si ya tiene esa mascota
+        const exists = await dbClient.execute({ sql: 'SELECT id, cantidad FROM mascotas_usuario WHERE user_id = ? AND tipo = ?', args: [userId, tipo] });
+        if (exists.rows.length > 0) {
+            const cant = exists.rows[0].cantidad;
+            if (cant >= 50) return { ok: false, msg: `Ya tienes el máximo de 50 *${tipo}*. ¡Es tu límite!` };
+            await dbClient.execute({ sql: 'UPDATE mascotas_usuario SET cantidad = cantidad + 1 WHERE user_id = ? AND tipo = ?', args: [userId, tipo] });
+        } else {
+            // Verificar si no tiene principal → esta será la principal
+            const hasPrincipal = await dbClient.execute({ sql: 'SELECT id FROM mascotas_usuario WHERE user_id = ? AND es_principal = 1 LIMIT 1', args: [userId] });
+            const esPrincipal = hasPrincipal.rows.length === 0 ? 1 : 0;
+            await dbClient.execute({ sql: 'INSERT INTO mascotas_usuario (user_id, tipo, categoria, nombre, es_principal) VALUES (?, ?, ?, ?, ?)', args: [userId, tipo, categoria, nombre, esPrincipal] });
+        }
+        return { ok: true };
+    } catch (e) { return { ok: false, msg: e.message }; }
+}
+
+async function setPrincipalMascota(userId, tipo) {
+    if (!connected) return false;
+    try {
+        const exists = await dbClient.execute({ sql: 'SELECT id FROM mascotas_usuario WHERE user_id = ? AND tipo = ?', args: [userId, tipo] });
+        if (exists.rows.length === 0) return false;
+        await dbClient.execute({ sql: 'UPDATE mascotas_usuario SET es_principal = 0 WHERE user_id = ?', args: [userId] });
+        await dbClient.execute({ sql: 'UPDATE mascotas_usuario SET es_principal = 1 WHERE user_id = ? AND tipo = ?', args: [userId, tipo] });
+        // Invalidar caché
+        mascotaPrincipalCache.delete(userId);
+        return true;
+    } catch (e) { return false; }
+}
+
+async function alimentarMascota(userId, mascotaId) {
+    if (!connected) return { ok: false };
+    try {
+        const rs = await dbClient.execute({ sql: 'SELECT * FROM mascotas_usuario WHERE id = ? AND user_id = ?', args: [mascotaId, userId] });
+        if (!rs.rows[0]) return { ok: false, msg: 'Mascota no encontrada' };
+        const m = rs.rows[0];
+        const nuevoHambre = Math.min(100, (m.hambre || 0) + 20);
+        const comidasActuales = (m.comidas_total || 0);
+        const nuevasComidas = comidasActuales + 1;
+        const versionActual = m.version || 0;
+        const nuevaVersion = Math.min(50, versionActual + (nuevasComidas >= 100 ? 1 : 0));
+        const evoluciono = nuevaVersion > versionActual;
+        // Reiniciar comidas a 0 si evolucionó, si no mantener el conteo
+        const comidasFinales = evoluciono ? 0 : nuevasComidas;
+        // DEBUG: Log para trackear evolución
+        if (comidasActuales >= 90 || evoluciono) {
+            console.log(`[EVOLUCION DEBUG] Mascota ${mascotaId}: comidasActuales=${comidasActuales}, nuevasComidas=${nuevasComidas}, comidasFinales=${comidasFinales}, versionActual=${versionActual}, nuevaVersion=${nuevaVersion}, evoluciono=${evoluciono}`);
+        }
+        await dbClient.execute({
+            sql: 'UPDATE mascotas_usuario SET hambre = ?, comidas_total = ?, version = ? WHERE id = ? AND user_id = ?',
+            args: [nuevoHambre, comidasFinales, nuevaVersion, mascotaId, userId]
+        });
+        // Invalidar caché si era la mascota principal (para actualizar hambre en perfil)
+        if (m.es_principal === 1) {
+            mascotaPrincipalCache.delete(userId);
+        }
+        return { ok: true, hambre: nuevoHambre, comidas: nuevasComidas, comidasFinales, version: nuevaVersion, evoluciono };
+    } catch (e) { return { ok: false, msg: e.message }; }
+}
+
+async function activarEscudoMascota(userId) {
+    if (!connected) return false;
+    try {
+        const expira = Date.now() + 24 * 60 * 60 * 1000;
+        await dbClient.execute({ sql: 'UPDATE mascotas_usuario SET escudo_activo = 1, escudo_expira = ? WHERE user_id = ? AND es_principal = 1', args: [expira, userId] });
+        return true;
+    } catch (e) { return false; }
+}
+
+async function tieneEscudoActivo(userId) {
+    if (!connected) return false;
+    try {
+        const rs = await dbClient.execute({ sql: 'SELECT escudo_activo, escudo_expira FROM mascotas_usuario WHERE user_id = ? AND es_principal = 1 LIMIT 1', args: [userId] });
+        const m = rs.rows[0];
+        if (!m || !m.escudo_activo) return false;
+        if (Date.now() > m.escudo_expira) {
+            await dbClient.execute({ sql: 'UPDATE mascotas_usuario SET escudo_activo = 0 WHERE user_id = ?', args: [userId] });
+            return false;
+        }
+        return true;
+    } catch (e) { return false; }
+}
+
+async function getMascotasPaginadas(userId, pagina = 1, porPagina = 8) {
+    if (!connected) return { mascotas: [], total: 0, paginas: 0 };
+    try {
+        const countRs = await dbClient.execute({ sql: 'SELECT COUNT(*) as total FROM mascotas_usuario WHERE user_id = ?', args: [userId] });
+        const total = countRs.rows[0]?.total || 0;
+        const offset = (pagina - 1) * porPagina;
+        const rs = await dbClient.execute({ sql: 'SELECT * FROM mascotas_usuario WHERE user_id = ? ORDER BY es_principal DESC, version DESC, id ASC LIMIT ? OFFSET ?', args: [userId, porPagina, offset] });
+        return { mascotas: rs.rows, total, paginas: Math.ceil(total / porPagina) };
+    } catch (e) { return { mascotas: [], total: 0, paginas: 0 }; }
+}
+
 async function obtenerGruposConFlash() {
     if (!connected) await init();
     try {
@@ -635,6 +849,37 @@ async function obtenerUsuariosGrupo(gId) {
     } catch (e) { return []; }
 }
 
+// ========== CONFIGURACIÓN DE GRUPOS (FLASH) ==========
+
+async function alternarFlash(chatId, activar) {
+    if (!connected) await init();
+    try {
+        // Asegurar que existe la tabla
+        await dbClient.execute(`
+            CREATE TABLE IF NOT EXISTS config_grupos (
+                group_id TEXT PRIMARY KEY,
+                flash_enabled INTEGER DEFAULT 0
+            )
+        `);
+        await dbClient.execute({
+            sql: 'INSERT INTO config_grupos (group_id, flash_enabled) VALUES (?, ?) ON CONFLICT(group_id) DO UPDATE SET flash_enabled = ?',
+            args: [chatId, activar ? 1 : 0, activar ? 1 : 0]
+        });
+        return true;
+    } catch (e) { console.error('[DB] Error alternarFlash:', e); return false; }
+}
+
+async function obtenerFlashStatus(chatId) {
+    if (!connected) await init();
+    try {
+        const rs = await dbClient.execute({
+            sql: 'SELECT flash_enabled FROM config_grupos WHERE group_id = ?',
+            args: [chatId]
+        });
+        return rs.rows[0]?.flash_enabled === 1;
+    } catch (e) { return false; }
+}
+
 module.exports = {
     init, isConnected: () => connected, nukeSession,
     getAuthKey, getAuthKeys, saveAuthKey, deleteAuthKey,
@@ -642,10 +887,14 @@ module.exports = {
     estaGrupoActivo, activarGrupo, desactivarGrupo,
     tieneBienvenida, activarBienvenida, desactivarBienvenida, setMensajeBienvenida,
     setModoAI, getModoAI, updateLastAIReply,
-    obtenerUsuario, actualizarUsuario, sumarMonedas, sumarXP, obtenerBalance, deducirMonedas,
+    obtenerUsuario, obtenerUsuariosBatch, actualizarUsuario, incrementarCampo, sumarMonedas, sumarXP, obtenerBalance, deducirMonedas,
     registrarVictoriaDuelo, registrarDerrotaDuelo, registrarComando, actualizarRacha,
     agregarItem, removerItem,
     sumarKarma, obtenerTopMonedas, obtenerTopNivel, registrarHistorial,
     crearSubasta, obtenerSubastasActivas, pujarSubasta, finalizarSubasta, obtenerSubasta,
-    activarAntiSpam, desactivarAntiSpam, activarModoAdmin, desactivarModoAdmin
+    activarAntiSpam, desactivarAntiSpam, activarModoAdmin, desactivarModoAdmin,
+    getMascotasUsuario, getMascotaPrincipal, getCantidadMascota, agregarMascota,
+    setPrincipalMascota, alimentarMascota, activarEscudoMascota, tieneEscudoActivo,
+    getMascotasPaginadas,
+    alternarFlash, obtenerFlashStatus, obtenerGruposConFlash
 };

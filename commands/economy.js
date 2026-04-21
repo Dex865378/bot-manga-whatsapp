@@ -1,10 +1,11 @@
 /**
  * 💰 MÓDULO DE ECONOMÍA Y SOCIAL
  */
+const { findPetData, calcATK } = require('./mascotas.js');
 module.exports = {
     name: 'economy',
     isMultiple: true,
-    names: ['!daily', '!w', '!slut', '!perfil', '!p', '!profile', '!tienda', '!comprar', '!inventario', '!mejor', '!bounty', '!dar', '!canjear', '!marry', '!divorce', '!regalaritem', '!regalar', '!clase', '!prestigio', '!loteria', '!alimentar', '!mascotas'],
+    names: ['!daily', '!w', '!slut', '!robar', '!perfil', '!p', '!profile', '!tienda', '!comprar', '!inventario', '!mejor', '!bounty', '!dar', '!canjear', '!marry', '!divorce', '!regalaritem', '!regalar', '!clase', '!prestigio', '!loteria'],
     async execute(sock, chatId, msg, args, { start, cmd, txt, sender, isGroup, isGlobalAdmin, db, botState, delay, ADMIN_NUM }) {
 
         // !clase <nombre>
@@ -50,7 +51,10 @@ module.exports = {
         if (['!perfil', '!p', '!profile'].includes(start)) {
             const ment = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
             const targetId = ment.length > 0 ? ment[0] : sender;
-            const u = await db.obtenerUsuario(targetId);
+            const [u, mascotaPrincipal] = await Promise.all([
+                db.obtenerUsuario(targetId),
+                db.getMascotaPrincipal(targetId)
+            ]);
             if (!u) return sock.sendMessage(chatId, { text: '❌ Perfil no encontrado.' });
 
             let logros = {};
@@ -126,11 +130,14 @@ module.exports = {
             if (u.record_pesca) pText += `🎣 **Mejor Pesca:** ${u.record_pesca}\n`;
             pText += `💍 **Casad@:** ${u.pareja ? '@' + u.pareja.split('@')[0] : 'Solter@'}\n`;
             
-            // --- MOSTRAR MASCOTA ---
-            if (u.mascota_tipo) {
-                pText += `🐾 **Mascota:** [${u.mascota_tipo}] *${u.mascota_nombre}* (❤️ ${u.mascota_hambre}%)\n`;
+            // --- MOSTRAR MASCOTA (nuevo sistema mascotas_usuario) ---
+            if (mascotaPrincipal) {
+                const pd = findPetData(mascotaPrincipal.tipo);
+                const eV = mascotaPrincipal.version > 0 ? ` v${mascotaPrincipal.version}` : '';
+                const esPrincipalLabel = mascotaPrincipal.cantidad > 1 ? ` ×${mascotaPrincipal.cantidad}` : '';
+                pText += `🐾 **Mascota:** ${pd?.e || '🐾'} *${mascotaPrincipal.tipo}${eV}*${esPrincipalLabel} | ♥️ ${mascotaPrincipal.hambre || 0}% hambre\n`;
             } else {
-                pText += `🐾 **Mascota:** Ninguna\n`;
+                pText += `🐾 **Mascota:** _Ninguna_ (usa *!comprar <nombre>*)\n`;
             }
 
             pText += `📝 **Bio:** _${bio}_\n`;
@@ -237,13 +244,34 @@ module.exports = {
             // Normalizar input: quitar tildes y convertir a minúsculas para evitar fallos
             const pTypeNorm = (pType || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
-            if (isNaN(num) && petTypes[pTypeNorm]) {
-                const pet = petTypes[pTypeNorm];
-                if (u.mascota_tipo) return sock.sendMessage(chatId, { text: `⚠️ Ya tienes una mascota (${u.mascota_tipo} ${u.mascota_nombre}). Usa !perfil para verla.` }, { quoted: msg });
-                if (balance < pet.p) return sock.sendMessage(chatId, { text: `💸 No tienes los *${pet.p.toLocaleString()}* diky necesarios para adoptar un ${pet.n}.\n💰 Tu saldo: *${balance.toLocaleString()}* diky.` }, { quoted: msg });
-                await db.deducirMonedas(sender, pet.p);
-                await db.actualizarUsuario(sender, { mascota_tipo: pet.e, mascota_nombre: pet.n, mascota_hambre: 100 });
-                return sock.sendMessage(chatId, { text: `🎉 ¡Has adoptado un *${pet.n}* ${pet.e}!\n\n❤️ Hambre: 100%\n\n💡 Cuídalo bien con *!alimentar*.\n🍖 Compra comida con *!comprar 15*.` }, { quoted: msg });
+            // Si no es número, probar compra de mascota del catálogo
+            if (isNaN(num)) {
+                const tipoQ = args.join(' ').trim();
+                if (!tipoQ) return sock.sendMessage(chatId, { text: '❌ Escribe el nombre de la mascota o el número del item.\n💡 _Ej: !comprar T-Rex_ o _!comprar 15_' }, { quoted: msg });
+
+                const petData = findPetData(tipoQ);
+                if (!petData) return sock.sendMessage(chatId, { text: `❌ No encontré *${tipoQ}*. Revisa las categorías con *!mascotas* o usa *!tienda* para ver items.` }, { quoted: msg });
+
+                if ((u?.monedas || 0) < petData.precio) {
+                    return sock.sendMessage(chatId, { text: `💸 No tienes suficiente. Necesitas *${petData.precio.toLocaleString()} Diky*.\nTienes: *${(u?.monedas || 0).toLocaleString()}*` }, { quoted: msg });
+                }
+
+                const cant = await db.getCantidadMascota(sender, petData.tipo);
+                if (cant >= 50) return sock.sendMessage(chatId, { text: `⚠️ Ya tienes 50 *${petData.tipo}*. Ese es el máximo por tipo.` }, { quoted: msg });
+
+                await db.sumarMonedas(sender, -petData.precio);
+                const res = await db.agregarMascota(sender, petData.tipo, petData.categoria);
+                if (!res.ok) return sock.sendMessage(chatId, { text: `❌ Error: ${res.msg}` }, { quoted: msg });
+
+                return sock.sendMessage(chatId, { text:
+`${petData.e} *¡MASCOTA ADOPTADA!*
+━━━━━━━━━━━━━━━━━━━━━━
+🐾 *${petData.tipo}* se une a tu parque
+💰 Pagaste: *${petData.precio.toLocaleString()} Diky*
+⚔️ ATK Base: *${petData.atk}* | Tipo: *${petData.atkTipo}*
+🍖 Aliéntala con *!alimentar* — cada 100 comidas evoluciona!
+━━━━━━━━━━━━━━━━━━━━━━`
+                }, { quoted: msg });
             }
             const items = {
                 1: { n: 'Pico de Platino', p: 10000, key: 'pico_usos', type: 'uses', amount: 50 },
@@ -466,6 +494,131 @@ module.exports = {
             return sock.sendMessage(chatId, { text: `💰 *${scenario}*\n\n📈 Ganancia: *+${gan}* diky.` }, { quoted: msg });
         }
 
+        // !robar — Robar diky con cooldown de 15 minutos
+        if (start === '!robar') {
+            const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+            const ahora = Date.now();
+            const COOLDOWN_ROBAR = 15 * 60 * 1000; // 15 minutos
+
+            // Reacción del bot 🦹‍♂️
+            await sock.sendMessage(chatId, { react: { text: '🦹‍♂️', key: msg.key } });
+
+            // Obtener datos del usuario (crear si no existe)
+            let u = await db.obtenerUsuario(sender);
+            if (!u) {
+                await db.actualizarUsuario(sender, { monedas: 100, nivel: 1, xp: 0 });
+                u = await db.obtenerUsuario(sender);
+            }
+            const lastRobo = u?.last_robar || 0;
+            const tiempoRestante = COOLDOWN_ROBAR - (ahora - lastRobo);
+
+            // Verificar cooldown
+            if (tiempoRestante > 0) {
+                const mins = Math.ceil(tiempoRestante / 60000);
+                const msgsCooldown = [
+                    `🚔 *¡LA POLICÍA ESTÁ CERCA!*\n👮 Debes esperar *${mins} minutos* antes de volver a robar.`,
+                    `🚨 *¡CALMA LADRÓN!*\n⏳ Espera *${mins} minutos* más. La policía patrulla la zona.`,
+                    `🕵️ *LOS DETECTIVES TE BUSCAN*\nEsconde *${mins} minutos* más...`,
+                    `🚓 *SIRENAS A LO LEJOS*\nNo puedes robar ahora. Espera *${mins} minutos*.`,
+                    `⏱️ *EN TIEMPO MUERTO*\nTu próximo atraco disponible en *${mins} minutos*.`
+                ];
+                return sock.sendMessage(chatId, { text: pick(msgsCooldown) }, { quoted: msg });
+            }
+
+            // Lista blanca de usuarios que no pueden ser robados (owner/dev)
+            const LISTA_BLANCA = [
+                ADMIN_NUM, // El admin principal
+                '50760541202', // Ejemplo de número protegido
+                // Agrega más números aquí si es necesario
+            ];
+            const cleanNumber = (n) => (n || '').split('@')[0].replace(/\D/g, '');
+            const senderClean = cleanNumber(sender);
+
+            // Verificar si el usuario está en lista blanca (no puede robar)
+            const esListaBlanca = LISTA_BLANCA.some(num => 
+                cleanNumber(num).includes(senderClean) || senderClean.includes(cleanNumber(num))
+            );
+
+            if (esListaBlanca && !isGlobalAdmin) {
+                const msgsListaBlanca = [
+                    `🛡️ *PROTECCIÓN DIVINA*\n\nTienes inmunidad total. No puedes usar este comando.`,
+                    `✨ *BENDICIÓN ESPECIAL*\n\nLos dioses te protegen de tales actividades...`,
+                    `👑 *ESTÁS FUERA DE LÍMITES*\n\nEste comando no está disponible para tu estatus.`
+                ];
+                return sock.sendMessage(chatId, { text: pick(msgsListaBlanca) }, { quoted: msg });
+            }
+
+            // Escenarios de robo exitoso (cortos y divertidos)
+            const exitosos = [
+                { text: '� *Le robaste la pensión a una abuela*\nPero ella te maldijo. Valió la pena.\n💰 +*{cantidad}* diky', emoji: '👵' },
+                { text: '� *Robaste donas de un policía dormido*\nÉl sigue roncando.\n💰 +*{cantidad}* diky', emoji: '🍩' },
+                { text: '🐕 *Le quitaste el hueso a un perro*\nEl perro te entendió. Era su último día.\n💰 +*{cantidad}* diky', emoji: '🐕' },
+                { text: '🚽 *Vendiste la tapa del baño de un restaurante*\n¿Quién compra eso?\n💰 +*{cantidad}* diky', emoji: '🚽' },
+                { text: '🧙 *Estafaste a un mago callejero*\nHizo desaparecer tu culpa.\n💰 +*{cantidad}* diky', emoji: '🧙' },
+                { text: '👶 *Un bebé te pagó por cambiarle el pañal*\nUsó tarjeta de crédito.\n💰 +*{cantidad}* diky', emoji: '👶' },
+                { text: '� *Robaste los dulces de un niño*\nPero le dejiste un recibo.\n💰 +*{cantidad}* diky', emoji: '🎅' },
+                { text: '🦆 *Vendiste patos de un parque*\nSon de plástico. Nadie notó la diferencia.\n💰 +*{cantidad}* diky', emoji: '🦆' },
+                { text: '� *Robaste un paquete de Amazon*\nEra una maldición egipcia. Tú ganas.\n💰 +*{cantidad}* diky', emoji: '📦' },
+                { text: '🧀 *Robaste queso de una rata*\nLa rata te debe una.\n💰 +*{cantidad}* diky', emoji: '🧀' },
+                { text: '🤡 *Le robaste el trabajo a un payaso*\nAhora haces fiestas infantiles.\n💰 +*{cantidad}* diky', emoji: '🤡' },
+                { text: '👟 *Vendiste tenis de un atleta olímpico*\nCorrieron solos al comprador.\n💰 +*{cantidad}* diky', emoji: '�' },
+                { text: '🍕 *Robaste la propina de un delivery*\nLa pizza llegó fría. Karma.\n💰 +*{cantidad}* diky', emoji: '🍕' },
+                { text: '🧸 *Vendiste un oso de peluche maldito*\nEl comprador sonríe diferente ahora.\n💰 +*{cantidad}* diky', emoji: '🧸' },
+                { text: '� *Robaste pan a las palomas*\nTe respetan como su líder ahora.\n💰 +*{cantidad}* diky', emoji: '�' }
+            ];
+
+            // Escenarios de robo fallido (cortos y divertidos)
+            const fallidos = [
+                { text: '� *Intentaste robarle a una abuela*\nElla te noqueó. Dignidad perdida.\n💸 -*{perdida}* diky (hospital)', perder: 80 },
+                { text: '🐈 *Le robaste a un gato callejero*\nResultó ser el jefe de la mafia local.\n💸 -*{perdida}* diky (protección)', perder: 150 },
+                { text: '🧟 *Robaste a un zombie*\nTe contagió deuda.\n💸 -*{perdida}* diky', perder: 60 },
+                { text: '🎪 *Intentaste estafar a un payaso*\nTe convenció de que eras el payaso.\n💸 -*{perdida}* diky (terapia)', perder: 100 },
+                { text: '🦆 *Robaste a un pato*\nTenía abogado.\n💸 -*{perdida}* diky (juicio)', perder: 200 },
+                { text: '👮 *Intentaste robar a un policía*\nEstaba de civil. Y de mal humor.\n💸 -*{perdida}* diky (fianza)', perder: 180 },
+                { text: '🍔 *Robaste una hamburguesa*\nTenía salsa de fantasmas. Te poseyeron.\n💸 -*{perdida}* diky (exorcismo)', perder: 120 },
+                { text: '🧙‍♀️ *Robaste a una bruja*\nTe convirtió en sapo por 3 minutos.\n💸 -*{perdida}* diky (humillación)', perder: 50 },
+                { text: '🤖 *Robaste a un robot*\nSubió tu cara a TikTok.\n💸 -*{perdida}* diky (trending)', perder: 90 },
+                { text: '🐝 *Robaste miel*\nLas abejas te hicieron crowdfunding... para tu funeral.\n💸 -*{perdida}* diky ( Funeral )', perder: 70 },
+                { text: '🪞 *Intentaste robar tu reflejo*\nTu reflejo te robó la dignidad.\n💸 -*{perdida}* diky', perder: 40 },
+                { text: '� *Robaste en una casa embrujada*\nLos fantasmas te cobraron renta.\n💸 -*{perdida}* diky', perder: 110 },
+                { text: '🌵 *Intentaste robar un cactus*\nEl cactus te adoptó como espina.\n💸 -*{perdida}* diky (quiropráctico)', perder: 85 },
+                { text: '🎮 *Robaste un videojuego*\nEra una simulación de tu arresto.\n💸 -*{perdida}* diky (predicción)', perder: 130 }
+            ];
+
+            // 70% éxito, 30% fracaso
+            const exito = Math.random() < 0.7;
+
+            if (exito) {
+                // ÉXITO: Ganar entre 75-250 diky
+                const cantidad = Math.floor(Math.random() * (250 - 75 + 1)) + 75;
+                const escenario = pick(exitosos);
+                
+                await db.sumarMonedas(sender, cantidad);
+                await db.actualizarUsuario(sender, { last_robar: ahora });
+
+                return sock.sendMessage(chatId, {
+                    text: escenario.text.replace('{cantidad}', cantidad.toLocaleString()) + '\n\n⏰ Próximo atraco disponible en *15 minutos*'
+                }, { quoted: msg });
+            } else {
+                // FRACASO: Posible pérdida de diky
+                const escenario = pick(fallidos);
+                
+                if (escenario.perder > 0) {
+                    const balance = await db.obtenerBalance(sender);
+                    const perdidaReal = Math.min(escenario.perder, balance);
+                    if (perdidaReal > 0) {
+                        await db.deducirMonedas(sender, perdidaReal);
+                    }
+                }
+                
+                await db.actualizarUsuario(sender, { last_robar: ahora });
+
+                return sock.sendMessage(chatId, {
+                    text: escenario.text.replace('{perdida}', escenario.perder.toLocaleString()) + '\n\n⏰ Puedes intentar de nuevo en *15 minutos*'
+                }, { quoted: msg });
+            }
+        }
+
         if (start === '!inventario') {
             const u = await db.obtenerUsuario(sender);
             let inv = {}; try { inv = JSON.parse(u.inventario || '{}'); } catch (e) { }
@@ -532,11 +685,26 @@ module.exports = {
                 return (num || 0).toLocaleString('es-ES');
             };
 
+            // Función para limpiar número y comparar
+            const cleanNumber = (n) => (n || '').split('@')[0].replace(/\D/g, '');
+            const adminClean = cleanNumber(ADMIN_NUM);
+
+            // Filtrar al admin del ranking (para que no aparezca)
+            const filtrarAdmin = (lista) => {
+                return lista.filter(u => {
+                    const userClean = cleanNumber(u.user_id);
+                    return !userClean.includes(adminClean) && !adminClean.includes(userClean);
+                });
+            };
+
+            const topNFiltered = filtrarAdmin(topN);
+            const topMFiltered = filtrarAdmin(topM);
+
             let m = '🏆 *LEADERBOARD GLOBAL* 🏆\n━━━━━━━━━━━━━━━\n\n';
 
             if (filter === 'lvl' || filter === 'all') {
                 m += '👑 *LEVEL TOP*\n';
-                topN.slice(0, 10).forEach((u, i) => {
+                topNFiltered.slice(0, 10).forEach((u, i) => {
                     const name = u.nombre_wa || u.user_id.split('@')[0];
                     const lvl = formatStat(u.nivel);
                     m += `[ ✨ *${lvl}* ] ➔ ${name}\n`;
@@ -546,7 +714,7 @@ module.exports = {
 
             if (filter === 'diky' || filter === 'all') {
                 m += '💰 *DIKY TYCOONS*\n';
-                topM.slice(0, 10).forEach((u, i) => {
+                topMFiltered.slice(0, 10).forEach((u, i) => {
                     const name = u.nombre_wa || u.user_id.split('@')[0];
                     const bal = formatStat(u.monedas);
                     m += `[ 💎 *${bal}* ] ➔ ${name}\n`;
@@ -768,8 +936,9 @@ module.exports = {
             }, { quoted: msg });
         }
 
-        // !mascotas — Ver mascotas disponibles para comprar
-        if (start === '!mascotas') {
+        // !mascotas y !alimentar ahora los maneja commands/mascotas.js
+        if (start === '!mascotas' || start === '!alimentar') { return; }
+        if (false) {
             const u = await db.obtenerUsuario(sender);
             const lista = [
                 { e: '🐶', n: 'Perro',             tipo: 'comun',    p: 5000,   desc: 'Leal y común' },

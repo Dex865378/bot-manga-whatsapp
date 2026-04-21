@@ -15,8 +15,12 @@ RUN apt-get update && apt-get install -y \
     graphicsmagick \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Instalar yt-dlp como binario independiente (NO necesita Python)
-#    Se descarga siempre la última versión para máxima compatibilidad con YouTube
+# 2. Instalar Deno (requerido por yt-dlp para YouTube)
+RUN curl -fsSL https://deno.land/install.sh | sh \
+    && mv /root/.deno/bin/deno /usr/local/bin/deno \
+    && deno --version
+
+# 3. Instalar yt-dlp
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux \
     -o /usr/local/bin/yt-dlp \
     && chmod +x /usr/local/bin/yt-dlp \
