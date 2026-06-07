@@ -50,14 +50,31 @@ class CircuitBreaker {
 }
 
 async function fetchWithRetry(url, options = {}, retries = 3, backoff = 1000) {
-    const circuitBreaker = new CircuitBreaker();
+    const domain = (() => {
+        try { return new URL(url).hostname; } catch (_) { return 'default'; }
+    })();
+    const circuitBreaker = getCircuitBreaker(domain);
+    const { body, data, method = 'GET', ...axiosOptions } = options;
+    const requestConfig = {
+        url,
+        method: method.toUpperCase(),
+        timeout: 10000,
+        ...axiosOptions
+    };
+
+    if (data !== undefined) {
+        requestConfig.data = data;
+    } else if (body !== undefined) {
+        try {
+            requestConfig.data = typeof body === 'string' ? JSON.parse(body) : body;
+        } catch (_) {
+            requestConfig.data = body;
+        }
+    }
     
     for (let i = 0; i < retries; i++) {
         try {
-            return await circuitBreaker.execute(() => axios.get(url, {
-                timeout: 10000,
-                ...options
-            }));
+            return await circuitBreaker.execute(() => axios(requestConfig));
         } catch (error) {
             const isLastAttempt = i === retries - 1;
             

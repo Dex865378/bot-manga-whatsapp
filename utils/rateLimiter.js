@@ -141,7 +141,7 @@ class RateLimiter {
      */
     cleanup() {
         // LRU ya maneja expiración automática
-        const stats = this.windows.getStats();
+        const stats = this.windows.stats();
         return {
             size: stats.size,
             maxSize: stats.maxSize

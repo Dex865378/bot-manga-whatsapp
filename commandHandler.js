@@ -10,6 +10,10 @@ function loadCommands(isReload = false) {
     if (!fs.existsSync(commandsPath)) return;
 
     if (commands.size > 0 && !isReload) return;
+    if (isReload) {
+        commands.clear();
+        commandValidations.clear();
+    }
 
     const files = fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'));
 

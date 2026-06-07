@@ -213,7 +213,15 @@ async function obtenerUsuario(userId) {
 
     try {
         const rs = await dbClient.execute({ sql: 'SELECT * FROM usuarios WHERE user_id = ?', args: [userId] });
-        const data = rs.rows.length > 0 ? rs.rows[0] : null;
+        let data = rs.rows.length > 0 ? rs.rows[0] : null;
+        if (!data) {
+            await dbClient.execute({
+                sql: 'INSERT INTO usuarios (user_id) VALUES (?) ON CONFLICT(user_id) DO NOTHING',
+                args: [userId]
+            });
+            const created = await dbClient.execute({ sql: 'SELECT * FROM usuarios WHERE user_id = ?', args: [userId] });
+            data = created.rows[0] || null;
+        }
         if (data) userCache.set(userId, { data, time: Date.now() });
         return data;
     } catch (e) { return null; }
@@ -271,7 +279,11 @@ async function obtenerUsuariosBatch(userIds) {
 async function actualizarUsuario(userId, campos) {
     // Actualizar caché para respuesta inmediata
     if (userCache.has(userId)) {
-        userCache.set(userId, { ...userCache.get(userId), ...campos });
+        const cached = userCache.get(userId);
+        userCache.set(userId, {
+            data: { ...(cached?.data || {}), ...campos },
+            time: Date.now()
+        });
     }
 
     if (!connected) return false;

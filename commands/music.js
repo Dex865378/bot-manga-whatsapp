@@ -77,12 +77,24 @@ module.exports = {
 
             // 4. DESCARGA NO BLOQUEANTE con spawn
             const ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
-            const cookiesPath = path.join(__dirname, '..', 'cookies.txt');
+            const cookiesPath = path.join(process.cwd(), 'cookies.txt');
             
             const ytdlpArgs = [
+                '--no-warnings',
+                // 🔑 Clave: usar cliente iOS — evita bloqueos 429 en IPs de datacenter
+                '--extractor-args', 'youtube:player_client=ios,web',
+                // Cookies para autenticación (si existen)
                 ...(fs.existsSync(cookiesPath) ? ['--cookies', cookiesPath] : []),
-                '--js-runtimes', 'deno',
-                '-f', 'bestaudio[ext=m4a]/bestaudio',
+                // Reintentos automáticos en caso de error
+                '--retries', '10',
+                '--fragment-retries', '10',
+                // No verificar certificados SSL (evita errores en algunos entornos)
+                '--no-check-certificates',
+                // Formato de audio directo (rápido, sin conversión pesada)
+                '-f', 'bestaudio[ext=m4a]/bestaudio/best',
+                // Sin thumbnails ni metadata extra (más rápido)
+                '--no-playlist',
+                '--no-continue',
                 '-o', tempFile,
                 ytUrl
             ];

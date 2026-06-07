@@ -3,7 +3,7 @@ FROM node:20-bullseye
 # 1. Instalar dependencias del sistema
 RUN apt-get update && apt-get install -y \
     ffmpeg \
-    git \
+    python3 \
     curl \
     libwebp-dev \
     libcairo2-dev \
@@ -15,12 +15,7 @@ RUN apt-get update && apt-get install -y \
     graphicsmagick \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Instalar Deno (requerido por yt-dlp para YouTube)
-RUN curl -fsSL https://deno.land/install.sh | sh \
-    && mv /root/.deno/bin/deno /usr/local/bin/deno \
-    && deno --version
-
-# 3. Instalar yt-dlp
+# 2. Instalar yt-dlp (versión más reciente con soporte iOS client)
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux \
     -o /usr/local/bin/yt-dlp \
     && chmod +x /usr/local/bin/yt-dlp \
@@ -36,9 +31,9 @@ RUN npm install --omit=dev && npm cache clean --force
 # 5. Copiar el código del bot
 COPY . .
 
-# 6. Hugging Face Spaces usa el puerto 7860
-ENV PORT=7860
-EXPOSE 7860
+# 6. Puerto para Render
+ENV PORT=10000
+EXPOSE 10000
 
 # 7. Comando de arranque
 CMD ["npm", "start"]

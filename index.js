@@ -44,6 +44,10 @@ const AUTH_DIR = CONFIG.AUTH_DIR;
 const ADMIN_NUM = CONFIG.ADMIN_NUM;
 const BOT_NUMBER = CONFIG.BOT_NUMBER;
 const RENDER_URL = CONFIG.RENDER_URL;
+const ADMIN_NUMBERS_CLEAN = (process.env.NUMERO_ADMIN || '')
+    .split(',')
+    .map(n => (n || '').split('@')[0].replace(/\D/g, ''))
+    .filter(n => n && n.length >= 7);
 
 let FFMPEG_PATH = 'ffmpeg';
 try { FFMPEG_PATH = require('@ffmpeg-installer/ffmpeg').path; } catch (e) { }
@@ -85,19 +89,18 @@ const imagenesRecientes = new Map(); // chatId -> Array de {remoteJid, id, times
 const MAX_IMAGENES_CACHE = 15; // Máximo 15 imágenes por chat
 const TTL_IMAGENES_CACHE = 5 * 60 * 1000; // 5 minutos de vida
 
-// Función para guardar referencia a imagen (ligera, solo metadata)
+// Función para guardar referencia a imagen
 function guardarImagenReciente(chatId, msg) {
     if (!imagenesRecientes.has(chatId)) {
         imagenesRecientes.set(chatId, []);
     }
     const cache = imagenesRecientes.get(chatId);
     
-    // Solo guardamos los datos necesarios para descargar la imagen después
-    // Esto es MUCHO más liviano que guardar todo el objeto msg
+    // Necesitamos guardar el objeto msg porque Baileys requiere el mediaKey y url para descargar la imagen.
     const imageRef = {
-        remoteJid: msg.key?.remoteJid || chatId,
         id: msg.key?.id,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        msg: msg
     };
     
     // Agregar al inicio (más reciente)
@@ -125,14 +128,8 @@ function obtenerImagenesRecientes(chatId, cantidad = 10) {
         return (ahora - item.timestamp) < TTL_IMAGENES_CACHE;
     }).slice(0, cantidad);
     
-    // Devolvemos objetos con la estructura mínima que necesita downloadMediaMessage
-    return validas.map(item => ({
-        key: {
-            remoteJid: item.remoteJid,
-            id: item.id,
-            fromMe: false
-        }
-    }));
+    // Devolvemos el mensaje completo que necesita downloadMediaMessage
+    return validas.map(item => item.msg);
 }
 
 const MAX_COLA_SALIDA = 50; // Límite máximo de mensajes en cola por chat
@@ -928,10 +925,13 @@ async function procesarMensaje(sock, msg) {
 
         // --- REGISTRO INTELIGENTE DE NOMBRE (WhatsApp Nickname) ---
         if (pushName && isCommand) {
-            const u = await db.obtenerUsuario(sender);
-            if (u && u.nombre_wa !== pushName) {
-                await db.actualizarUsuario(sender, { nombre_wa: pushName }).catch(() => { });
-            }
+            db.obtenerUsuario(sender)
+                .then(u => {
+                    if (u && u.nombre_wa !== pushName) {
+                        return db.actualizarUsuario(sender, { nombre_wa: pushName });
+                    }
+                })
+                .catch(() => { });
         }
 
         // --- FILTRO DE RELEVANCIA (Ahorro de CPU) ---
@@ -944,18 +944,16 @@ async function procesarMensaje(sock, msg) {
 
         if (!isCommand && !participaEnJuego && !isGroup) return;
 
-        // --- SETUP DE PRIVILEGIOS (Solo si el mensaje es relevante) ---
+        // --- SETUP DE PRIVILEGIOS (solo para comandos) ---
         const cleanNumber = (n) => (n || '').split('@')[0].replace(/\D/g, '');
-        const adminEnv = process.env.NUMERO_ADMIN || '';
-        const adminsList = adminEnv.split(',').map(n => cleanNumber(n)).filter(n => (n && n.length >= 7));
         const senderClean = cleanNumber(sender);
 
-        const isGlobalAdmin = adminsList.some(adminClean =>
+        const isGlobalAdmin = ADMIN_NUMBERS_CLEAN.some(adminClean =>
             senderClean.includes(adminClean) || adminClean.includes(senderClean)
         );
         let isAdmin = isGlobalAdmin;
 
-        if (isGroup && !isAdmin) {
+        if (isCommand && isGroup && !isAdmin) {
             const cached = botState.adminCache.get(chatId);
             const ahora = Date.now();
             if (cached && (ahora - cached.time < TTL_ADMIN)) {
@@ -1021,7 +1019,7 @@ async function procesarMensaje(sock, msg) {
                 }
             }
 
-            if (comandosValidos.includes(start)) {
+            if (handler.commands.has(start) || comandosValidos.includes(start)) {
                 // --- SOLO SI ES COMANDO HACEMOS LOS CHECKS PESADOS ---
 
                 // 1. ¿Grupo Activo? (Optimizado con caché combinada)
@@ -1050,7 +1048,7 @@ async function procesarMensaje(sock, msg) {
 
                 // Multimedia pesados: 8 seg para usuarios normales
                 if (!isAdmin) {
-                    const heavyCmds = ['!v', '!s', '!sticker', '!trace', '!top', '!waifu', '!kill', '!slap', '!punch', '!toimg', '!play', '!music', '!musica', '!ytmp3', '!play2'];
+                    const heavyCmds = ['!v', '!s', '!sticker', '!trace', '!top', '!waifu', '!kill', '!slap', '!punch', '!toimg', '!play', '!music', '!musica', '!ytmp3', '!play2', '!cancion', '!audio', '!mp3'];
                     if (heavyCmds.includes(start)) {
                         const wait = verificarCooldown(sender, start, 8000);
                         if (wait > 0) return sock.sendMessage(chatId, { text: `⏳ Espera ${wait}s para volver a usar *${start}*.` }, { quoted: msg });
@@ -1207,7 +1205,7 @@ async function procesarMensaje(sock, msg) {
                     obtenerImagenesRecientes // Para !s all
                 };
 
-                const isHeavy = ['!v', '!s', '!sticker', '!trace', '!toimg', '!play', '!music', '!musica', '!ytmp3', '!play2'].includes(start);
+                const isHeavy = ['!v', '!s', '!sticker', '!trace', '!toimg', '!play', '!music', '!musica', '!ytmp3', '!play2', '!cancion', '!audio', '!mp3'].includes(start);
                 if (isHeavy) {
                     const gotSlot = await esperarSlotHeavy();
                     if (!gotSlot) {
@@ -1234,11 +1232,12 @@ async function procesarMensaje(sock, msg) {
         }
 
         // --- MODO AI AUTO-RESPONSE (Si no se ejecutó un comando y es grupo) ---
+        if (isCommand) return;
+
         const isTextMessage = ['conversation', 'extendedTextMessage'].includes(msgType);
         if (isGroup && !participaEnJuego && isTextMessage) {
             // Usamos la configuración de la caché cargada previamente si es posible
-            const groupConfig = await obtenerConfigGrupo(chatId);
-            const aiConfig = groupConfig.ai;
+            let aiConfig = null;
 
             // Detección de mención robusta
             const botBare = (sock.user?.id || '').split(':')[0];
@@ -1251,6 +1250,11 @@ async function procesarMensaje(sock, msg) {
             const isMentionedByName = txt.toLowerCase().includes('diky');
 
             const isAIRelevant = isMentionedByTag || isReplyToBot || isMentionedByName;
+            const cachedGroupConfig = botState.groupCache.get(chatId);
+            if (!isAIRelevant && !cachedGroupConfig) return;
+
+            const groupConfig = cachedGroupConfig || await obtenerConfigGrupo(chatId);
+            aiConfig = groupConfig.ai;
 
             if (aiConfig.activado) {
                 const ahora = Date.now();
