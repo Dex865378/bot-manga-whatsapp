@@ -83,55 +83,6 @@ const MAX_COLA = 30; // Máximo de tareas encoladas (aumentado para grupos activ
 const colaSalida = new Map(); // chatId -> { cola: [], procesando: bool }
 global.colaSalida = colaSalida; // Exponer para diagnósticos
 
-// Cache de imágenes recientes por chat (para !s all) - OPTIMIZADO
-// Solo guardamos el msg.key (metadata), no todo el mensaje, para ahorrar RAM
-const imagenesRecientes = new Map(); // chatId -> Array de {remoteJid, id, timestamp}
-const MAX_IMAGENES_CACHE = 15; // Máximo 15 imágenes por chat
-const TTL_IMAGENES_CACHE = 5 * 60 * 1000; // 5 minutos de vida
-
-// Función para guardar referencia a imagen
-function guardarImagenReciente(chatId, msg) {
-    if (!imagenesRecientes.has(chatId)) {
-        imagenesRecientes.set(chatId, []);
-    }
-    const cache = imagenesRecientes.get(chatId);
-    
-    // Necesitamos guardar el objeto msg porque Baileys requiere el mediaKey y url para descargar la imagen.
-    const imageRef = {
-        id: msg.key?.id,
-        timestamp: Date.now(),
-        msg: msg
-    };
-    
-    // Agregar al inicio (más reciente)
-    cache.unshift(imageRef);
-    
-    // Limpiar duplicados (mismo id) y limitar tamaño
-    const seen = new Set();
-    const limpio = cache.filter(item => {
-        if (!item.id || seen.has(item.id)) return false;
-        seen.add(item.id);
-        return true;
-    }).slice(0, MAX_IMAGENES_CACHE);
-    
-    imagenesRecientes.set(chatId, limpio);
-}
-
-// Función para obtener referencias a imágenes recientes
-// Devuelve objetos compatibles con downloadMediaMessage
-function obtenerImagenesRecientes(chatId, cantidad = 10) {
-    const cache = imagenesRecientes.get(chatId) || [];
-    const ahora = Date.now();
-    
-    // Filtrar por TTL y devolver los más recientes
-    const validas = cache.filter(item => {
-        return (ahora - item.timestamp) < TTL_IMAGENES_CACHE;
-    }).slice(0, cantidad);
-    
-    // Devolvemos el mensaje completo que necesita downloadMediaMessage
-    return validas.map(item => item.msg);
-}
-
 const MAX_COLA_SALIDA = 50; // Límite máximo de mensajes en cola por chat
 
 async function enviarConCola(sock, chatId, content, options) {
@@ -800,24 +751,36 @@ async function startBot() {
                 }
             }
 
-            const fromMe = msg.key.fromMe;
-            
-            // GUARDAR imágenes recientes en cache (para !s all)
             const chatId = msg.key.remoteJid;
-            const isImage = msg.message?.imageMessage || 
-                          msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage;
-            if (isImage && !fromMe) {
-                guardarImagenReciente(chatId, msg);
-            }
+            const fromMe = msg.key.fromMe;
+            const tipo = getContentType(msg.message);
+            let texto = '';
+            if (tipo === 'conversation') texto = msg.message.conversation || '';
+            else if (tipo === 'extendedTextMessage') texto = msg.message.extendedTextMessage?.text || '';
+            else if (tipo === 'imageMessage') texto = msg.message.imageMessage?.caption || '';
+            else if (tipo === 'videoMessage') texto = msg.message.videoMessage?.caption || '';
 
-            if (fromMe) {
-                const tipo = getContentType(msg.message);
-                let texto = '';
-                if (tipo === 'conversation') texto = msg.message.conversation || '';
-                else if (tipo === 'extendedTextMessage') texto = msg.message.extendedTextMessage?.text || '';
-                if (!texto.trim().startsWith('!')) continue;
-            }
+            if (fromMe && !texto.trim().startsWith('!')) continue;
 
+            const sender = msg.key.participant || chatId;
+            const juegoActivo = botState.juegos[chatId];
+            const participaEnJuego = juegoActivo && (
+                juegoActivo.tipo === 'ahorcado' ||
+                juegoActivo.responder === sender ||
+                juegoActivo.pareja === sender ||
+                juegoActivo.solicitante === sender
+            );
+            const isCommand = texto.trim().startsWith('!');
+            const botBare = (sock.user?.id || '').split(':')[0];
+            const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+            const isMentioned = botBare && (
+                texto.includes(`@${botBare}`) ||
+                texto.toLowerCase().includes('diky') ||
+                mentionedJid.some(jid => jid.includes(botBare)) ||
+                msg.message?.extendedTextMessage?.contextInfo?.participant?.includes(botBare)
+            );
+
+            if (!isCommand && !participaEnJuego && !isMentioned) continue;
             // PROCESAMIENTO CONCURRENTE
             procesarMensaje(sock, msg)
                 .then(() => { botState.msgCount++; })
@@ -1201,8 +1164,7 @@ async function procesarMensaje(sock, msg) {
                     botState, db, delay, FFMPEG_PATH, ADMIN_NUM,
                     traducirConCache, convertirAWebp, downloadMediaMessage,
                     quotedMsgId, quotedParticipant, msgType, chatWithLiquidAI,
-                    sockOriginal: sock, // Para comandos express que necesitan bypass de cola
-                    obtenerImagenesRecientes // Para !s all
+                    sockOriginal: sock // Para comandos express que necesitan bypass de cola
                 };
 
                 const isHeavy = ['!v', '!s', '!sticker', '!trace', '!toimg', '!play', '!music', '!musica', '!ytmp3', '!play2', '!cancion', '!audio', '!mp3'].includes(start);
