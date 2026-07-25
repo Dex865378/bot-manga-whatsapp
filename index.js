@@ -50,6 +50,9 @@ const ADMIN_NUMBERS_CLEAN = (process.env.NUMERO_ADMIN || '')
     .filter(n => n && n.length >= 7);
 const VERBOSE_LOGS = process.env.VERBOSE_LOGS === '1';
 const FAST_COMMANDS = new Set(['!ping', '!menu', '!menu2', '!help']);
+const PAIRING_CODE_TTL_MS = Math.max(60000, parseInt(process.env.PAIRING_CODE_TTL_MS || '180000', 10));
+const PAIRING_MIN_INTERVAL_MS = Math.max(60000, parseInt(process.env.PAIRING_MIN_INTERVAL_MS || '180000', 10));
+const PAIRING_RATE_LIMIT_BACKOFF_MS = Math.max(300000, parseInt(process.env.PAIRING_RATE_LIMIT_BACKOFF_MS || '900000', 10));
 
 let FFMPEG_PATH = 'ffmpeg';
 try { FFMPEG_PATH = require('@ffmpeg-installer/ffmpeg').path; } catch (e) { }
@@ -298,6 +301,9 @@ const aiModel = genAI ? genAI.getGenerativeModel({ model: "gemini-1.5-flash" }) 
 // --- ESTADO GLOBAL ---
 const botState = {
     pairingCode: null,
+    pairingCodeAt: 0,
+    nextPairingRequestAt: 0,
+    pairingFailures: 0,
     status: 'Iniciando...',
     isConnected: false,
     startTime: Date.now(),
@@ -586,12 +592,22 @@ async function startBot() {
 
         // Si recibimos QR y necesitamos pairing, pedirlo ahora
         if (qr && needsPairing && !pairingRequested) {
+            const now = Date.now();
+            const waitMs = botState.nextPairingRequestAt - now;
+            if (waitMs > 0) {
+                const waitMin = Math.ceil(waitMs / 60000);
+                botState.status = `WhatsApp bloqueo codigos. Espera ${waitMin} min.`;
+                if (VERBOSE_LOGS) console.log(`[PAIRING] En backoff, faltan ${waitMin} min.`);
+                return;
+            }
+
             // Si ya tenemos un código activo, no pedir otro tan rápido
-            if (botState.pairingCode) {
+            if (botState.pairingCode && (now - botState.pairingCodeAt < PAIRING_CODE_TTL_MS)) {
                 console.log('♻️ Usando código existente:', botState.pairingCode);
                 botState.status = `Vincula con: ${botState.pairingCode}`;
                 return;
             }
+            botState.pairingCode = null;
 
             pairingRequested = true;
             const phoneClean = BOT_NUMBER.replace(/[^0-9]/g, '');
@@ -603,18 +619,23 @@ async function startBot() {
                 await delay(5000);
                 const code = await sock.requestPairingCode(phoneClean);
                 botState.pairingCode = code;
+                botState.pairingCodeAt = Date.now();
+                botState.nextPairingRequestAt = botState.pairingCodeAt + PAIRING_MIN_INTERVAL_MS;
+                botState.pairingFailures = 0;
                 console.log('🔑 ¡NUEVO CÓDIGO GENERADO!:', code);
                 botState.status = `VINCULAR CON: ${code}`;
             } catch (e) {
                 console.error('❌ Error al solicitar código:', e.message);
                 pairingRequested = false;
-                botState.status = `Error: ${e.message.split(' ')[0]}. Reintentando...`;
-
-                // Si hay rate limit, esperamos más tiempo
-                if (e.message.includes('rate-overlimit')) {
-                    console.log('⏳ Bloqueo por exceso de intentos. Esperando 1 minuto...');
-                    await delay(60000);
-                }
+                botState.pairingFailures++;
+                const isRateLimit = e.message.includes('rate-overlimit') || e.message.includes('too many') || e.message.includes('429');
+                const backoffMs = isRateLimit
+                    ? PAIRING_RATE_LIMIT_BACKOFF_MS
+                    : Math.min(PAIRING_MIN_INTERVAL_MS * botState.pairingFailures, PAIRING_RATE_LIMIT_BACKOFF_MS);
+                botState.nextPairingRequestAt = Date.now() + backoffMs;
+                const waitMin = Math.ceil(backoffMs / 60000);
+                botState.status = `WhatsApp rechazo el codigo. Espera ${waitMin} min.`;
+                console.log(`[PAIRING] Pausa ${waitMin} min para evitar bloqueo de WhatsApp.`);
             }
         }
 
@@ -727,8 +748,9 @@ async function startBot() {
             if (botState.pairingCode) {
                 console.log(`⏳ Código activo (${botState.pairingCode}), reconectando...`);
                 botState.status = `Código: ${botState.pairingCode} - ¡Ingresalo ya!`;
-                botState.pairingCode = null;
-                setTimeout(startBot, 5000);
+                const waitMs = Math.max(PAIRING_CODE_TTL_MS - (Date.now() - botState.pairingCodeAt), 30000);
+                botState.nextPairingRequestAt = Date.now() + waitMs;
+                setTimeout(startBot, waitMs);
                 return;
             }
 
