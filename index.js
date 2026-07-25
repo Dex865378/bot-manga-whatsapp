@@ -48,6 +48,8 @@ const ADMIN_NUMBERS_CLEAN = (process.env.NUMERO_ADMIN || '')
     .split(',')
     .map(n => (n || '').split('@')[0].replace(/\D/g, ''))
     .filter(n => n && n.length >= 7);
+const VERBOSE_LOGS = process.env.VERBOSE_LOGS === '1';
+const FAST_COMMANDS = new Set(['!ping', '!menu', '!menu2', '!help']);
 
 let FFMPEG_PATH = 'ffmpeg';
 try { FFMPEG_PATH = require('@ffmpeg-installer/ffmpeg').path; } catch (e) { }
@@ -65,7 +67,7 @@ setInterval(() => {
     for (const [key, ts] of cooldowns.entries()) {
         if (ahora - ts > TTL_COOLDOWN) { cooldowns.delete(key); eliminados++; }
     }
-    if (eliminados > 0) console.log(`[GC] Cooldowns limpiados: ${eliminados} entradas | Restantes: ${cooldowns.size}`);
+    if (eliminados > 0 && VERBOSE_LOGS) console.log(`[GC] Cooldowns limpiados: ${eliminados} entradas | Restantes: ${cooldowns.size}`);
 }, 15 * 60 * 1000);
 
 let procesosActivos = 0; // LIMITADOR DE HARDWARE
@@ -96,7 +98,7 @@ async function enviarConCola(sock, chatId, content, options) {
         if (estado.cola.length >= MAX_COLA_SALIDA) {
             const dropped = estado.cola.shift();
             dropped.reject(new Error('Cola saturada - mensaje descartado'));
-            console.log(`[COLA WARN] Chat ${chatId}: cola llena, mensaje descartado`);
+            if (VERBOSE_LOGS) console.log(`[COLA WARN] Chat ${chatId}: cola llena, mensaje descartado`);
         }
         estado.cola.push({ content, options, resolve, reject });
         if (!estado.procesando) procesarColaSalida(sock, chatId);
@@ -143,13 +145,16 @@ async function procesarColaSalida(sock, chatId) {
 }
 
 // Helper: esperar turno en la cola de tareas pesadas
+const RENDER_MAX_PROCESOS = Math.max(1, parseInt(process.env.MAX_PROCESOS || '9', 10));
+const RENDER_MAX_COLA = Math.max(1, parseInt(process.env.MAX_COLA_HEAVY || '10', 10));
+
 function esperarSlotHeavy() {
     return new Promise((resolve) => {
-        if (procesosActivos < MAX_PROCESOS) {
+        if (procesosActivos < RENDER_MAX_PROCESOS) {
             procesosActivos++;
             return resolve(true);
         }
-        if (colaHeavy.length >= MAX_COLA) {
+        if (colaHeavy.length >= RENDER_MAX_COLA) {
             return resolve(false); // Cola llena, rechazar
         }
         colaHeavy.push(resolve);
@@ -943,7 +948,7 @@ async function procesarMensaje(sock, msg) {
         if (isCommand) {
             const start = cmd.split(' ')[0];
             // 🔍 DEBUG LOG — Eliminar cuando todo funcione
-            console.log(`[CMD] ${start} | sender=${sender} | isGlobalAdmin=${isGlobalAdmin} | isGroup=${isGroup} | chatId=${chatId?.slice(-10)}`);
+            if (VERBOSE_LOGS) console.log(`[CMD] ${start} | sender=${sender} | isGlobalAdmin=${isGlobalAdmin} | isGroup=${isGroup} | chatId=${chatId?.slice(-10)}`);
             const comandosValidos = [
                 '!menu', '!menu2', '!help', '!ping', '!s', '!sticker', '!v', '!toimg', '!ascii',
                 '!profile', '!p', '!perfil', '!config', '!marry', '!divorce',
@@ -969,6 +974,27 @@ async function procesarMensaje(sock, msg) {
                 '!parque', '!principal', '!lucha', '!escudo',
                 '!aceptar_lucha', '!rechazar_lucha'
             ];
+
+            if (FAST_COMMANDS.has(start) && (handler.commands.has(start) || comandosValidos.includes(start))) {
+                const args = txt.split(' ').slice(1);
+                const sockProxy = new Proxy(sock, {
+                    get(target, prop) {
+                        if (prop === 'sendMessage') {
+                            return (jid, content, opts) => enviarConCola(target, jid, content, opts);
+                        }
+                        return typeof target[prop] === 'function' ? target[prop].bind(target) : target[prop];
+                    }
+                });
+                const extras = {
+                    start, cmd, txt, args, sender, pushName, isGroup, isAdmin, isGlobalAdmin,
+                    botState, db, delay, FFMPEG_PATH, ADMIN_NUM,
+                    traducirConCache, convertirAWebp, downloadMediaMessage,
+                    quotedMsgId, quotedParticipant, msgType, chatWithLiquidAI,
+                    sockOriginal: sock
+                };
+                const executedFast = await handler.handleCommand(start, sockProxy, chatId, msg, args, extras);
+                if (executedFast) return;
+            }
 
             // --- COOLDOWN GLOBAL (anti-spam / anti rate-limit de WhatsApp) ---
             // Admins: sin límite (la cola de salida protege el rate-limit)
@@ -1061,7 +1087,7 @@ async function procesarMensaje(sock, msg) {
                     }
                 }
 
-                if (isAdmin) {
+                if (isAdmin && VERBOSE_LOGS) {
                     console.log(`📡 Admin Cmd: ${cmd}`);
                 }
 

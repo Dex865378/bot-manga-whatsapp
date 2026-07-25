@@ -4,7 +4,7 @@
 module.exports = {
     name: 'main',
     isMultiple: true,
-    names: ['!menu', '!menu2', '!ping', '!s', '!sticker', '!toimg'],
+    names: ['!menu', '!menu2', '!help', '!ping', '!s', '!sticker', '!toimg'],
     async execute(sock, chatId, msg, args, { start, cmd, txt, isGroup, sender, pushName, downloadMediaMessage, convertirAWebp, FFMPEG_PATH, botState }) {
 
         // !ping
@@ -26,7 +26,7 @@ module.exports = {
         }
 
         // !menu / !menu2 (REDiseño TOTAL PROFESIONAL Y EXHAUSTIVO)
-        if (start === '!menu' || start === '!menu2') {
+        if (start === '!menu' || start === '!menu2' || start === '!help') {
             const pick = (v) => v[Math.floor(Math.random() * v.length)];
             const mottos = [
                 "¡Tu compañero digital definitivo!",
