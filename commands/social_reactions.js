@@ -29,9 +29,42 @@ const OTAKU_REACTIONS = {
     '!cafe': 'sip'
 };
 
+const GIFUKAI_REACTIONS = {
+    '!pat': 'pat',
+    '!hug': 'hug',
+    '!kill': 'kill',
+    '!kiss': 'kiss',
+    '!slap': 'slap',
+    '!punch': 'punch',
+    '!cry': 'cry',
+    '!dance': 'dance',
+    '!bite': 'bite',
+    '!highfive': 'highfive',
+    '!puchero': 'pout',
+    '!sonrojar': 'blush',
+    '!dormir': 'sleep',
+    '!comiendo': 'nom',
+    '!pensar': 'think',
+    '!patear': 'kick',
+    '!celebrar': 'happy',
+    '!aburrido': 'bored',
+    '!risa': 'laugh',
+    '!smug': 'smug',
+    '!stare': 'stare',
+    '!cafe': 'sip',
+    '!baka': 'angry'
+};
+
 function extractGifUrl(config, data) {
     if (config.source === 'nekos') return data?.results?.[0]?.url;
     return data?.url;
+}
+
+function isExpectedGifUrl(source, reaction, url) {
+    if (!url || !/^https?:\/\//i.test(url)) return false;
+    if (source === 'otaku') return url.includes(`/gifs/${reaction}/`);
+    if (source === 'gifukai') return url.includes(`/${reaction}/`) || (reaction === 'nom' && url.includes('/eat/'));
+    return true;
 }
 
 module.exports = {
@@ -87,12 +120,12 @@ module.exports = {
         };
 
         const config = { ...reccionesGif[start] };
+        const gifukaiReaction = GIFUKAI_REACTIONS[start];
         const otakuReaction = OTAKU_REACTIONS[start];
-        if (otakuReaction) {
-            config.api = `https://api.otakugifs.xyz/gif?reaction=${otakuReaction}`;
-            config.source = 'otaku';
-            config.reaction = otakuReaction;
-        }
+        config.apis = [];
+        if (gifukaiReaction) config.apis.push({ source: 'gifukai', reaction: gifukaiReaction, api: `https://api.gifukai.com/${gifukaiReaction}` });
+        if (otakuReaction) config.apis.push({ source: 'otaku', reaction: otakuReaction, api: `https://api.otakugifs.xyz/gif?reaction=${otakuReaction}` });
+        if (config.api) config.apis.push({ source: config.source, reaction: null, api: config.api });
         const ment = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
         const target = (ment.length > 0) ? ment[0] : null;
 
@@ -107,14 +140,22 @@ module.exports = {
 
         try {
             let gifUrl = '';
-            try {
-                if (!config.api) {
-                    if (!config.fallbacks?.length) throw new Error('No hay fuente exacta para esta reaccion');
-                    gifUrl = config.fallbacks[Math.floor(Math.random() * config.fallbacks.length)];
-                } else {
-                    const res = await axios.get(config.api, { timeout: 8000 });
-                    gifUrl = extractGifUrl(config, res.data);
+            let lastApiError = null;
+            for (const provider of config.apis) {
+                try {
+                    const res = await axios.get(provider.api, { timeout: 8000 });
+                    const url = extractGifUrl(provider, res.data);
+                    if (!isExpectedGifUrl(provider.source, provider.reaction, url)) {
+                        throw new Error(`URL invalida para ${provider.source}:${provider.reaction || 'default'}`);
+                    }
+                    gifUrl = url;
+                    break;
+                } catch (apiErr) {
+                    lastApiError = apiErr;
                 }
+            }
+
+            try {
                 if (!gifUrl || !/^https?:\/\//i.test(gifUrl)) {
                     throw new Error('La API no devolvio una URL valida');
                 }
