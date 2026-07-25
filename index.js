@@ -17,6 +17,7 @@ const pino = require('pino');
 const { Boom } = require('@hapi/boom');
 const express = require('express');
 const axios = require('axios');
+const QRCode = require('qrcode');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -52,7 +53,7 @@ const VERBOSE_LOGS = process.env.VERBOSE_LOGS === '1';
 const FAST_COMMANDS = new Set(['!ping', '!menu', '!menu2', '!help']);
 const PAIRING_CODE_TTL_MS = Math.max(60000, parseInt(process.env.PAIRING_CODE_TTL_MS || '180000', 10));
 const PAIRING_MIN_INTERVAL_MS = Math.max(60000, parseInt(process.env.PAIRING_MIN_INTERVAL_MS || '180000', 10));
-const PAIRING_RATE_LIMIT_BACKOFF_MS = Math.max(300000, parseInt(process.env.PAIRING_RATE_LIMIT_BACKOFF_MS || '900000', 10));
+const PAIRING_RATE_LIMIT_BACKOFF_MS = Math.max(300000, parseInt(process.env.PAIRING_RATE_LIMIT_BACKOFF_MS || '3600000', 10));
 
 let FFMPEG_PATH = 'ffmpeg';
 try { FFMPEG_PATH = require('@ffmpeg-installer/ffmpeg').path; } catch (e) { }
@@ -304,6 +305,8 @@ const botState = {
     pairingCodeAt: 0,
     nextPairingRequestAt: 0,
     pairingFailures: 0,
+    qrDataUrl: null,
+    qrAt: 0,
     status: 'Iniciando...',
     isConnected: false,
     startTime: Date.now(),
@@ -459,6 +462,14 @@ app.get('/', (req, res) => {
                <p style="color:#64748b;font-size:0.8em">WhatsApp → Dispositivos vinculados → Vincular con número</p>`
             : `<p style="color:#eab308;font-size:1.2em">⏳ ${botState.status}</p>`;
 
+    const qrHtml = (!botState.isConnected && botState.qrDataUrl)
+        ? `<div style="margin-top:16px">
+               <p style="color:#94a3b8;margin-bottom:8px">QR DE VINCULACION:</p>
+               <img src="${botState.qrDataUrl}" alt="QR WhatsApp" style="background:#fff;padding:10px;border-radius:10px;max-width:260px;width:100%;display:block;margin:0 auto">
+               <p style="color:#64748b;font-size:0.8em;margin-top:8px">WhatsApp -> Dispositivos vinculados -> Vincular dispositivo</p>
+           </div>`
+        : '';
+
     res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Diky Bot</title>
     <meta http-equiv="refresh" content="5"><style>
     *{margin:0;padding:0;box-sizing:border-box}
@@ -471,7 +482,7 @@ app.get('/', (req, res) => {
     .st b{color:#e2e8f0}
     </style></head><body><div class="c">
     <h1>😺 Diky Bot V2</h1>
-    <div class="sb">${statusHtml}</div>
+    <div class="sb">${statusHtml}${qrHtml}</div>
     <div class="st">
         <p>⏱️ <b>Uptime:</b> ${h}h ${m}m ${s}s</p>
         <p>📨 <b>Mensajes:</b> ${botState.msgCount}</p>
@@ -489,6 +500,8 @@ async function resetAuthSession(reason = 'manual reset') {
     fs.mkdirSync(AUTH_DIR, { recursive: true });
     botState.isConnected = false;
     botState.pairingCode = null;
+    botState.qrDataUrl = null;
+    botState.qrAt = 0;
     botState.status = 'Sesion borrada. Reiniciando...';
     console.log(`[AUTH RESET] ${reason}`);
 }
@@ -590,6 +603,16 @@ async function startBot() {
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
+        if (qr) {
+            try {
+                botState.qrDataUrl = await QRCode.toDataURL(qr, { margin: 1, width: 280 });
+                botState.qrAt = Date.now();
+                if (!botState.pairingCode) botState.status = 'QR listo para vincular.';
+            } catch (e) {
+                console.error('[QR] Error generando QR:', e.message);
+            }
+        }
+
         // Si recibimos QR y necesitamos pairing, pedirlo ahora
         if (qr && needsPairing && !pairingRequested) {
             const now = Date.now();
@@ -643,6 +666,8 @@ async function startBot() {
             console.log('✅ BOT CONECTADO');
             botState.isConnected = true;
             botState.pairingCode = null;
+            botState.qrDataUrl = null;
+            botState.qrAt = 0;
             botState.status = 'Online';
             botState.seConectoAlgunaVez = true; // Marcar que SÍ logró conectarse
             errores401 = 0; // Reset del contador de errores al conectar exitosamente
