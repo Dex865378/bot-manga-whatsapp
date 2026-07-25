@@ -532,7 +532,7 @@ async function convertirAWebp(buffer, isVideo = false) {
     const tmpOut = path.join(os.tmpdir(), `stk_out_${Date.now()}.webp`);
     fs.writeFileSync(tmpIn, buffer);
     try {
-        const vf = 'scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000';
+        const vf = 'scale=512:512:force_original_aspect_ratio=increase,crop=512:512';
         const args = isVideo
             ? ['-i', tmpIn, '-vf', vf + ',fps=10', '-vcodec', 'libwebp', '-loop', '0', '-preset', 'default', '-an', '-vsync', '0', '-t', '6', '-quality', '50', '-compression_level', '3', '-y', tmpOut]
             : ['-i', tmpIn, '-vf', vf, '-quality', '75', '-compression_level', '4', '-y', tmpOut];
