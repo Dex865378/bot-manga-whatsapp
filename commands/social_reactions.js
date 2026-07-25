@@ -9,6 +9,31 @@ const execFileAsync = promisify(execFile);
 // Usar FFmpeg del sistema (instalado en Dockerfile)
 const FFMPEG_PATH = 'ffmpeg';
 
+const OTAKU_REACTIONS = {
+    '!pat': 'pat',
+    '!hug': 'hug',
+    '!kiss': 'kiss',
+    '!slap': 'slap',
+    '!punch': 'punch',
+    '!cry': 'cry',
+    '!dance': 'dance',
+    '!bite': 'bite',
+    '!puchero': 'pout',
+    '!sonrojar': 'blush',
+    '!dormir': 'sleep',
+    '!comiendo': 'nom',
+    '!celebrar': 'happy',
+    '!risa': 'laugh',
+    '!smug': 'smug',
+    '!stare': 'stare',
+    '!cafe': 'sip'
+};
+
+function extractGifUrl(config, data) {
+    if (config.source === 'nekos') return data?.results?.[0]?.url;
+    return data?.url;
+}
+
 module.exports = {
     name: 'reactions',
     isMultiple: true,
@@ -31,7 +56,7 @@ module.exports = {
             '!bite': { api: 'https://api.waifu.pics/sfw/bite', txt: ['le dio una mordidita a', 'mordió a', 'le dio un mordisco juguetón a'], solo: ['se muerde las uñas...', 'está mordiendo su labio', 'tiene hambre de algo...'], source: 'waifu' },
             '!highfive': { api: 'https://api.waifu.pics/sfw/highfive', txt: ['chocó esos cinco con', 'le dio un hi-five a', 'choca las palmas con'], solo: ['chocó esos cinco consigo mismo...', 'espera que alguien le choque los cinco', 'está feliz celebrando'], source: 'waifu' },
             '!fumar': {
-                api: 'https://api.otakugifs.xyz/gif?reaction=smug',
+                api: null,
                 txt: ['fuma frente a', 'suelta el humo sobre', 'mira con estilo mientras fuma ante'], solo: ['está fumando un buen cigarro... 🚬', 'exhala una nube de humo', 'está en modo relax con un cigarro'], source: 'otaku',
                 fallbacks: [
                     'https://media.tenor.com/6Xun6YIdXfIAAAAC/anime-smoke.gif',
@@ -61,7 +86,13 @@ module.exports = {
             '!stare': { api: 'https://nekos.best/api/v2/stare', txt: ['mira fijamente a', 'le clava la mirada a', 'no le quita los ojos de encima a'], solo: ['mira a la nada fijamente... 👁️', 'está viendo tu alma', 'no parpadea...'], source: 'nekos' }
         };
 
-        const config = reccionesGif[start];
+        const config = { ...reccionesGif[start] };
+        const otakuReaction = OTAKU_REACTIONS[start];
+        if (otakuReaction) {
+            config.api = `https://api.otakugifs.xyz/gif?reaction=${otakuReaction}`;
+            config.source = 'otaku';
+            config.reaction = otakuReaction;
+        }
         const ment = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
         const target = (ment.length > 0) ? ment[0] : null;
 
@@ -77,8 +108,19 @@ module.exports = {
         try {
             let gifUrl = '';
             try {
-                const res = await axios.get(config.api, { timeout: 8000 });
-                gifUrl = (config.source === 'nekos') ? res.data.results[0].url : res.data.url;
+                if (!config.api) {
+                    if (!config.fallbacks?.length) throw new Error('No hay fuente exacta para esta reaccion');
+                    gifUrl = config.fallbacks[Math.floor(Math.random() * config.fallbacks.length)];
+                } else {
+                    const res = await axios.get(config.api, { timeout: 8000 });
+                    gifUrl = extractGifUrl(config, res.data);
+                }
+                if (!gifUrl || !/^https?:\/\//i.test(gifUrl)) {
+                    throw new Error('La API no devolvio una URL valida');
+                }
+                if (config.source === 'otaku' && config.reaction && !gifUrl.includes(`/gifs/${config.reaction}/`)) {
+                    throw new Error(`La API devolvio una categoria distinta para ${start}`);
+                }
             } catch (apiErr) {
                 // Fallback si la API falla o no tiene la categoría
                 if (config.fallbacks) {
