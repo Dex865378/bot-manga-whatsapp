@@ -475,6 +475,28 @@ app.get('/', (req, res) => {
 });
 
 app.get('/health', (req, res) => res.json({ ok: true, connected: botState.isConnected }));
+
+async function resetAuthSession(reason = 'manual reset') {
+    try { await db.init(); } catch (e) { }
+    await db.nukeSession().catch(() => { });
+    if (fs.existsSync(AUTH_DIR)) fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+    fs.mkdirSync(AUTH_DIR, { recursive: true });
+    botState.isConnected = false;
+    botState.pairingCode = null;
+    botState.status = 'Sesion borrada. Reiniciando...';
+    console.log(`[AUTH RESET] ${reason}`);
+}
+
+app.get('/reset-session', async (req, res) => {
+    const token = process.env.RESET_SESSION_TOKEN;
+    if (!token || req.query.token !== token) {
+        return res.status(403).json({ ok: false, error: 'RESET_SESSION_TOKEN invalido o no configurado' });
+    }
+
+    await resetAuthSession('dashboard reset');
+    res.json({ ok: true, message: 'Sesion de WhatsApp borrada. Render reiniciara el bot.' });
+    setTimeout(() => process.exit(0), 800);
+});
 app.listen(PORT, '0.0.0.0', () => console.log(`🌐 Dashboard en puerto ${PORT}`));
 
 // ============================================================
@@ -684,10 +706,7 @@ async function startBot() {
                     console.log('🚪 Sesión definitivamente muerta o Logout manual. Limpiando...');
                     errores401 = 0;
                     botState.seConectoAlgunaVez = false;
-                    await db.nukeSession().catch(() => { });
-                    if (fs.existsSync(AUTH_DIR)) fs.rmSync(AUTH_DIR, { recursive: true, force: true });
-                    fs.mkdirSync(AUTH_DIR, { recursive: true });
-                    botState.pairingCode = null;
+                    await resetAuthSession('logout/401');
                     console.log('🔄 Reiniciando en 10s con sesión limpia...');
                     setTimeout(startBot, 10000);
                     return;
