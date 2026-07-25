@@ -11,7 +11,8 @@ const {
     delay,
     downloadMediaMessage,
     getContentType,
-    fetchLatestBaileysVersion
+    fetchLatestBaileysVersion,
+    Browsers
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const { Boom } = require('@hapi/boom');
@@ -54,6 +55,7 @@ const FAST_COMMANDS = new Set(['!ping', '!menu', '!menu2', '!help']);
 const PAIRING_CODE_TTL_MS = Math.max(60000, parseInt(process.env.PAIRING_CODE_TTL_MS || '180000', 10));
 const PAIRING_MIN_INTERVAL_MS = Math.max(60000, parseInt(process.env.PAIRING_MIN_INTERVAL_MS || '180000', 10));
 const PAIRING_RATE_LIMIT_BACKOFF_MS = Math.max(300000, parseInt(process.env.PAIRING_RATE_LIMIT_BACKOFF_MS || '3600000', 10));
+const PAIRING_METHOD = (process.env.PAIRING_METHOD || 'qr').toLowerCase();
 
 let FFMPEG_PATH = 'ffmpeg';
 try { FFMPEG_PATH = require('@ffmpeg-installer/ffmpeg').path; } catch (e) { }
@@ -307,6 +309,8 @@ const botState = {
     pairingFailures: 0,
     qrDataUrl: null,
     qrAt: 0,
+    lastDisconnectCode: null,
+    lastDisconnectReason: '',
     status: 'Iniciando...',
     isConnected: false,
     startTime: Date.now(),
@@ -488,6 +492,7 @@ app.get('/', (req, res) => {
         <p>📨 <b>Mensajes:</b> ${botState.msgCount}</p>
         <p>☁️ <b>DB:</b> ${dbBadge}</p>
         <p>🔧 <b>Admin:</b> ${ADMIN_NUM || '⚠️'}</p>
+        <p><b>Ultimo error:</b> ${botState.lastDisconnectCode || '-'} ${botState.lastDisconnectReason || ''}</p>
     </div></div></body></html>`);
 });
 
@@ -581,19 +586,19 @@ async function startBot() {
     const sock = makeWASocket({
         auth: authState,
         printQRInTerminal: false,
-        logger: pino({ level: 'fatal' }), // 🤫 Silenciado: oculta los errores inofensivos de "failed to decrypt message"
-        browser: ["Ubuntu", "Chrome", "20.0.04"],
+        logger: pino({ level: process.env.BAILEYS_LOG_LEVEL || 'silent' }),
+        browser: Browsers.macOS('Chrome'),
         version: waVersion,
         connectTimeoutMs: 120000,
-        keepAliveIntervalMs: 25000,
-        retryRequestDelayMs: 2000,
+        keepAliveIntervalMs: 30000,
+        retryRequestDelayMs: 250,
         markOnlineOnConnect: false,
         syncFullHistory: false,
         generateHighQualityLinkPreview: false, // Ahorra CPU y RAM
         getMessage: async () => undefined // No retener mensajes viejos en RAM
     });
 
-    const needsPairing = !sock.authState.creds.registered && BOT_NUMBER;
+    const needsPairingCode = PAIRING_METHOD === 'code' && !sock.authState.creds.registered && BOT_NUMBER;
     let pairingRequested = false;
 
     // PRIMERO registrar event handlers
@@ -614,7 +619,7 @@ async function startBot() {
         }
 
         // Si recibimos QR y necesitamos pairing, pedirlo ahora
-        if (qr && needsPairing && !pairingRequested) {
+        if (qr && needsPairingCode && !pairingRequested) {
             const now = Date.now();
             const waitMs = botState.nextPairingRequestAt - now;
             if (waitMs > 0) {
@@ -739,6 +744,8 @@ async function startBot() {
             botState.isConnected = false;
             const error = lastDisconnect?.error;
             const code = (new Boom(error))?.output?.statusCode;
+            botState.lastDisconnectCode = code || null;
+            botState.lastDisconnectReason = (error?.message || 'Sin mensaje').slice(0, 180);
             console.log(`🔌 Conexión cerrada. Código: ${code} | Razón: ${error?.message || 'Sin mensaje'}`);
 
             if (code === DisconnectReason.loggedOut || code === 401) {
