@@ -1,8 +1,13 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const axios = require('axios');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 const { fetchWithRetry } = require('../utils/apiClient');
 const { LRUCache } = require('../utils/lruCache');
+
+const execFileAsync = promisify(execFile);
 
 // ============================================================
 //     CAHÉ DE APIs EXTERNAS (Jikan, Wikipedia, etc.)
@@ -147,7 +152,32 @@ module.exports = {
                         'Referer': 'https://translate.google.com/'
                     }
                 });
-                return sock.sendMessage(chatId, { audio: Buffer.from(audioRes.data), mimetype: 'audio/ogg; codecs=opus', ptt: true }, { quoted: msg });
+                const mp3Buffer = Buffer.from(audioRes.data);
+                if (mp3Buffer.length < 1024) throw new Error('TTS devolvio audio vacio');
+
+                const tmpIn = path.join(os.tmpdir(), `decir_in_${Date.now()}.mp3`);
+                const tmpOut = path.join(os.tmpdir(), `decir_out_${Date.now()}.ogg`);
+                try {
+                    fs.writeFileSync(tmpIn, mp3Buffer);
+                    await execFileAsync('ffmpeg', [
+                        '-i', tmpIn,
+                        '-vn',
+                        '-c:a', 'libopus',
+                        '-b:a', '48k',
+                        '-ar', '48000',
+                        '-ac', '1',
+                        '-f', 'ogg',
+                        '-y',
+                        tmpOut
+                    ], { timeout: 15000, windowsHide: true });
+
+                    const opusBuffer = fs.readFileSync(tmpOut);
+                    if (opusBuffer.length < 1024) throw new Error('FFmpeg genero audio vacio');
+                    return sock.sendMessage(chatId, { audio: opusBuffer, mimetype: 'audio/ogg; codecs=opus', ptt: true }, { quoted: msg });
+                } finally {
+                    try { fs.unlinkSync(tmpIn); } catch (e) { }
+                    try { fs.unlinkSync(tmpOut); } catch (e) { }
+                }
             } catch (ttsErr) {
                 console.error('❌ [decir] TTS Error:', ttsErr.message);
                 // Fallback: enviar como texto si TTS falla
