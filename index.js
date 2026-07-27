@@ -93,9 +93,18 @@ global.colaSalida = colaSalida; // Exponer para diagnósticos
 
 const MAX_COLA_SALIDA = 50; // Límite máximo de mensajes en cola por chat
 
+const SEND_MESSAGE_TIMEOUT_MS = Math.max(5000, parseInt(process.env.SEND_MESSAGE_TIMEOUT_MS || '25000', 10));
+
+function sendMessageConTimeout(sock, chatId, content, options) {
+    return Promise.race([
+        sock.sendMessage(chatId, content, options || {}),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('sendMessage timeout')), SEND_MESSAGE_TIMEOUT_MS))
+    ]);
+}
+
 async function enviarConCola(sock, chatId, content, options) {
     if (!colaSalida.has(chatId)) {
-        colaSalida.set(chatId, { cola: [], procesando: false });
+        colaSalida.set(chatId, { cola: [], procesando: false, lastSendAt: 0, errors: 0 });
     }
     const estado = colaSalida.get(chatId);
 
@@ -119,14 +128,20 @@ async function procesarColaSalida(sock, chatId) {
     while (estado.cola.length > 0) {
         const { content, options, resolve, reject } = estado.cola.shift();
         try {
-            const result = await sock.sendMessage(chatId, content, options || {});
+            const result = await sendMessageConTimeout(sock, chatId, content, options);
+            estado.lastSendAt = Date.now();
             resolve(result);
         } catch (e) {
+            estado.errors++;
+            if (e.message === 'sendMessage timeout') {
+                console.warn(`[COLA TIMEOUT] Chat ${chatId}: envio tardó mas de ${SEND_MESSAGE_TIMEOUT_MS}ms`);
+            }
             // Si es rate-limit, reintentamos 1 vez después de 1 segundo
             if (e?.data === 429 || e?.message?.includes('rate-overlimit')) {
                 await new Promise(r => setTimeout(r, 1000));
                 try {
-                    const result = await sock.sendMessage(chatId, content, options || {});
+                    const result = await sendMessageConTimeout(sock, chatId, content, options);
+                    estado.lastSendAt = Date.now();
                     resolve(result);
                 } catch (e2) { reject(e2); }
             } else {
@@ -496,7 +511,16 @@ app.get('/', (req, res) => {
     </div></div></body></html>`);
 });
 
-app.get('/health', (req, res) => res.json({ ok: true, connected: botState.isConnected }));
+app.get('/health', (req, res) => {
+    const queues = [...colaSalida.entries()].map(([chatId, state]) => ({
+        chatId,
+        size: state.cola.length,
+        procesando: state.procesando,
+        errors: state.errors || 0,
+        lastSendAgoMs: state.lastSendAt ? Date.now() - state.lastSendAt : null
+    }));
+    res.json({ ok: true, connected: botState.isConnected, queues });
+});
 
 async function resetAuthSession(reason = 'manual reset') {
     try { await db.init(); } catch (e) { }
