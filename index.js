@@ -90,7 +90,7 @@ const MAX_COLA = 30; // Máximo de tareas encoladas (aumentado para grupos activ
 // Así NADIE es bloqueado, pero los mensajes salen ordenados y seguros.
 const colaSalida = new Map(); // chatId -> { cola: [], procesando: bool }
 global.colaSalida = colaSalida; // Exponer para diagnósticos
-
+const slowChats = new Map(); // chatId -> timestamp hasta cuando se reducen envios extra
 const MAX_COLA_SALIDA = 50; // Límite máximo de mensajes en cola por chat
 
 const SEND_MESSAGE_TIMEOUT_MS = Math.max(5000, parseInt(process.env.SEND_MESSAGE_TIMEOUT_MS || '25000', 10));
@@ -100,6 +100,17 @@ function sendMessageConTimeout(sock, chatId, content, options) {
         sock.sendMessage(chatId, content, options || {}),
         new Promise((_, reject) => setTimeout(() => reject(new Error('sendMessage timeout')), SEND_MESSAGE_TIMEOUT_MS))
     ]);
+}
+
+function marcarChatLento(chatId) {
+    slowChats.set(chatId, Date.now() + 5 * 60 * 1000);
+}
+
+function esChatLento(chatId) {
+    const until = slowChats.get(chatId) || 0;
+    if (until > Date.now()) return true;
+    if (until) slowChats.delete(chatId);
+    return false;
 }
 
 async function enviarConCola(sock, chatId, content, options) {
@@ -134,6 +145,7 @@ async function procesarColaSalida(sock, chatId) {
         } catch (e) {
             estado.errors++;
             if (e.message === 'sendMessage timeout') {
+                marcarChatLento(chatId);
                 console.warn(`[COLA TIMEOUT] Chat ${chatId}: envio tardó mas de ${SEND_MESSAGE_TIMEOUT_MS}ms`);
             }
             // Si es rate-limit, reintentamos 1 vez después de 1 segundo
@@ -516,6 +528,7 @@ app.get('/health', (req, res) => {
         chatId,
         size: state.cola.length,
         procesando: state.procesando,
+        slow: esChatLento(chatId),
         errors: state.errors || 0,
         lastSendAgoMs: state.lastSendAt ? Date.now() - state.lastSendAt : null
     }));
@@ -556,7 +569,7 @@ async function convertirAWebp(buffer, isVideo = false) {
     const tmpOut = path.join(os.tmpdir(), `stk_out_${Date.now()}.webp`);
     fs.writeFileSync(tmpIn, buffer);
     try {
-        const vf = 'scale=512:512:force_original_aspect_ratio=increase,crop=512:512';
+        const vf = 'scale=512:512:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=white@0,format=yuva420p';
         const args = isVideo
             ? ['-i', tmpIn, '-vf', vf + ',fps=10', '-vcodec', 'libwebp', '-loop', '0', '-preset', 'default', '-an', '-vsync', '0', '-t', '6', '-quality', '50', '-compression_level', '3', '-y', tmpOut]
             : ['-i', tmpIn, '-vf', vf, '-quality', '75', '-compression_level', '4', '-y', tmpOut];
@@ -1077,7 +1090,7 @@ async function procesarMensaje(sock, msg) {
                 const sockProxy = new Proxy(sock, {
                     get(target, prop) {
                         if (prop === 'sendMessage') {
-                            return (jid, content, opts) => enviarConCola(target, jid, content, opts);
+                            return (jid, content, opts) => sendMessageConTimeout(target, jid, content, opts);
                         }
                         return typeof target[prop] === 'function' ? target[prop].bind(target) : target[prop];
                     }
@@ -1255,7 +1268,7 @@ async function procesarMensaje(sock, msg) {
                 }
 
                 // Efecto de Grimorio (Solo si es un comando que suele usar economía)
-                if (['!menu', '!tienda', '!minar', '!perfil', '!p'].includes(start)) {
+                if (!esChatLento(chatId) && ['!menu', '!tienda', '!minar', '!perfil', '!p'].includes(start)) {
                     db.obtenerUsuario(sender).then(u => {
                         if (u && u.inventario) {
                             try {
@@ -1266,7 +1279,9 @@ async function procesarMensaje(sock, msg) {
                     }).catch(() => { });
                 }
 
-                sock.sendMessage(chatId, { react: { text: emoji, key: msg.key } }).catch(() => { });
+                if (!esChatLento(chatId)) {
+                    sock.sendMessage(chatId, { react: { text: emoji, key: msg.key } }).catch(() => { });
+                }
 
                 // 5. EJECUTAR COMANDO MODULAR
                 const args = txt.split(' ').slice(1);
