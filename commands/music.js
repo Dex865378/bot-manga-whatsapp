@@ -85,9 +85,11 @@ module.exports = {
             
             const ytdlpArgs = [
                 '--no-warnings',
-                // 🔑 Cliente iOS solo (sin "web" de respaldo): evita el check de bot
-                // y ahorra la negociación extra de un segundo cliente, más rápido y liviano
-                '--extractor-args', 'youtube:player_client=ios',
+                // 🔑 Lista de clientes en orden de preferencia: si "ios" no expone
+                // formatos válidos para un video puntual (pasa en algunos casos),
+                // yt-dlp prueba automáticamente con "android" y luego "web" antes
+                // de rendirse. Mantiene ios primero para evitar el check de bot.
+                '--extractor-args', 'youtube:player_client=ios,android,web',
                 // Cookies para autenticación (si existen)
                 ...(fs.existsSync(cookiesPath) ? ['--cookies', cookiesPath] : []),
                 // Reintentos reducidos: en RAM limitada, cada reintento mantiene
