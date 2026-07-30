@@ -39,8 +39,12 @@ module.exports = {
             }, { quoted: msg });
         }
 
-        const tempFile = path.join(__dirname, '..', `temp_${Date.now()}.m4a`);
-        descargasActivas.set(userId, tempFile);
+        // Usamos %(ext)s para que yt-dlp escriba la extensión real del formato
+        // descargado (m4a, webm, etc.) en vez de forzar .m4a y arriesgar un
+        // contenedor incorrecto cuando el fallback trae otro formato de audio.
+        const tempFileBase = path.join(__dirname, '..', `temp_${Date.now()}`);
+        const tempFileTemplate = `${tempFileBase}.%(ext)s`;
+        descargasActivas.set(userId, tempFileBase);
 
         try {
             await sock.sendMessage(chatId, { react: { text: '⏳', key: msg.key } });
@@ -94,15 +98,16 @@ module.exports = {
                 '--concurrent-fragments', '1',
                 // No verificar certificados SSL (evita errores en algunos entornos)
                 '--no-check-certificates',
-                // Audio puro, sin fallback a formatos con video (mucho más pesados),
-                // con techo de 128kbps para no traer masters de alta calidad innecesarios
-                '-f', 'bestaudio[ext=m4a][abr<=128]/bestaudio[ext=m4a]/bestaudio[abr<=128]/bestaudio',
+                // Audio puro, con preferencia por formatos livianos (m4a/webm <=128kbps)
+                // pero terminando SIEMPRE en "bestaudio" sin filtros para no fallar
+                // si el cliente iOS no expone esas variantes exactas para este video
+                '-f', 'bestaudio[abr<=128]/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
                 // Sin thumbnails ni metadata extra (más rápido)
                 '--no-playlist',
                 '--no-continue',
                 // Sin archivos .part intermedios: escribe directo, menos I/O y limpieza
                 '--no-part',
-                '-o', tempFile,
+                '-o', tempFileTemplate,
                 ytUrl
             ];
 
@@ -139,12 +144,25 @@ module.exports = {
                 clearTimeout(killTimer);
                 descargasActivas.delete(userId);
 
+                // Buscar el archivo real generado por yt-dlp (la extensión final
+                // la decide el formato descargado: m4a, webm, opus, etc.), o cualquier
+                // resto parcial si el proceso fue matado por timeout.
+                const dir = path.dirname(tempFileBase);
+                const baseName = path.basename(tempFileBase);
+                let archivoFinal = null;
+                try {
+                    const candidatos = fs.readdirSync(dir).filter(f => f.startsWith(baseName));
+                    if (candidatos.length > 0) {
+                        archivoFinal = path.join(dir, candidatos[0]);
+                    }
+                } catch (e) { }
+
                 if (timedOut) {
                     await sock.sendMessage(chatId, {
                         text: '⏳ La descarga tardó demasiado y fue cancelada. Intenta de nuevo o con otra canción.'
                     }, { quoted: msg });
                     await sock.sendMessage(chatId, { react: { text: '❌', key: msg.key } });
-                    if (fs.existsSync(tempFile)) { try { fs.unlinkSync(tempFile); } catch (e) { } }
+                    if (archivoFinal && fs.existsSync(archivoFinal)) { try { fs.unlinkSync(archivoFinal); } catch (e) { } }
                     return;
                 }
 
@@ -154,7 +172,7 @@ module.exports = {
                         text: `❌ Error al descargar: ${stderrData.slice(0, 200)}` 
                     }, { quoted: msg });
                     await sock.sendMessage(chatId, { react: { text: '❌', key: msg.key } });
-                    if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+                    if (archivoFinal && fs.existsSync(archivoFinal)) fs.unlinkSync(archivoFinal);
                     return;
                 }
 
@@ -162,25 +180,30 @@ module.exports = {
 
                 try {
                     // Verificar archivo
-                    if (!fs.existsSync(tempFile)) {
+                    if (!archivoFinal || !fs.existsSync(archivoFinal)) {
                         throw new Error('No se generó el archivo de audio');
                     }
 
-                    const stats = fs.statSync(tempFile);
+                    const stats = fs.statSync(archivoFinal);
                     if (stats.size < 50000) {
                         throw new Error('Archivo de audio demasiado pequeño');
                     }
 
-                    console.log('[MUSIC] Archivo generado:', stats.size, 'bytes');
+                    console.log('[MUSIC] Archivo generado:', archivoFinal, stats.size, 'bytes');
+
+                    // Detectar extensión real para mimetype y nombre correctos
+                    const extReal = path.extname(archivoFinal).replace('.', '') || 'm4a';
+                    const mimePorExt = { m4a: 'audio/mp4', webm: 'audio/webm', opus: 'audio/ogg', mp3: 'audio/mpeg' };
+                    const mimetype = mimePorExt[extReal] || 'audio/mp4';
 
                     // Leer y enviar
-                    const buffer = fs.readFileSync(tempFile);
+                    const buffer = fs.readFileSync(archivoFinal);
                     
                     await sock.sendMessage(chatId, {
                         audio: buffer,
-                        mimetype: 'audio/mp4',
+                        mimetype,
                         ptt: false,
-                        fileName: `${title}.m4a`
+                        fileName: `${title}.${extReal}`
                     }, { quoted: msg });
 
                     await sock.sendMessage(chatId, { react: { text: '✅', key: msg.key } });
@@ -193,8 +216,8 @@ module.exports = {
                     }, { quoted: msg });
                     await sock.sendMessage(chatId, { react: { text: '❌', key: msg.key } });
                 } finally {
-                    if (fs.existsSync(tempFile)) {
-                        fs.unlinkSync(tempFile);
+                    if (archivoFinal && fs.existsSync(archivoFinal)) {
+                        fs.unlinkSync(archivoFinal);
                     }
                 }
             });
