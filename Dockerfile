@@ -16,6 +16,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # 2. Instalar yt-dlp (versión más reciente con soporte iOS client)
+# ARG con fecha de build para invalidar el cache de Docker en esta capa:
+# sin esto, Docker reutiliza la capa vieja aunque la URL diga "latest",
+# porque el comando en si nunca cambia. Cambiar/actualizar este valor
+# fuerza una descarga fresca de yt-dlp en el proximo deploy.
+ARG YTDLP_CACHE_BUST=2026-07-30
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux \
     -o /usr/local/bin/yt-dlp \
     && chmod +x /usr/local/bin/yt-dlp \
