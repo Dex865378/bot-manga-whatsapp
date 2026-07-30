@@ -89,7 +89,7 @@ module.exports = {
                 // formatos válidos para un video puntual (pasa en algunos casos),
                 // yt-dlp prueba automáticamente con "android" y luego "web" antes
                 // de rendirse. Mantiene ios primero para evitar el check de bot.
-                '--extractor-args', 'youtube:player_client=ios,android,web',
+                '--extractor-args', 'youtube:player_client=ios',
                 // Cookies para autenticación (si existen)
                 ...(fs.existsSync(cookiesPath) ? ['--cookies', cookiesPath] : []),
                 // Reintentos reducidos: en RAM limitada, cada reintento mantiene
