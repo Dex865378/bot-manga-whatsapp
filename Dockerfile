@@ -4,7 +4,9 @@ FROM node:20-bullseye
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     python3 \
+    python3-pip \
     curl \
+    unzip \
     libwebp-dev \
     libcairo2-dev \
     libjpeg-dev \
@@ -25,6 +27,26 @@ RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_lin
     -o /usr/local/bin/yt-dlp \
     && chmod +x /usr/local/bin/yt-dlp \
     && yt-dlp --version
+
+# 2.1 Instalar bgutil-ytdlp-pot-provider en modo SCRIPT (no HTTP server):
+# genera el PO Token que YouTube exige ahora para evitar el bloqueo de bot,
+# ejecutandose como un subproceso puntual por cada descarga (no queda nada
+# corriendo de fondo consumiendo RAM entre canciones).
+#
+# El plugin de Python se coloca en ~/.yt-dlp/plugins/, la ruta que el
+# BINARIO standalone de yt-dlp (yt-dlp_linux, no el paquete pip) usa para
+# auto-descubrir plugins. Instalar solo via pip NO basta para el binario.
+RUN curl -L https://github.com/Brainicism/bgutil-ytdlp-pot-provider/releases/latest/download/bgutil-ytdlp-pot-provider.zip \
+    -o /tmp/bgutil-plugin.zip \
+    && mkdir -p /root/.yt-dlp/plugins \
+    && unzip -q /tmp/bgutil-plugin.zip -d /root/.yt-dlp/plugins/bgutil-ytdlp-pot-provider \
+    && rm /tmp/bgutil-plugin.zip \
+    && corepack enable \
+    && git clone --depth 1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /opt/bgutil-ytdlp-pot-provider \
+    && cd /opt/bgutil-ytdlp-pot-provider/server \
+    && yarn install --frozen-lockfile \
+    && npx tsc \
+    && yarn cache clean
 
 # 3. Configurar el directorio de trabajo
 WORKDIR /app

@@ -14,6 +14,13 @@ const YTDLP_PATH = process.platform === 'win32'
     ? path.join(__dirname, '..', 'yt-dlp.exe')
     : 'yt-dlp';
 
+// Ruta del script compilado del PO Token provider (bgutil-ytdlp-pot-provider),
+// instalado en el Dockerfile en modo SCRIPT: se ejecuta como subproceso puntual
+// por cada descarga, sin dejar ningun servidor corriendo de fondo entre canciones.
+// Solo aplica en Linux (Render); en Windows no esta instalado y se omite.
+const BGUTIL_SCRIPT_PATH = '/opt/bgutil-ytdlp-pot-provider/server/build/generate_once.js';
+const BGUTIL_DISPONIBLE = process.platform !== 'win32' && fs.existsSync(BGUTIL_SCRIPT_PATH);
+
 // Mapa para trackear descargas en progreso (evita duplicados)
 const descargasActivas = new Map();
 
@@ -76,7 +83,7 @@ module.exports = {
             
             // 3. Enviar mensaje inicial y liberar el comando
             const statusMsg = await sock.sendMessage(chatId, { 
-                text: `🎧 *${title}*\n⏳ Descargando en segundo plano...\n_Esto puede tardar 30-60 segundos. El bot sigue funcionando._` 
+                text: `🎧 *${title}*\n⏳ Descargando en segundo plano...\n_Esto puede tardar 40-90 segundos. El bot sigue funcionando._` 
             }, { quoted: msg });
 
             // 4. DESCARGA NO BLOQUEANTE con spawn
@@ -90,6 +97,10 @@ module.exports = {
                 // yt-dlp prueba automáticamente con "android" y luego "web" antes
                 // de rendirse. Mantiene ios primero para evitar el check de bot.
                 '--extractor-args', 'youtube:player_client=ios',
+                // 🅿️ PO Token provider en modo script: genera el token que YouTube
+                // exige para evitar el bloqueo de bot. Se ejecuta puntualmente por
+                // esta descarga (no deja nada corriendo despues).
+                ...(BGUTIL_DISPONIBLE ? ['--extractor-args', `youtubepot-bgutilscript:script_path=${BGUTIL_SCRIPT_PATH}`] : []),
                 // Cookies para autenticación (si existen)
                 ...(fs.existsSync(cookiesPath) ? ['--cookies', cookiesPath] : []),
                 // Reintentos reducidos: en RAM limitada, cada reintento mantiene
@@ -126,7 +137,7 @@ module.exports = {
             // Timeout de seguridad: si yt-dlp se cuelga (red lenta, bloqueo de YouTube, etc.)
             // lo matamos a los 90s para no dejar procesos zombis consumiendo CPU/RAM en Render.
             let timedOut = false;
-            const YTDLP_TIMEOUT_MS = 90000;
+            const YTDLP_TIMEOUT_MS = 120000;
             const killTimer = setTimeout(() => {
                 timedOut = true;
                 console.warn('[MUSIC] yt-dlp excedió el tiempo límite, matando proceso...');
