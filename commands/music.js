@@ -81,20 +81,27 @@ module.exports = {
             
             const ytdlpArgs = [
                 '--no-warnings',
-                // 🔑 Clave: usar cliente iOS — evita bloqueos 429 en IPs de datacenter
-                '--extractor-args', 'youtube:player_client=ios,web',
+                // 🔑 Cliente iOS solo (sin "web" de respaldo): evita el check de bot
+                // y ahorra la negociación extra de un segundo cliente, más rápido y liviano
+                '--extractor-args', 'youtube:player_client=ios',
                 // Cookies para autenticación (si existen)
                 ...(fs.existsSync(cookiesPath) ? ['--cookies', cookiesPath] : []),
-                // Reintentos automáticos en caso de error
-                '--retries', '10',
-                '--fragment-retries', '10',
+                // Reintentos reducidos: en RAM limitada, cada reintento mantiene
+                // el proceso vivo consumiendo memoria; mejor fallar rápido y reintentar el comando
+                '--retries', '3',
+                '--fragment-retries', '3',
+                // 1 solo fragmento a la vez: evita picos de RAM por buffers paralelos
+                '--concurrent-fragments', '1',
                 // No verificar certificados SSL (evita errores en algunos entornos)
                 '--no-check-certificates',
-                // Formato de audio directo (rápido, sin conversión pesada)
-                '-f', 'bestaudio[ext=m4a]/bestaudio/best',
+                // Audio puro, sin fallback a formatos con video (mucho más pesados),
+                // con techo de 128kbps para no traer masters de alta calidad innecesarios
+                '-f', 'bestaudio[ext=m4a][abr<=128]/bestaudio[ext=m4a]/bestaudio[abr<=128]/bestaudio',
                 // Sin thumbnails ni metadata extra (más rápido)
                 '--no-playlist',
                 '--no-continue',
+                // Sin archivos .part intermedios: escribe directo, menos I/O y limpieza
+                '--no-part',
                 '-o', tempFile,
                 ytUrl
             ];
@@ -109,6 +116,16 @@ module.exports = {
             let stdoutData = '';
             let stderrData = '';
 
+            // Timeout de seguridad: si yt-dlp se cuelga (red lenta, bloqueo de YouTube, etc.)
+            // lo matamos a los 90s para no dejar procesos zombis consumiendo CPU/RAM en Render.
+            let timedOut = false;
+            const YTDLP_TIMEOUT_MS = 90000;
+            const killTimer = setTimeout(() => {
+                timedOut = true;
+                console.warn('[MUSIC] yt-dlp excedió el tiempo límite, matando proceso...');
+                try { ytdlpProcess.kill('SIGKILL'); } catch (e) { }
+            }, YTDLP_TIMEOUT_MS);
+
             ytdlpProcess.stdout.on('data', (data) => {
                 stdoutData += data.toString();
             });
@@ -119,8 +136,18 @@ module.exports = {
 
             // Manejar cuando termina la descarga
             ytdlpProcess.on('close', async (code) => {
+                clearTimeout(killTimer);
                 descargasActivas.delete(userId);
-                
+
+                if (timedOut) {
+                    await sock.sendMessage(chatId, {
+                        text: '⏳ La descarga tardó demasiado y fue cancelada. Intenta de nuevo o con otra canción.'
+                    }, { quoted: msg });
+                    await sock.sendMessage(chatId, { react: { text: '❌', key: msg.key } });
+                    if (fs.existsSync(tempFile)) { try { fs.unlinkSync(tempFile); } catch (e) { } }
+                    return;
+                }
+
                 if (code !== 0) {
                     console.error('[MUSIC] yt-dlp error:', stderrData);
                     await sock.sendMessage(chatId, { 
@@ -173,6 +200,7 @@ module.exports = {
             });
 
             ytdlpProcess.on('error', async (err) => {
+                clearTimeout(killTimer);
                 descargasActivas.delete(userId);
                 console.error('[MUSIC] Spawn error:', err);
                 await sock.sendMessage(chatId, { 
