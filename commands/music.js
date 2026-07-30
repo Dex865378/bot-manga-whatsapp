@@ -171,7 +171,7 @@ module.exports = {
                 if (code !== 0) {
                     console.error('[MUSIC] yt-dlp error:', stderrData);
                     await sock.sendMessage(chatId, { 
-                        text: `❌ Error al descargar: ${stderrData.slice(0, 200)}` 
+                        text: `❌ Error al descargar: ${stderrData.slice(0, 500)}` 
                     }, { quoted: msg });
                     await sock.sendMessage(chatId, { react: { text: '❌', key: msg.key } });
                     if (archivoFinal && fs.existsSync(archivoFinal)) fs.unlinkSync(archivoFinal);
