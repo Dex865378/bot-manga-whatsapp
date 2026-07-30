@@ -76,6 +76,28 @@ setInterval(() => {
     if (eliminados > 0 && VERBOSE_LOGS) console.log(`[GC] Cooldowns limpiados: ${eliminados} entradas | Restantes: ${cooldowns.size}`);
 }, 15 * 60 * 1000);
 
+// 🧹 Limpieza proactiva de cachés LRU cada 10 minutos (anti memory-leak en Render).
+// Antes, las entradas expiradas por TTL solo se borraban cuando alguien las
+// volvía a consultar (get/has). Si una clave nunca se repetía, quedaba ocupando
+// RAM hasta que la evicción por tamaño la sacara. Este barrido activo evita eso.
+setInterval(() => {
+    if (typeof botState === 'undefined') return;
+    const cachesLRU = [
+        ['configIA', botState.configIA], ['cacheTrad', botState.cacheTrad],
+        ['mangaInfo', botState.mangaInfo], ['silenciados', botState.silenciados],
+        ['bounties', botState.bounties], ['escudos', botState.escudos],
+        ['groupCache', botState.groupCache], ['adminCache', botState.adminCache]
+    ];
+    let totalLimpiado = 0;
+    for (const [nombre, cache] of cachesLRU) {
+        if (cache && typeof cache.cleanup === 'function') {
+            const n = cache.cleanup();
+            totalLimpiado += n;
+        }
+    }
+    if (totalLimpiado > 0 && VERBOSE_LOGS) console.log(`[GC] Cachés LRU limpiadas: ${totalLimpiado} entradas expiradas.`);
+}, 10 * 60 * 1000);
+
 let procesosActivos = 0; // LIMITADOR DE HARDWARE
 const MAX_PROCESOS = 15; // Máximo de tareas pesadas simultáneas (aumentado para mejor rendimiento)
 const colaHeavy = []; // Cola para tareas pesadas en espera
@@ -1072,7 +1094,7 @@ async function procesarMensaje(sock, msg) {
                 '!pat', '!hug', '!kiss', '!slap', '!punch', '!cry', '!dance', '!bite', '!highfive',
                 '!fumar', '!cafe', '!puchero', '!sonrojar', '!baka', '!dormir', '!comiendo', '!pensar',
                 '!patear', '!celebrar', '!aburrido', '!risa', '!smug', '!stare',
-                '!tag', '!reglas', '!kick', '!adm', '!promover', '!bot', '!bienvenida', '!setbienvenida', '!news', '!sorteo', '!ia',
+                '!tag', '!reglas', '!kick', '!adm', '!promover', '!bot', '!bienvenida', '!setbienvenida', '!news', '!sorteo', '!rifa', '!ia',
                 '!tienda', '!comprar', '!vender', '!inventario', '!mejor', '!bounty', '!regalar', '!regalaritem', '!dar',
                 '!antispam', '!mododios',
                 '!prestigio', '!loteria', '!clase', '!pedir', '!plantarse', '!pl', '!trivia', '!daily', '!w', '!slut', '!robar', '!canjear',
@@ -1305,7 +1327,17 @@ async function procesarMensaje(sock, msg) {
                     sockOriginal: sock // Para comandos express que necesitan bypass de cola
                 };
 
-                const isHeavy = ['!v', '!s', '!sticker', '!trace', '!toimg', '!play', '!music', '!musica', '!ytmp3', '!play2', '!cancion', '!audio', '!mp3'].includes(start);
+                // isHeavy: comandos que usan FFmpeg o descargas pesadas y por tanto deben
+                // respetar el limite de procesos concurrentes (esperarSlotHeavy). Se agregaron
+                // las reacciones sociales (usan FFmpeg para convertir GIF->MP4) y !waifus
+                // (descarga hasta 10 imagenes), que antes evadian este limite en Render.
+                const isHeavy = [
+                    '!v', '!s', '!sticker', '!trace', '!toimg', '!play', '!music', '!musica', '!ytmp3', '!play2', '!cancion', '!audio', '!mp3',
+                    '!pat', '!hug', '!kill', '!kiss', '!slap', '!punch', '!cry', '!dance', '!bite', '!highfive',
+                    '!fumar', '!cafe', '!puchero', '!sonrojar', '!baka', '!dormir', '!comiendo', '!pensar',
+                    '!patear', '!celebrar', '!aburrido', '!risa', '!smug', '!stare',
+                    '!waifus'
+                ].includes(start);
                 if (isHeavy) {
                     const gotSlot = await esperarSlotHeavy();
                     if (!gotSlot) {
@@ -1382,6 +1414,19 @@ async function procesarMensaje(sock, msg) {
 //                     ¡ARRANCAR! 🚀
 // ============================================================
 console.log('😺 Iniciando Diky Bot V2...');
+
+// Log de versión de yt-dlp al arrancar (para diagnosticar sin necesitar Build Logs premium)
+try {
+    const { execFileSync } = require('child_process');
+    const ytdlpPathCheck = process.platform === 'win32'
+        ? path.join(__dirname, 'yt-dlp.exe')
+        : 'yt-dlp';
+    const ver = execFileSync(ytdlpPathCheck, ['--version'], { encoding: 'utf8', timeout: 5000 }).trim();
+    console.log(`🎵 [YT-DLP] Versión instalada: ${ver}`);
+} catch (e) {
+    console.warn('⚠️ [YT-DLP] No se pudo obtener la versión:', e.message);
+}
+
 startBot();
 
 // --- CIERRE LIMPIO (FLUSH DB) ---
