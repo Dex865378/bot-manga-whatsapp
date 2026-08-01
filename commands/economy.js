@@ -760,46 +760,10 @@ module.exports = {
             });
         }
 
-        // !config <tipo> <valor>
-        if (start === '!config') {
-            const type = args[0]?.toLowerCase();
-            let val = args.slice(1).join(' ');
-            if (!type || !val) {
-                return sock.sendMessage(chatId, { text: '⚙️ **CONFIGURACIÓN DE PERFIL**\n━━━━━━━━━━━━━━\n• *!config bio <texto>*\n• *!config edad <número>*\n• *!config nombre <texto>*\n• *!config nacimiento <fecha>*\n• *!config altura <texto>*\n• *!config fav manga/anime <texto>*\n• *!config power <texto>*\n━━━━━━━━━━━━━━' });
-            }
-
-            const mapper = {
-                'bio': 'descripcion', 'descripcion': 'descripcion',
-                'edad': 'edad', 'nombre': 'nombre_wa',
-                'nacimiento': 'nacimiento', 'altura': 'altura',
-                'anime': 'anime_fav', 'manga': 'manga_fav',
-                'power': 'superpoder', 'poder': 'superpoder'
-            };
-
-            let field = mapper[type];
-            if (!field && type === 'fav') {
-                if (args[1]?.toLowerCase() === 'manga') { 
-                    field = 'manga_fav'; 
-                    val = args.slice(2).join(' ');
-                }
-                else if (args[1]?.toLowerCase() === 'anime') { 
-                    field = 'anime_fav'; 
-                    val = args.slice(2).join(' ');
-                }
-            }
-
-            if (!field) return sock.sendMessage(chatId, { text: '❌ Tipo de configuración no válido.' });
-
-            let finalVal = val;
-            if (field === 'edad') {
-                finalVal = parseInt(val);
-                if (isNaN(finalVal)) return sock.sendMessage(chatId, { text: '❌ La edad debe ser un número.' });
-            }
-
-            const ok = await db.actualizarUsuario(sender, { [field]: finalVal });
-            if (ok) return sock.sendMessage(chatId, { text: `✅ Tu **${type.toUpperCase()}** ha sido actualizado correctamente.` }, { quoted: msg });
-            else return sock.sendMessage(chatId, { text: '❌ Error al guardar en la base de datos.' });
-        }
+        // !config esta manejado por commands/social.js (incluye validacion de edad
+        // 1-120 y soporte para !config flash on/off de admins). Se elimino la version
+        // duplicada de aqui, que nunca se ejecutaba (social.js se carga despues
+        // alfabeticamente y sobrescribe el registro de este comando).
 
         if (start === '!canjear') {
             const val = args[0];

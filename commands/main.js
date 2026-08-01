@@ -1,28 +1,39 @@
 /**
  * 🏠 MÓDULO PRINCIPAL
  */
+const { helpData } = require('./help');
+
 module.exports = {
     name: 'main',
     isMultiple: true,
-    names: ['!menu', '!menu2', '!help', '!ping', '!s', '!sticker', '!toimg'],
+    names: ['!menu', '!menu2', '!help', '!s', '!sticker', '!toimg'],
     async execute(sock, chatId, msg, args, { start, cmd, txt, isGroup, sender, pushName, downloadMediaMessage, convertirAWebp, FFMPEG_PATH, botState }) {
 
-        // !ping
-        if (start === '!ping') {
-            const pick = (v) => v[Math.floor(Math.random() * v.length)];
-            const variants = [
-                '🏓 *PONG!* El bot está activo y listo.',
-                '📡 *EN LÍNEA!* Conexión estable.',
-                '🚀 *A TODA MÁQUINA!* Listos para la acción.',
-                '⚡ *VELOCIDAD RAYO!* El bot responde.',
-                '🤖 *DIKY ACTIVO!* ¿Qué necesitas hoy?',
-                '📶 *SEÑAL FUERTE!* Latencia mínima detectada.',
-                '✅ *OPERATIVO!* Todos los sistemas al 100%.',
-                '🟢 *VERDE!* Diky Bot está en su mejor momento.',
-                '🌟 *LISTO Y BRILLANTE!* Esperando tus órdenes.',
-                '🛠️ *MANTENIMIENTO 0%!* Funcionando perfectamente.'
-            ];
-            return sock.sendMessage(chatId, { text: pick(variants) }, { quoted: msg });
+        // !ping esta manejado por commands/ping.js (mide latencia real con timestamp).
+        // Se elimino la version duplicada de aqui, que nunca se ejecutaba (ping.js
+        // se carga despues alfabeticamente y sobrescribe el registro de este comando).
+
+        // !help <comando> - Ayuda detallada de un comando especifico
+        // (!help sin argumento sigue cayendo al menu general de abajo, sin cambios)
+        if (start === '!help' && args[0]) {
+            const commandName = args[0].startsWith('!') ? args[0] : '!' + args[0];
+            const help = helpData[commandName];
+
+            if (!help) {
+                return sock.sendMessage(chatId, {
+                    text: `❌ No tengo ayuda detallada para *${commandName}*.\n\nUsa *!menu* para ver todos los comandos disponibles.`
+                }, { quoted: msg });
+            }
+
+            let response = `❓ *AYUDA: ${commandName}*\n\n`;
+            response += `📖 *Descripción:*\n${help.desc}\n\n`;
+            response += `📝 *Uso:*\n\`\`\`${help.usage}\`\`\`\n\n`;
+            response += `💡 *Ejemplo:*\n${help.ejemplo}\n\n`;
+            response += `📋 *Argumentos:* ${help.args}\n`;
+            response += `⏱️ *Cooldown:* ${help.cooldown}`;
+            if (help.alias) response += `\n🔁 *Alias:* ${help.alias}`;
+
+            return sock.sendMessage(chatId, { text: response }, { quoted: msg });
         }
 
         // !menu / !menu2 (REDiseño TOTAL PROFESIONAL Y EXHAUSTIVO)
@@ -59,7 +70,7 @@ module.exports = {
             mText += `• !bienvenida (Configurar)\n`;
             mText += `• !setbienvenida (Msj personal)\n`;
             mText += `• !reglas (Ver/Configurar)\n`;
-            mText += `• !sorteo (Azar por comas)\n\n`;
+            mText += `• !sorteo (Miembro random del grupo)\n\n`;
 
             mText += `👤 *[ PERFIL Y SOCIAL ]*\n`;
             mText += `• !perfil / !p / !profile\n`;
@@ -144,7 +155,8 @@ module.exports = {
             mText += `• !roast / !cumplido @user\n`;
             mText += `• !hacker @user\n`;
             mText += `• !chiste / !reto / !verdad\n`;
-            mText += `• !seria (¿Qué preferirías?)\n\n`;
+            mText += `• !seria (¿Qué preferirías?)\n`;
+            mText += `• !rifa <opc1, opc2, ...> (Sorteo por texto)\n\n`;
 
             mText += `✨ *[ REACCIONES ANIME ]*\n`;
             mText += `• !pat / !hug / !kiss / !slap\n`;

@@ -8,7 +8,7 @@ const execFileAsync = promisify(execFile);
 module.exports = {
     name: 'fun',
     isMultiple: true,
-    names: ['!ship', '!love', '!gay', '!iq', '!suerte', '!horoscopo', '!8ball', '!ppt', '!dado', '!moneda', '!top', '!reto', '!verdad', '!chiste', '!hacker', '!pokemon', '!carrera', '!suelten', '!sorteo', '!seria', '!cumplido', '!roast', '!ascii', '!v', '!deljuego'],
+    names: ['!ship', '!love', '!gay', '!iq', '!suerte', '!horoscopo', '!8ball', '!ppt', '!dado', '!moneda', '!top', '!reto', '!verdad', '!chiste', '!hacker', '!pokemon', '!carrera', '!suelten', '!rifa', '!seria', '!cumplido', '!roast', '!ascii', '!v', '!deljuego'],
     async execute(sock, chatId, msg, args, { start, cmd, txt, isGroup, sender, db, botState, delay, convertirAWebp, FFMPEG_PATH }) {
 
         // !seria
@@ -422,8 +422,10 @@ module.exports = {
             return sock.sendMessage(chatId, { text: m }, { quoted: msg });
         }
 
-        // !sorteo
-        if (start === '!sorteo') {
+        // !rifa (antes llamado !sorteo en este archivo, colisionaba con el !sorteo
+        // de social.js que elige un miembro random del grupo -- son comandos distintos:
+        // !rifa sortea entre OPCIONES DE TEXTO que tu escribes, !sorteo elige a un MIEMBRO).
+        if (start === '!rifa') {
             const opciones = args.join(' ').split(',').map(o => o.trim()).filter(o => o !== '');
             if (opciones.length < 2) return sock.sendMessage(chatId, { text: '🎲 Debes dar al menos 2 opciones separadas por comas.' }, { quoted: msg });
             await sock.sendMessage(chatId, { text: '🎲 *Realizando sorteo...*' });

@@ -24,10 +24,9 @@ module.exports = {
         if (start === '!mododios') {
             if (!isGlobalAdmin) {
                 const sNum = sender.split('@')[0];
-                const adminEnv = process.env.NUMERO_ADMIN || 'No configurado';
-                console.log(`[ADMIN] Intento de !mododios denegado para: ${sender} (Configurado: ${adminEnv})`);
+                console.log(`[ADMIN] Intento de !mododios denegado para: ${sender}`);
                 return sock.sendMessage(chatId, {
-                    text: `**ACCESO DENEGADO**\n\nEste comando es exclusivo para el Administrador Maestro.\n\nTu ID detectado:\n*${sNum}*\n\nConfigurado en Render:\n*${adminEnv.length > 5 ? adminEnv.slice(0, 5) + '...' : adminEnv}*\n\nSOLUCION:\nVe a Render y asegurate de que **NUMERO_ADMIN** incluya tu numero real Y el ID largo separados por coma, ejemplo:\n\`50760541202,109938613481683\``
+                    text: `**ACCESO DENEGADO**\n\nEste comando es exclusivo para el Administrador Maestro.\n\nTu ID detectado:\n*${sNum}*\n\nSOLUCION:\nSi eres el admin, verifica en Render que **NUMERO_ADMIN** incluya tu numero real Y el ID largo separados por coma.`
                 }, { quoted: msg });
             }
 
@@ -49,7 +48,7 @@ module.exports = {
             if (mode === 'on') {
                 await db.activarAntiSpam(chatId);
                 await refreshGroupCache(db, botState, chatId);
-                return sock.sendMessage(chatId, { text: '*SISTEMA ANTI-SPAM ACTIVADO EN ESTE GRUPO*\n_Limite: 50 comandos/hora por usuario._' }, { quoted: msg });
+                return sock.sendMessage(chatId, { text: '*SISTEMA ANTI-SPAM ACTIVADO EN ESTE GRUPO*\n_Limite: 100 comandos/hora por usuario._' }, { quoted: msg });
             } else if (mode === 'off') {
                 await db.desactivarAntiSpam(chatId);
                 await refreshGroupCache(db, botState, chatId);

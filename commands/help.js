@@ -90,18 +90,19 @@ const helpData = {
         cooldown: 'Ninguno'
     },
     
-    // ECONOMÍA
-    '!balance': {
-        desc: 'Muestra tu balance de dikys.',
-        usage: '!balance [@usuario]',
-        ejemplo: '!balance\n!balance @usuario',
+    // ECONOMIA
+    '!perfil': {
+        desc: 'Muestra tu balance y perfil de usuario.',
+        usage: '!perfil [@usuario]',
+        ejemplo: '!perfil\n!p @usuario',
         args: 'Usuario (opcional)',
-        cooldown: 'Ninguno'
+        cooldown: 'Ninguno',
+        alias: '!p, !profile'
     },
-    '!diario': {
+    '!daily': {
         desc: 'Recoge tu recompensa diaria.',
-        usage: '!diario',
-        ejemplo: '!diario',
+        usage: '!daily',
+        ejemplo: '!daily',
         args: 'Ninguno',
         cooldown: '24 horas'
     },
@@ -133,18 +134,18 @@ const helpData = {
         args: 'Tipo de ranking (opcional)',
         cooldown: 'Ninguno'
     },
-    '!shop': {
+    '!tienda': {
         desc: 'Muestra la tienda de items.',
-        usage: '!shop',
-        ejemplo: '!shop',
+        usage: '!tienda',
+        ejemplo: '!tienda',
         args: 'Ninguno',
         cooldown: 'Ninguno'
     },
-    '!buy': {
+    '!comprar': {
         desc: 'Compra un item de la tienda.',
-        usage: '!buy <item>',
-        ejemplo: '!buy pico\n!buy cebo',
-        args: 'Nombre del item (requerido)',
+        usage: '!comprar <numero>',
+        ejemplo: '!comprar 1',
+        args: 'Numero del item (requerido)',
         cooldown: 'Ninguno'
     },
     '!inventario': {
@@ -206,27 +207,20 @@ const helpData = {
         cooldown: '1 minuto'
     },
     
-    // SOCIAL
-    '!perfil': {
-        desc: 'Muestra o edita tu perfil.',
-        usage: '!perfil [campo] [valor]',
-        ejemplo: '!perfil\n!perfil anime FMA\n!perfil edad 20',
-        args: 'Campo y valor (opcionales)',
-        cooldown: 'Ninguno'
-    },
-    '!proponer': {
+    '!casar': {
         desc: 'Propone matrimonio a otro usuario.',
-        usage: '!proponer @usuario',
-        ejemplo: '!proponer @usuario',
+        usage: '!casar @usuario',
+        ejemplo: '!casar @usuario',
         args: 'Usuario (requerido)',
-        cooldown: 'Ninguno'
+        cooldown: 'Ninguno',
+        alias: '!marry, !proponer'
     },
-    '!divorcio': {
+    '!divorce': {
         desc: 'Termina tu matrimonio actual.',
-        usage: '!divorcio',
-        ejemplo: '!divorcio',
+        usage: '!divorce',
+        ejemplo: '!divorce',
         args: 'Ninguno',
-        cooldown: '1 día'
+        cooldown: '1 dia'
     },
     '!pareja': {
         desc: 'Muestra tu pareja actual.',
@@ -235,11 +229,11 @@ const helpData = {
         args: 'Ninguno',
         cooldown: 'Ninguno'
     },
-    '!mascota': {
+    '!mascotas': {
         desc: 'Gestiona tu mascota.',
-        usage: '!mascota [acción]',
-        ejemplo: '!mascota\n!mascota alimentar\n!mascota ver',
-        args: 'Acción (opcional: alimentar, ver, lista)',
+        usage: '!mascotas [accion]',
+        ejemplo: '!mascotas\n!alimentar',
+        args: 'Accion (opcional)',
         cooldown: 'Ninguno'
     },
     
@@ -248,20 +242,6 @@ const helpData = {
         desc: 'Muestra el menú de comandos disponibles.',
         usage: '!menu',
         ejemplo: '!menu',
-        args: 'Ninguno',
-        cooldown: 'Ninguno'
-    },
-    '!help': {
-        desc: 'Muestra ayuda detallada de un comando.',
-        usage: '!help [comando]',
-        ejemplo: '!help\n!help anime\n!help balance',
-        args: 'Nombre del comando (opcional)',
-        cooldown: 'Ninguno'
-    },
-    '!ping': {
-        desc: 'Verifica la latencia del bot.',
-        usage: '!ping',
-        ejemplo: '!ping',
         args: 'Ninguno',
         cooldown: 'Ninguno'
     },
@@ -295,54 +275,16 @@ const helpData = {
     }
 };
 
+// Este modulo YA NO registra su propio comando '!help' (antes colisionaba
+// con el '!help' de main.js y por orden de carga alfabetico, main.js siempre
+// ganaba y esta ayuda detallada nunca se ejecutaba). Se exporta helpData para
+// que main.js la use cuando '!help <comando>' trae un argumento. isMultiple:
+// false + names vacio evita que commandHandler intente registrar un comando
+// invocable directamente desde aqui (name: '__help_data__' es solo un id
+// interno no usado por los usuarios).
 module.exports = {
-    name: '!help',
-    isMultiple: true,
-    names: ['!help'],
-    async execute(sock, chatId, msg, args, { start, botState }) {
-        const commandName = args[0] ? (args[0].startsWith('!') ? args[0] : '!' + args[0]) : null;
-        
-        // Si no hay argumento, mostrar lista general
-        if (!commandName) {
-            let menu = '📚 *SISTEMA DE AYUDA*\n\n';
-            menu += 'Usa `!help <comando>` para información detallada.\n\n';
-            menu += '📺 *MEDIA*\n';
-            menu += '`!anime` | `!personaje` | `!manga` | `!leer`\n';
-            menu += '`!recomendar` | `!random` | `!estrenos` | `!temporada`\n';
-            menu += '`!waifu` | `!estudio` | `!proximo` | `!wiki`\n\n';
-            menu += '💰 *ECONOMÍA*\n';
-            menu += '`!balance` | `!diario` | `!w` | `!slut`\n';
-            menu += '`!prestigio` | `!top` | `!shop` | `!buy` | `!inventario`\n\n';
-            menu += '🎮 *JUEGOS*\n';
-            menu += '`!duelo` | `!trivia` | `!quiz` | `!quizanime`\n';
-            menu += '`!ahorcado` | `!slot` | `!ruleta`\n\n';
-            menu += '👥 *SOCIAL*\n';
-            menu += '`!perfil` | `!proponer` | `!divorcio` | `!pareja` | `!mascota`\n\n';
-            menu += '⚙️ *UTILIDADES*\n';
-            menu += '`!menu` | `!help` | `!ping` | `!bot` | `!bienvenida`\n';
-            menu += '`!tag` | `!reglas`\n\n';
-            menu += '💡 *Ejemplo:* `!help anime` o `!help balance`';
-            
-            return sock.sendMessage(chatId, { text: menu }, { quoted: msg });
-        }
-        
-        // Buscar ayuda específica
-        const help = helpData[commandName];
-        
-        if (!help) {
-            return sock.sendMessage(chatId, { 
-                text: `❌ Comando *${commandName}* no encontrado.\n\nUsa *!help* para ver la lista de comandos.` 
-            }, { quoted: msg });
-        }
-        
-        // Mostrar ayuda detallada
-        let response = `❓ *AYUDA: ${commandName}*\n\n`;
-        response += `📖 *Descripción:*\n${help.desc}\n\n`;
-        response += `📝 *Uso:*\n\`\`\`${help.usage}\`\`\`\n\n`;
-        response += `💡 *Ejemplo:*\n${help.ejemplo}\n\n`;
-        response += `📋 *Argumentos:* ${help.args}\n`;
-        response += `⏱️ *Cooldown:* ${help.cooldown}`;
-        
-        return sock.sendMessage(chatId, { text: response }, { quoted: msg });
-    }
+    name: '__help_data__',
+    helpData,
+    isMultiple: false,
+    async execute() { /* no-op: este modulo no se registra como comando de usuario */ }
 };

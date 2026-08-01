@@ -67,17 +67,9 @@ function isExpectedGifUrl(source, reaction, url) {
     return true;
 }
 
-module.exports = {
-    name: 'reactions',
-    isMultiple: true,
-    names: [
-        '!pat', '!hug', '!kill', '!kiss', '!slap', '!punch', '!cry', '!dance', '!bite', '!highfive',
-        '!fumar', '!cafe', '!puchero', '!sonrojar', '!baka', '!dormir', '!comiendo', '!pensar',
-        '!patear', '!celebrar', '!aburrido', '!risa', '!smug', '!stare'
-    ],
-    category: 'Social',
-    async execute(sock, chatId, msg, args, { start, sender }) {
-        const reccionesGif = {
+// Movido fuera de execute(): se crea 1 sola vez al cargar el modulo,
+// en vez de reconstruirse en cada ejecucion del comando (ahorra CPU/RAM en Render).
+const reccionesGif = {
             '!pat': { api: 'https://nekos.best/api/v2/pat', txt: ['acarició a', 'le hace mimos a', 'le da palmaditas en la cabeza a', 'consiente a'], solo: ['se acaricia el pelito...', 'se siente solo/a y se acaricia la cabeza', 'necesita mimos...'], source: 'nekos' },
             '!hug': { api: 'https://nekos.best/api/v2/hug', txt: ['le dio un abrazo a', 'está abrazando fuerte a', 'le da un cálido abrazo a', 'no quiere soltar a'], solo: ['se abraza a sí mismo...', 'quiere un abrazo...', 'abraza su almohada'], source: 'nekos' },
             '!kill': { api: 'https://api.waifu.pics/sfw/kill', txt: ['eliminó de la existencia a', 'le dio cuello a', 'acabó con', 'mandó al lobby a'], solo: ['murió de forma dramática...', 'se autodestruyó 💥', 'se desvanece...'], source: 'waifu' },
@@ -116,9 +108,19 @@ module.exports = {
             '!aburrido': { api: 'https://nekos.best/api/v2/bored', txt: ['está aburrido junto a', 'se muere de aburrimiento con', 'no sabe qué hacer con'], solo: ['está muriendo de aburrimiento... 🥱', 'esperando que pase algo', 'zzzzzz qué hueva'], source: 'nekos' },
             '!risa': { api: 'https://nekos.best/api/v2/laugh', txt: ['se ríe de', 'se burla de', 'está carcajeando con'], solo: ['se ríe a carcajadas 😂', '¡JAJAJA!', 'no puede parar de reír'], source: 'nekos' },
             '!smug': { api: 'https://nekos.best/api/v2/smug', txt: ['mira con superioridad a', 'se cree mejor que', 'mira con una sonrisa presumida a'], solo: ['actúa de forma presumida 😏', 'se siente el/la mejor', 'mira a todos hacia abajo'], source: 'nekos' },
-            '!stare': { api: 'https://nekos.best/api/v2/stare', txt: ['mira fijamente a', 'le clava la mirada a', 'no le quita los ojos de encima a'], solo: ['mira a la nada fijamente... 👁️', 'está viendo tu alma', 'no parpadea...'], source: 'nekos' }
-        };
+    '!stare': { api: 'https://nekos.best/api/v2/stare', txt: ['mira fijamente a', 'le clava la mirada a', 'no le quita los ojos de encima a'], solo: ['mira a la nada fijamente... 👁️', 'está viendo tu alma', 'no parpadea...'], source: 'nekos' }
+};
 
+module.exports = {
+    name: 'reactions',
+    isMultiple: true,
+    names: [
+        '!pat', '!hug', '!kill', '!kiss', '!slap', '!punch', '!cry', '!dance', '!bite', '!highfive',
+        '!fumar', '!cafe', '!puchero', '!sonrojar', '!baka', '!dormir', '!comiendo', '!pensar',
+        '!patear', '!celebrar', '!aburrido', '!risa', '!smug', '!stare'
+    ],
+    category: 'Social',
+    async execute(sock, chatId, msg, args, { start, sender }) {
         const config = { ...reccionesGif[start] };
         const gifukaiReaction = GIFUKAI_REACTIONS[start];
         const otakuReaction = OTAKU_REACTIONS[start];
