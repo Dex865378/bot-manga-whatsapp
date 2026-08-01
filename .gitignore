@@ -11,3 +11,6 @@ temp_*.png
 *.log
 cookies.txt
 
+
+.codegraph/
+.cursor/
