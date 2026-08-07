@@ -298,45 +298,78 @@ module.exports = {
             }
 
             // ── Caso B: código + número → descargar y enviar ────────────────
-            await sock.sendMessage(chatId,
-                { text: `⏳ Descargando *${m.titulo}* — Cap. *${numCap}*...\n📡 Obteniendo páginas desde MangaDex (calidad optimizada)` },
-                { quoted: msg }
-            );
+            const isAll = numCap.toLowerCase() === 'all';
 
             // Ejecutar en background para no bloquear al bot
             (async () => {
                 try {
-                    const resultado = await mangadex.obtenerCapitulo(m.titulo, m.codigo, numCap);
-
-                    if (resultado.modo === 'pdf') {
-                        // ✅ Modo principal: 1 PDF por capítulo
-                        await sock.sendMessage(chatId, {
-                            document: resultado.pdf,
-                            mimetype: 'application/pdf',
-                            fileName: resultado.nombreArchivo,
-                            caption: `📖 *${m.titulo}*\nCap. *${numCap}* — ${resultado.paginas} páginas ${resultado.idioma === 'es' ? '🇪🇸' : '🇺🇸'}`
-                        }, { quoted: msg });
+                    let capsToDownload = [];
+                    if (isAll) {
+                        await sock.sendMessage(chatId, { text: `⏳ Preparando descarga masiva de *${m.titulo}*...\n📡 Obteniendo lista de capítulos...` }, { quoted: msg });
+                        const info = await mangadex.listarCapitulos(m.titulo, m.codigo);
+                        if (!info || info.disponibles === 0) {
+                            return sock.sendMessage(chatId, { text: `❌ No hay capítulos disponibles para descargar.` });
+                        }
+                        capsToDownload = info.caps.map(c => c.num);
+                        await sock.sendMessage(chatId, { text: `🚀 Comenzando descarga de *${capsToDownload.length}* capítulos.\n⚠️ Esto tomará tiempo. Los capítulos llegarán uno por uno con pausas para no saturar el servidor.` });
                     } else {
-                        // ⚠️ Modo fallback: capítulo muy largo → imágenes sueltas
-                        await sock.sendMessage(chatId, {
-                            text: `⚠️ El capítulo ${numCap} tiene *${resultado.paginas} páginas*. Enviando por lotes de imágenes...`
-                        });
-                        const lote = 10;
-                        for (let i = 0; i < resultado.imagenes.length; i += lote) {
-                            const batch = resultado.imagenes.slice(i, i + lote);
-                            for (let j = 0; j < batch.length; j++) {
-                                await sock.sendMessage(chatId, {
-                                    image: batch[j],
-                                    caption: `📄 Pág. ${i + j + 1}/${resultado.paginas}`
-                                });
-                                await new Promise(r => setTimeout(r, 800));
+                        capsToDownload = [numCap];
+                        await sock.sendMessage(chatId,
+                            { text: `⏳ Descargando *${m.titulo}* — Cap. *${numCap}*...\n📡 Obteniendo páginas desde MangaDex (calidad optimizada)` },
+                            { quoted: msg }
+                        );
+                    }
+
+                    for (const num of capsToDownload) {
+                        try {
+                            if (isAll) {
+                                await sock.sendMessage(chatId, { text: `🔄 Procesando Cap. *${num}*...` });
                             }
+                            const resultado = await mangadex.obtenerCapitulo(m.titulo, m.codigo, num);
+
+                            if (resultado.modo === 'pdf') {
+                                // ✅ Modo principal: 1 PDF por capítulo
+                                await sock.sendMessage(chatId, {
+                                    document: resultado.pdf,
+                                    mimetype: 'application/pdf',
+                                    fileName: resultado.nombreArchivo,
+                                    caption: `📖 *${m.titulo}*\nCap. *${num}* — ${resultado.paginas} páginas ${resultado.idioma === 'es' ? '🇪🇸' : '🇺🇸'}`
+                                }, isAll ? {} : { quoted: msg });
+                            } else {
+                                // ⚠️ Modo fallback: capítulo muy largo → imágenes sueltas
+                                await sock.sendMessage(chatId, {
+                                    text: `⚠️ El capítulo ${num} tiene *${resultado.paginas} páginas*. Enviando por lotes de imágenes...`
+                                });
+                                const lote = 10;
+                                for (let i = 0; i < resultado.imagenes.length; i += lote) {
+                                    const batch = resultado.imagenes.slice(i, i + lote);
+                                    for (let j = 0; j < batch.length; j++) {
+                                        await sock.sendMessage(chatId, {
+                                            image: batch[j],
+                                            caption: `📄 Pág. ${i + j + 1}/${resultado.paginas}`
+                                        });
+                                        await new Promise(r => setTimeout(r, 800));
+                                    }
+                                }
+                            }
+
+                            if (isAll) {
+                                // Pausa generosa entre capítulos para no agotar la RAM ni sufrir ban de WhatsApp/MangaDex
+                                await new Promise(r => setTimeout(r, 4000));
+                            }
+                        } catch (err) {
+                            console.error(`[!leer] Error obteniendo cap ${num}:`, err.message);
+                            await sock.sendMessage(chatId, { text: `❌ Falló el capítulo ${num}: ${err.message}` });
                         }
                     }
+
+                    if (isAll) {
+                        await sock.sendMessage(chatId, { text: `✅ Descarga masiva de *${m.titulo}* completada.` });
+                    }
                 } catch (e) {
-                    console.error(`[!leer] Error obteniendo cap ${numCap}:`, e.message);
+                    console.error(`[!leer] Error general:`, e.message);
                     await sock.sendMessage(chatId,
-                        { text: `❌ No se pudo obtener el capítulo: ${e.message}\n\n💡 Prueba *!leer ${m.codigo}* para ver los capítulos disponibles.` },
+                        { text: `❌ Ocurrió un error: ${e.message}\n\n💡 Prueba *!leer ${m.codigo}* para ver los capítulos disponibles.` },
                         { quoted: msg }
                     );
                 }
