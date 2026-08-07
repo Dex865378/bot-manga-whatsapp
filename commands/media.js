@@ -31,12 +31,23 @@ const cancelMap = new Map();
 module.exports = {
     name: 'media',
     isMultiple: true,
-    names: ['!waifu', '!anime', '!personaje', '!estudio', '!proximo', '!estrenos', '!temporada', '!recomendar', '!random', '!trace', '!news', '!wiki', '!decir', '!catalogo', '!manga', '!leer', '!buscar', '!ver', '!parar'],
+    names: ['!waifu', '!anime', '!personaje', '!estudio', '!proximo', '!estrenos', '!temporada', '!recomendar', '!random', '!trace', '!news', '!wiki', '!decir', '!catalogo', '!manga', '!leer', '!buscar', '!ver', '!parar', '!setmanga'],
     async execute(sock, chatId, msg, args, { start, cmd, txt, db, delay, downloadMediaMessage, traducirConCache, botState, sender, chatWithLiquidAI }) {
         // !parar - Cancela descargas masivas en curso
         if (start === '!parar') {
             cancelMap.set(chatId, true);
             return sock.sendMessage(chatId, { text: '🛑 Se han cancelado las descargas masivas en curso para este chat.' }, { quoted: msg });
+        }
+
+        // !setmanga - Fuerza el ID de mangadex para un código específico
+        if (start === '!setmanga') {
+            if (args.length < 2) {
+                return sock.sendMessage(chatId, { text: '❌ Uso incorrecto. Usa: *!setmanga <código> <id_de_mangadex>*\nEjemplo: !setmanga 022 55964893-...-...' }, { quoted: msg });
+            }
+            const cod = args[0];
+            const m_id = args[1];
+            mangadex.forzarMangaId(cod, m_id);
+            return sock.sendMessage(chatId, { text: `✅ El manga con código *${cod}* ha sido vinculado manualmente al ID *${m_id}* en MangaDex.\nPrueba usar *!leer ${cod}* ahora.` }, { quoted: msg });
         }
 
         // !ver @usuario - Descargar y enviar foto de perfil

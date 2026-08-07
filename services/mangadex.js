@@ -397,6 +397,22 @@ function limpiarCacheId(codigo) {
     } catch (_) {}
 }
 
+/**
+ * Fuerza un ID manual para un manga.
+ * @param {string} codigo 
+ * @param {string} id 
+ */
+function forzarMangaId(codigo, id) {
+    _idCache.set(codigo, { id, ts: Date.now() });
+    try {
+        const data = cargarIdsPersistedos();
+        data[codigo] = id;
+        fs.writeFileSync(IDS_CACHE_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    } catch (e) {
+        console.error('[MangaDex] Error forzando ID:', e.message);
+    }
+}
+
 module.exports = {
     buscarMangaId,
     obtenerCapitulos,
@@ -406,5 +422,6 @@ module.exports = {
     obtenerCapitulo,
     listarCapitulos,
     limpiarCacheId,
+    forzarMangaId,
     MAX_PAGES_PDF
 };
