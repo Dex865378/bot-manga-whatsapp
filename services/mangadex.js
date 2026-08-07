@@ -278,15 +278,19 @@ async function ensamblarPDF(imageBuffers, titulo, numCap) {
 
         for (const buf of imageBuffers) {
             try {
-                // Detectar tamaño de imagen para ajustar tamaño de página
-                // pdfkit acepta buffer directamente con image()
-                // Usamos fit para que llene la página sin distorsionar
-                doc.addPage({ size: 'A4', margin: 0 });
-                doc.image(buf, 0, 0, {
-                    fit: [doc.page.width, doc.page.height],
-                    align: 'center',
-                    valign: 'center'
-                });
+                // Leer dimensiones reales de la imagen
+                const img = doc.openImage(buf);
+                const imgW = img.width;
+                const imgH = img.height;
+
+                // Ancho fijo de lectura cómoda (tamaño celular/tablet)
+                const PAGE_W = 620;
+                const scale  = PAGE_W / imgW;
+                const pageH  = imgH * scale;
+
+                // Crear página del tamaño exacto de la imagen escalada
+                doc.addPage({ size: [PAGE_W, pageH], margin: 0 });
+                doc.image(img, 0, 0, { width: PAGE_W, height: pageH });
             } catch (e) {
                 console.warn('[MangaDex] Error insertando imagen en PDF, se omite:', e.message);
             }
