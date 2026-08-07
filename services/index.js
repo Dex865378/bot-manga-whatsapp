@@ -3,8 +3,10 @@
  * Servicios de negocio del bot
  */
 
-const aiService = require('./aiService');
+const aiService   = require('./aiService');
+const mangadex    = require('./mangadex');
 
 module.exports = {
-    aiService
+    aiService,
+    mangadex
 };

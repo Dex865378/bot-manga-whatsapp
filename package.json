@@ -22,6 +22,7 @@
     "jimp": "^1.6.0",
     "mime-types": "^3.0.2",
     "node-cron": "^4.2.1",
+    "pdfkit": "^0.19.1",
     "pino": "^9.0.0",
     "pretty-ms": "^9.3.0",
     "qrcode": "^1.5.3",

@@ -6,6 +6,7 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 const { fetchWithRetry } = require('../utils/apiClient');
 const { LRUCache } = require('../utils/lruCache');
+const mangadex = require('../services/mangadex');
 
 const execFileAsync = promisify(execFile);
 
@@ -243,53 +244,101 @@ module.exports = {
             return sock.sendMessage(chatId, { text: l });
         }
 
-        // !leer
+        // !leer <código>         → lista capítulos disponibles en MangaDex
+        // !leer <código> <cap>   → descarga capítulo como PDF al vuelo (data-saver)
         if (start === '!leer') {
-            const cod = args[0];
+            const cod    = args[0];
+            const numCap = args[1]; // puede ser undefined
+
+            if (!cod) {
+                return sock.sendMessage(chatId,
+                    { text: '📖 *Uso:*\n• `!leer <código>` — ver capítulos disponibles\n• `!leer <código> <número>` — leer un capítulo\n\nEjemplo: `!leer 019 1`' },
+                    { quoted: msg }
+                );
+            }
+
             const m = cargarMangasLocal().find(x => x.codigo === cod);
-            if (!m) return sock.sendMessage(chatId, { text: '❌ No encontrado. Escribe el código del manga (ej: !leer 001)' });
+            if (!m) {
+                return sock.sendMessage(chatId,
+                    { text: `❌ Código *${cod}* no encontrado.\nUsa *!catalogo* para ver los códigos disponibles.` },
+                    { quoted: msg }
+                );
+            }
 
-            const p = path.join(__dirname, '..', 'mangas', m.carpeta);
-            if (!fs.existsSync(p)) return sock.sendMessage(chatId, { text: '❌ Carpeta no encontrada.' });
-
-            const files = fs.readdirSync(p)
-                .filter(f => f.endsWith('.pdf') || f.endsWith('.jpg') || f.endsWith('.png') || f.endsWith('.webp') || f.endsWith('.jpeg'))
-                .filter(f => f !== 'portada.png')
-                .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
-                .slice(0, 15);
-
-            if (files.length === 0) return sock.sendMessage(chatId, { text: '❌ No hay capítulos o páginas disponibles en esta carpeta.' });
-
-            // 🚀 Envío async no bloqueante
-            await sock.sendMessage(chatId, { text: `📚 Enviando *${m.titulo}* (${files.length} archivos)...\n⏳ Esto puede tardar unos segundos.` });
-            
-            // Procesar en background para no bloquear el bot
-            (async () => {
-                for (const f of files) {
-                    try {
-                        const fp = path.join(p, f);
-                        const fileBuffer = fs.readFileSync(fp);
-                        
-                        if (f.endsWith('.pdf')) {
-                            await sock.sendMessage(chatId, { 
-                                document: fileBuffer, 
-                                mimetype: 'application/pdf', 
-                                fileName: f 
-                            });
-                        } else {
-                            await sock.sendMessage(chatId, { 
-                                image: fileBuffer, 
-                                caption: f 
-                            });
-                        }
-                        // Delay no bloqueante para evitar rate limits
-                        await new Promise(resolve => setTimeout(resolve, 1500));
-                    } catch (err) {
-                        console.error(`❌ Error enviando ${f}:`, err.message);
+            // ── Caso A: solo código → listar capítulos ──────────────────────
+            if (!numCap) {
+                await sock.sendMessage(chatId,
+                    { text: `🔍 Buscando capítulos de *${m.titulo}* en MangaDex...` },
+                    { quoted: msg }
+                );
+                try {
+                    const info = await mangadex.listarCapitulos(m.titulo, m.codigo);
+                    if (!info || info.disponibles === 0) {
+                        return sock.sendMessage(chatId,
+                            { text: `❌ No se encontraron capítulos de *${m.titulo}* en MangaDex.\n\n💡 Puede que esté bajo otro título. Prueba *!manga ${m.codigo}* para ver el título original.` },
+                            { quoted: msg }
+                        );
                     }
+                    const sample = info.caps.slice(0, 30);
+                    let lista = `📚 *${m.titulo}*\n━━━━━━━━━━━━━━\n📖 *${info.disponibles} capítulos en español*\n\n`;
+                    lista += sample.map(c => `🇪🇸 Cap. *${c.num}*${c.titulo ? ` — ${c.titulo}` : ''}`).join('\n');
+                    if (info.disponibles > 30) lista += `\n...y ${info.disponibles - 30} más.`;
+                    lista += `\n\n💡 *!leer ${m.codigo} <número>* para leer un capítulo`;
+                    return sock.sendMessage(chatId, { text: lista }, { quoted: msg });
+                } catch (e) {
+                    console.error('[!leer] Error listando:', e.message);
+                    return sock.sendMessage(chatId,
+                        { text: `❌ Error buscando capítulos: ${e.message}` },
+                        { quoted: msg }
+                    );
+                }
+            }
+
+            // ── Caso B: código + número → descargar y enviar ────────────────
+            await sock.sendMessage(chatId,
+                { text: `⏳ Descargando *${m.titulo}* — Cap. *${numCap}*...\n📡 Obteniendo páginas desde MangaDex (calidad optimizada)` },
+                { quoted: msg }
+            );
+
+            // Ejecutar en background para no bloquear al bot
+            (async () => {
+                try {
+                    const resultado = await mangadex.obtenerCapitulo(m.titulo, m.codigo, numCap);
+
+                    if (resultado.modo === 'pdf') {
+                        // ✅ Modo principal: 1 PDF por capítulo
+                        await sock.sendMessage(chatId, {
+                            document: resultado.pdf,
+                            mimetype: 'application/pdf',
+                            fileName: resultado.nombreArchivo,
+                            caption: `📖 *${m.titulo}*\nCap. *${numCap}* — ${resultado.paginas} páginas 🇪🇸`
+                        }, { quoted: msg });
+                    } else {
+                        // ⚠️ Modo fallback: capítulo muy largo → imágenes sueltas
+                        await sock.sendMessage(chatId, {
+                            text: `⚠️ El capítulo ${numCap} tiene *${resultado.paginas} páginas*. Enviando por lotes de imágenes...`
+                        });
+                        const lote = 10;
+                        for (let i = 0; i < resultado.imagenes.length; i += lote) {
+                            const batch = resultado.imagenes.slice(i, i + lote);
+                            for (let j = 0; j < batch.length; j++) {
+                                await sock.sendMessage(chatId, {
+                                    image: batch[j],
+                                    caption: `📄 Pág. ${i + j + 1}/${resultado.paginas}`
+                                });
+                                await new Promise(r => setTimeout(r, 800));
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error(`[!leer] Error obteniendo cap ${numCap}:`, e.message);
+                    await sock.sendMessage(chatId,
+                        { text: `❌ No se pudo obtener el capítulo: ${e.message}\n\n💡 Prueba *!leer ${m.codigo}* para ver los capítulos disponibles.` },
+                        { quoted: msg }
+                    );
                 }
             })();
-            
+
             return;
         }
 
