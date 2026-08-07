@@ -25,11 +25,19 @@ function setApiCache(key, data) {
     apiCache.set(key, data);
 }
 
+// Mapa para controlar cancelaciones de descargas masivas (!parar)
+const cancelMap = new Map();
+
 module.exports = {
     name: 'media',
     isMultiple: true,
-    names: ['!waifu', '!anime', '!personaje', '!estudio', '!proximo', '!estrenos', '!temporada', '!recomendar', '!random', '!trace', '!news', '!wiki', '!decir', '!catalogo', '!manga', '!leer', '!buscar', '!ver'],
+    names: ['!waifu', '!anime', '!personaje', '!estudio', '!proximo', '!estrenos', '!temporada', '!recomendar', '!random', '!trace', '!news', '!wiki', '!decir', '!catalogo', '!manga', '!leer', '!buscar', '!ver', '!parar'],
     async execute(sock, chatId, msg, args, { start, cmd, txt, db, delay, downloadMediaMessage, traducirConCache, botState, sender, chatWithLiquidAI }) {
+        // !parar - Cancela descargas masivas en curso
+        if (start === '!parar') {
+            cancelMap.set(chatId, true);
+            return sock.sendMessage(chatId, { text: '🛑 Se han cancelado las descargas masivas en curso para este chat.' }, { quoted: msg });
+        }
 
         // !ver @usuario - Descargar y enviar foto de perfil
         if (start === '!ver') {
@@ -320,7 +328,15 @@ module.exports = {
                         );
                     }
 
+                    // Resetear bandera de cancelación al iniciar
+                    if (isAll) cancelMap.set(chatId, false);
+
                     for (const num of capsToDownload) {
+                        if (isAll && cancelMap.get(chatId)) {
+                            await sock.sendMessage(chatId, { text: `🛑 Descarga masiva detenida por el usuario.` });
+                            break;
+                        }
+
                         try {
                             if (isAll) {
                                 await sock.sendMessage(chatId, { text: `🔄 Procesando Cap. *${num}*...` });
@@ -363,7 +379,7 @@ module.exports = {
                         }
                     }
 
-                    if (isAll) {
+                    if (isAll && !cancelMap.get(chatId)) {
                         await sock.sendMessage(chatId, { text: `✅ Descarga masiva de *${m.titulo}* completada.` });
                     }
                 } catch (e) {

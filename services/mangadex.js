@@ -19,11 +19,12 @@ const MDEX_BASE     = 'https://api.mangadex.org';
 const MDEX_UPLOADS  = 'https://uploads.mangadex.org';
 const IDS_CACHE_FILE = path.join(__dirname, '..', 'data', 'mangadex_ids.json');
 
-/** Solo español (ES y ES-LA). Sin fallback a otros idiomas. */
+/** Prioridad: español primero, inglés como fallback */
 const LANGS_ES = ['es', 'es-la'];
+const LANGS_EN = ['en'];
 
 /** Máximo de páginas para armar PDF. Si supera esto → imágenes sueltas */
-const MAX_PAGES_PDF = 60;
+const MAX_PAGES_PDF = 300;
 
 /** Máx concurrent downloads por capítulo */
 const MAX_CONCURRENT_DL = 5;
@@ -150,13 +151,21 @@ async function buscarMangaId(titulo, codigo) {
  */
 async function obtenerCapitulos(mangaId) {
     const cached = _capCache.get(mangaId);
-    if (cached && Date.now() - cached.ts < TTL_CAPS) return cached.caps;
+    if (cached && Date.now() - cached.ts < TTL_CAPS) return cached.result;
 
     try {
-        // Solo capítulos en español (es / es-la)
-        const allChapters = await _fetchFeed(mangaId, LANGS_ES);
+        // Paso 1: buscar en español
+        let allChapters = await _fetchFeed(mangaId, LANGS_ES);
+        let idioma = 'es'; // flag para avisar al usuario
 
-        // Agrupar por número de capítulo, preferir 'es' sobre 'es-la' si hay ambos
+        // Paso 2: si no hay español → fallback a inglés
+        if (allChapters.length === 0) {
+            console.log(`[MangaDex] No hay caps en ES para ${mangaId}, buscando en inglés...`);
+            allChapters = await _fetchFeed(mangaId, LANGS_EN);
+            idioma = 'en';
+        }
+
+        // Agrupar por número de capítulo (deduplicar)
         const capMap = new Map();
         for (const ch of allChapters) {
             const num = ch.attributes.chapter;
@@ -165,8 +174,8 @@ async function obtenerCapitulos(mangaId) {
             const existing = capMap.get(num);
             if (!existing) {
                 capMap.set(num, { num, lang, id: ch.id, titulo: ch.attributes.title || '' });
-            } else if (lang === 'es' && existing.lang === 'es-la') {
-                // Preferir 'es' (España) sobre 'es-la' (Latinoamérica) si hay ambos
+            } else if (idioma === 'es' && lang === 'es' && existing.lang === 'es-la') {
+                // Preferir 'es' sobre 'es-la' si hay ambos
                 capMap.set(num, { num, lang, id: ch.id, titulo: ch.attributes.title || '' });
             }
         }
@@ -176,11 +185,12 @@ async function obtenerCapitulos(mangaId) {
             parseFloat(a.num) - parseFloat(b.num)
         );
 
-        _capCache.set(mangaId, { caps, ts: Date.now() });
-        return caps;
+        const result = { caps, idioma };
+        _capCache.set(mangaId, { result, ts: Date.now() });
+        return result;
     } catch (e) {
         console.error('[MangaDex] Error obteniendo capítulos:', e.message);
-        return [];
+        return { caps: [], idioma: 'es' };
     }
 }
 
@@ -315,8 +325,8 @@ async function obtenerCapitulo(titulo, codigo, numCap) {
     const mangaId = await buscarMangaId(titulo, codigo);
     if (!mangaId) throw new Error(`No se encontró "${titulo}" en MangaDex`);
 
-    // 2. Obtener lista de capítulos
-    const caps = await obtenerCapitulos(mangaId);
+    // 2. Obtener lista de capítulos (incluye flag de idioma)
+    const { caps, idioma } = await obtenerCapitulos(mangaId);
     if (caps.length === 0) throw new Error(`No hay capítulos disponibles para "${titulo}"`);
 
     // 3. Buscar el capítulo pedido (número exacto o aproximado)
@@ -330,7 +340,8 @@ async function obtenerCapitulo(titulo, codigo, numCap) {
     const { urls } = await obtenerPaginas(capInfo.id);
     if (urls.length === 0) throw new Error(`El capítulo ${numCap} no tiene páginas disponibles`);
 
-    console.log(`[MangaDex] Cap ${numCap} de "${titulo}" → ${urls.length} páginas 🇪🇸`);
+    const langTag = idioma === 'es' ? '🇪🇸 ES' : '🇺🇸 EN';
+    console.log(`[MangaDex] Cap ${numCap} de "${titulo}" → ${urls.length} páginas (${langTag})`);
 
     // 5. Descargar páginas
     const buffers = await descargarPaginasABuffers(urls);
@@ -345,15 +356,16 @@ async function obtenerCapitulo(titulo, codigo, numCap) {
             modo: 'pdf',
             pdf,
             nombreArchivo: `${nombreBase}.pdf`,
-            paginas: buffers.length
+            paginas: buffers.length,
+            idioma
         };
     } else {
-        // Webtoon extremo → imágenes sueltas por lotes
         return {
             modo: 'imagenes',
             imagenes: buffers,
             nombreArchivo: nombreBase,
-            paginas: buffers.length
+            paginas: buffers.length,
+            idioma
         };
     }
 }
@@ -368,8 +380,8 @@ async function listarCapitulos(titulo, codigo) {
     const mangaId = await buscarMangaId(titulo, codigo);
     if (!mangaId) return null;
 
-    const caps = await obtenerCapitulos(mangaId);
-    return { disponibles: caps.length, caps, mangaId };
+    const { caps, idioma } = await obtenerCapitulos(mangaId);
+    return { disponibles: caps.length, caps, mangaId, idioma };
 }
 
 /**
