@@ -338,9 +338,6 @@ module.exports = {
                         }
 
                         try {
-                            if (isAll) {
-                                await sock.sendMessage(chatId, { text: `🔄 Procesando Cap. *${num}*...` });
-                            }
                             const resultado = await mangadex.obtenerCapitulo(m.titulo, m.codigo, num);
 
                             if (resultado.modo === 'pdf') {
