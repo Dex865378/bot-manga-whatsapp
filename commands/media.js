@@ -280,9 +280,12 @@ module.exports = {
                         );
                     }
                     const sample = info.caps.slice(0, 30);
-                    let lista = `📚 *${m.titulo}*\n━━━━━━━━━━━━━━\n📖 *${info.disponibles} capítulos en español*\n\n`;
-                    lista += sample.map(c => `🇪🇸 Cap. *${c.num}*${c.titulo ? ` — ${c.titulo}` : ''}`).join('\n');
+                    const langEmoji = info.idioma === 'es' ? '🇪🇸' : '🇺🇸';
+                    const langText = info.idioma === 'es' ? 'en español' : 'en inglés';
+                    let lista = `📚 *${m.titulo}*\n━━━━━━━━━━━━━━\n📖 *${info.disponibles} capítulos ${langText}*\n\n`;
+                    lista += sample.map(c => `${langEmoji} Cap. *${c.num}*${c.titulo ? ` — ${c.titulo}` : ''}`).join('\n');
                     if (info.disponibles > 30) lista += `\n...y ${info.disponibles - 30} más.`;
+                    if (info.idioma === 'en') lista += `\n\n⚠️ *Aviso: No se encontraron capítulos en español, mostrando en inglés.*`;
                     lista += `\n\n💡 *!leer ${m.codigo} <número>* para leer un capítulo`;
                     return sock.sendMessage(chatId, { text: lista }, { quoted: msg });
                 } catch (e) {
@@ -311,7 +314,7 @@ module.exports = {
                             document: resultado.pdf,
                             mimetype: 'application/pdf',
                             fileName: resultado.nombreArchivo,
-                            caption: `📖 *${m.titulo}*\nCap. *${numCap}* — ${resultado.paginas} páginas 🇪🇸`
+                            caption: `📖 *${m.titulo}*\nCap. *${numCap}* — ${resultado.paginas} páginas ${resultado.idioma === 'es' ? '🇪🇸' : '🇺🇸'}`
                         }, { quoted: msg });
                     } else {
                         // ⚠️ Modo fallback: capítulo muy largo → imágenes sueltas
