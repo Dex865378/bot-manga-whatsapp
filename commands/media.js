@@ -52,7 +52,7 @@ module.exports = {
     name: 'media',
     isMultiple: true,
     names: ['!waifu', '!anime', '!personaje', '!estudio', '!proximo', '!estrenos', '!temporada', '!recomendar', '!random', '!trace', '!news', '!wiki', '!decir', '!catalogo', '!manga', '!leer', '!buscar', '!ver', '!parar', '!setmanga', '!recomanga'],
-    async execute(sock, chatId, msg, args, { start, cmd, txt, db, delay, downloadMediaMessage, traducirConCache, botState, sender, chatWithLiquidAI }) {
+    async execute(sock, chatId, msg, args, { start, cmd, txt, db, delay, downloadMediaMessage, traducirConCache, botState, sender, pushName, chatWithLiquidAI }) {
         // !parar - Cancela descargas masivas en curso
         if (start === '!parar') {
             cancelMap.set(chatId, true);
