@@ -413,6 +413,138 @@ function forzarMangaId(codigo, id) {
     }
 }
 
+// ─── Tags de MangaDex (español → UUID) ────────────────────────────────────────
+const TAGS_MAP = {
+    'accion': '391b0423-d847-456f-aff0-8b0cfc03066b',
+    'aventura': '87cc87cd-a395-47af-b27a-93258283bbc6',
+    'comedia': '4d32cc48-9f00-4cca-9b5a-a839f0764984',
+    'drama': 'b9af3a63-f058-46de-a9a0-e0c13906197a',
+    'fantasia': 'cdc58593-87dd-415e-bbc0-2ec27bf404cc',
+    'horror': 'cdad7e68-1419-41dd-bdce-27753074a640',
+    'misterio': 'ee968100-4191-4968-93d3-f82d72be7e46',
+    'romance': '423e2eae-a7a2-4a8b-ac03-a8351462d71d',
+    'scifi': '256c8bd9-4904-4360-bf4f-508a76d67183',
+    'thriller': '07251805-a27e-4d59-b488-f0bfbec15168',
+    'psicologico': '3b60b75c-a2d7-4860-ab56-05f391bb889c',
+    'sobrenatural': 'eabc5b4c-6aff-42f3-b657-3e90cbd00b75',
+    'artes marciales': '799c202e-7daa-44eb-9571-7a0eca22dc45',
+    'isekai': 'ace04997-f6bd-436e-b261-779182193d3d',
+    'reencarnacion': '0bc90acb-ccc1-44ca-a34a-b9f3a73259d0',
+    'magia': 'a1f53773-c69a-4ce5-8cab-fffcd90b1565',
+    'escolar': 'caaa44eb-cd40-4177-b930-79d3ef2afe87',
+    'deportes': '69964a64-2f90-4d33-beeb-f3ed2875eb4c',
+    'musica': 'f42fbf9e-188a-447b-9571-21b5b1ef7b37',
+    'mecha': 'fb83baab-eabc-4b75-ae1a-7d244fa347b1',
+    'militar': 'ac72833b-c4e9-4571-8c65-36ef658baf4e',
+    'policia': 'df33b754-73a3-4c54-80e6-0a7338571b2e',
+    'vida cotidiana': 'e5301a23-ebd9-49dd-a0cb-2add944c7fe9',
+    'recuentos': 'e5301a23-ebd9-49dd-a0cb-2add944c7fe9',
+    'supervivencia': '5fff9cde-849c-4d78-aab0-0d52b2ee1d25',
+    'demonios': '39730448-9a5f-48a2-85b0-a70db87b1233',
+    'monstruos': '36fd93ea-e8b8-445e-b836-358f02b3d33d',
+    'historico': '33771934-028e-4cb3-8744-691e866a923e',
+    'gore': 'b29d6a3d-1569-4e7a-8caf-7557bc92cd5d',
+    'vampiros': 'd7d1730f-6eb0-4ba6-9437-602cac38664c',
+    'samurai': '81183756-1453-4c81-aa9e-f6e1b63be016',
+    'ninja': '489dd859-9b61-4c37-af75-f8b0c4b29d3d',
+    'harem': 'aafb99c1-7f60-43e4-bbc8-0234c72d56d0',
+    'cooking': '9ab53f92-3f2c-4f4e-87a5-b56c1cecff7c',
+    'cocina': '9ab53f92-3f2c-4f4e-87a5-b56c1cecff7c'
+};
+
+/** Caché de recomendaciones para no repetir la misma búsqueda */
+const _recoCache = new Map(); // tag → { mangas, ts }
+const TTL_RECO = 2 * 60 * 60 * 1000; // 2h
+
+/**
+ * Busca mangas populares en MangaDex y verifica que tengan capítulos en español.
+ * @param {string|null} genero   Género/tag en español (ej: "accion") o null para popular general
+ * @returns {{ manga: object, idioma: string, totalCaps: number, coverUrl: string|null }|null}
+ */
+async function recomendarManga(genero) {
+    const cacheKey = genero || '__popular__';
+    const cached = _recoCache.get(cacheKey);
+    // Servir de caché solo si hay mangas disponibles y no expiró
+    if (cached && Date.now() - cached.ts < TTL_RECO && cached.mangas.length > 0) {
+        const pick = cached.mangas[Math.floor(Math.random() * cached.mangas.length)];
+        return pick;
+    }
+
+    try {
+        // Armar parámetros de búsqueda
+        const params = {
+            limit: 20,
+            'availableTranslatedLanguage[]': ['es', 'es-la'],
+            'order[followedCount]': 'desc',
+            'contentRating[]': ['safe', 'suggestive'],
+            'includes[]': ['cover_art'],
+            hasAvailableChapters: true
+        };
+
+        // Si hay género, agregar tag
+        if (genero) {
+            const tagKey = genero.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            const tagId = TAGS_MAP[tagKey];
+            if (tagId) {
+                params['includedTags[]'] = [tagId];
+            }
+        }
+
+        // Pedir varias páginas random para variedad
+        const randomOffset = Math.floor(Math.random() * 80);
+        params.offset = randomOffset;
+
+        const data = await mdexGet('/manga', params);
+        if (!data.data || data.data.length === 0) {
+            // Si offset alto no dio nada, reintentar desde 0
+            params.offset = 0;
+            const data2 = await mdexGet('/manga', params);
+            if (!data2.data || data2.data.length === 0) return null;
+            data.data = data2.data;
+        }
+
+        // Procesar resultados
+        const resultados = [];
+        for (const m of data.data) {
+            const attrs = m.attributes;
+            const titulo = attrs.title?.en || attrs.title?.es || attrs.title?.['ja-ro'] || Object.values(attrs.title || {})[0] || 'Sin título';
+            const desc = attrs.description?.es || attrs.description?.['es-la'] || attrs.description?.en || '';
+            const tags = attrs.tags?.filter(t => t.attributes.group === 'genre')
+                .map(t => t.attributes.name.en) || [];
+            const year = attrs.year;
+            const status = attrs.status;
+
+            // Buscar cover
+            let coverUrl = null;
+            const coverRel = m.relationships?.find(r => r.type === 'cover_art');
+            if (coverRel?.attributes?.fileName) {
+                coverUrl = `https://uploads.mangadex.org/covers/${m.id}/${coverRel.attributes.fileName}.256.jpg`;
+            }
+
+            resultados.push({
+                manga: {
+                    id: m.id,
+                    titulo,
+                    descripcion: desc.length > 400 ? desc.substring(0, 400) + '...' : desc,
+                    tags,
+                    year,
+                    status
+                },
+                idioma: 'es',
+                coverUrl
+            });
+        }
+
+        if (resultados.length === 0) return null;
+
+        _recoCache.set(cacheKey, { mangas: resultados, ts: Date.now() });
+        return resultados[Math.floor(Math.random() * resultados.length)];
+    } catch (e) {
+        console.error('[MangaDex] Error recomendando manga:', e.message);
+        return null;
+    }
+}
+
 module.exports = {
     buscarMangaId,
     obtenerCapitulos,
@@ -423,5 +555,7 @@ module.exports = {
     listarCapitulos,
     limpiarCacheId,
     forzarMangaId,
+    recomendarManga,
+    TAGS_MAP,
     MAX_PAGES_PDF
 };

@@ -27,11 +27,25 @@ const helpData = {
         cooldown: 'Ninguno'
     },
     '!leer': {
-        desc: 'Envía las páginas de un manga disponible localmente.',
-        usage: '!leer <código>',
-        ejemplo: '!leer 001',
-        args: 'Código del manga (requerido)',
+        desc: 'Envía las páginas de un manga disponible. Usa "all" para descargar todos los capítulos.',
+        usage: '!leer <código> [capítulo|all]',
+        ejemplo: '!leer 008 1\n!leer 008 all',
+        args: 'Código del manga (requerido), capítulo o "all" (opcional)',
         cooldown: '30 segundos (por usuario)'
+    },
+    '!recomanga': {
+        desc: 'Recomienda un manga popular con capítulos en español. Puedes filtrar por género.',
+        usage: '!recomanga [género]',
+        ejemplo: '!recomanga\n!recomanga accion\n!recomanga generos',
+        args: 'Género (opcional). Usa "generos" para ver la lista.',
+        cooldown: '5 segundos'
+    },
+    '!parar': {
+        desc: 'Detiene una descarga masiva de manga en curso (!leer all).',
+        usage: '!parar',
+        ejemplo: '!parar',
+        args: 'Ninguno',
+        cooldown: 'Ninguno'
     },
     '!recomendar': {
         desc: 'Recomienda un anime aleatorio de calidad (score >= 7).',

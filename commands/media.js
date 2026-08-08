@@ -31,7 +31,7 @@ const cancelMap = new Map();
 module.exports = {
     name: 'media',
     isMultiple: true,
-    names: ['!waifu', '!anime', '!personaje', '!estudio', '!proximo', '!estrenos', '!temporada', '!recomendar', '!random', '!trace', '!news', '!wiki', '!decir', '!catalogo', '!manga', '!leer', '!buscar', '!ver', '!parar', '!setmanga'],
+    names: ['!waifu', '!anime', '!personaje', '!estudio', '!proximo', '!estrenos', '!temporada', '!recomendar', '!random', '!trace', '!news', '!wiki', '!decir', '!catalogo', '!manga', '!leer', '!buscar', '!ver', '!parar', '!setmanga', '!recomanga'],
     async execute(sock, chatId, msg, args, { start, cmd, txt, db, delay, downloadMediaMessage, traducirConCache, botState, sender, chatWithLiquidAI }) {
         // !parar - Cancela descargas masivas en curso
         if (start === '!parar') {
@@ -48,6 +48,52 @@ module.exports = {
             const m_id = args[1];
             mangadex.forzarMangaId(cod, m_id);
             return sock.sendMessage(chatId, { text: `✅ El manga con código *${cod}* ha sido vinculado manualmente al ID *${m_id}* en MangaDex.\nPrueba usar *!leer ${cod}* ahora.` }, { quoted: msg });
+        }
+
+        // !recomanga [género] - Recomienda un manga popular en español de MangaDex
+        if (start === '!recomanga') {
+            const genero = args.length > 0 ? args.join(' ').trim() : null;
+
+            // Si pide la lista de géneros
+            if (genero === 'generos' || genero === 'géneros' || genero === 'lista') {
+                const genList = Object.keys(mangadex.TAGS_MAP)
+                    .filter((v, i, a) => a.indexOf(v) === i)
+                    .map(g => `• ${g}`)
+                    .join('\n');
+                return sock.sendMessage(chatId, { text: `🏷️ *Géneros disponibles para !recomanga:*\n\n${genList}\n\n💡 Ejemplo: *!recomanga accion*` }, { quoted: msg });
+            }
+
+            await sock.sendMessage(chatId, { text: `🔍 Buscando manga${genero ? ` de *${genero}*` : ' popular'} en español...` }, { quoted: msg });
+
+            try {
+                const reco = await mangadex.recomendarManga(genero);
+                if (!reco) {
+                    return sock.sendMessage(chatId, { text: `❌ No se encontraron mangas${genero ? ` de "${genero}"` : ''} con capítulos en español.\n\n💡 Prueba *!recomanga generos* para ver los géneros disponibles.` }, { quoted: msg });
+                }
+
+                const m = reco.manga;
+                const statusMap = { 'ongoing': '📡 En emisión', 'completed': '✅ Completado', 'hiatus': '⏸️ En pausa', 'cancelled': '❌ Cancelado' };
+                const estadoTxt = statusMap[m.status] || m.status || '❓';
+                const tagsText = m.tags.length > 0 ? m.tags.join(', ') : 'Sin género';
+                const descText = m.descripcion || 'Sin descripción disponible.';
+
+                let caption = `📚 *Te recomiendo este manga:*\n\n`;
+                caption += `📖 *${m.titulo}*\n`;
+                caption += `🏷️ *Géneros:* ${tagsText}\n`;
+                caption += `📅 *Año:* ${m.year || '?'}\n`;
+                caption += `📊 *Estado:* ${estadoTxt}\n`;
+                caption += `🌐 *Idioma:* 🇪🇸 Español\n\n`;
+                caption += `📝 *Sinopsis:*\n${descText}\n\n`;
+                caption += `🔗 mangadex.org/title/${m.id}`;
+
+                if (reco.coverUrl) {
+                    return sock.sendMessage(chatId, { image: { url: reco.coverUrl }, caption }, { quoted: msg });
+                }
+                return sock.sendMessage(chatId, { text: caption }, { quoted: msg });
+            } catch (e) {
+                console.error('❌ [recomanga] Error:', e.message);
+                return sock.sendMessage(chatId, { text: '❌ Error al buscar recomendación. Intenta de nuevo.' }, { quoted: msg });
+            }
         }
 
         // !ver @usuario - Descargar y enviar foto de perfil
