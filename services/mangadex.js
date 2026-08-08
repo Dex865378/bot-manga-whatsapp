@@ -536,6 +536,17 @@ const GENEROS_DISPLAY = [
 const _recoCache = new Map(); // cacheKey → { mangas, ts }
 const TTL_RECO = 2 * 60 * 60 * 1000; // 2h
 
+// Lista de respaldo local para asegurar que !recomanga NUNCA falle ni de error aunque la API sufra caídas
+const FALLBACK_MANGAS = [
+    { id: 'a1c7c817-4e59-42b7-9e4d-d69d7742edb6', titulo: 'Chainsaw Man', descripcion: 'Denji es un joven atrapado en la pobreza extrema que trabaja como cazador de demonios para pagar las deudas de su padre.', tags: ['Action', 'Horror', 'Supernatural'], year: 2018, status: 'ongoing', coverUrl: 'https://uploads.mangadex.org/covers/a1c7c817-4e59-42b7-9e4d-d69d7742edb6/598a44b8-f350-4828-b0a3-a74e4c278a54.jpg.256.jpg' },
+    { id: '32d76d19-8a05-4db0-9fc2-e0b0648fe9d0', titulo: 'Solo Leveling', descripcion: 'En un mundo donde los cazadores luchan contra monstruos, Sung Jin-Woo es conocido como el cazador más débil de todos los tiempos.', tags: ['Action', 'Fantasy', 'Adventure'], year: 2018, status: 'completed', coverUrl: null },
+    { id: '94891715-a109-4f5e-81ef-2bed5fb5bb19', titulo: 'Ijousha no Ai', descripcion: 'Midou Saki se enamoró de Kazumi cuando eran niños. Ese fue el comienzo de un infierno de celos y obsesión.', tags: ['Horror', 'Psychological', 'Drama'], year: 2017, status: 'completed', coverUrl: null },
+    { id: 'b0b7270d-4295-46e3-a616-e575e9b9d363', titulo: 'Jujutsu Kaisen', descripcion: 'Yuuji Itadori es un estudiante de secundaria con una fuerza física extraordinaria que se ve envuelto en el mundo de las maldiciones.', tags: ['Action', 'Supernatural', 'Fantasy'], year: 2018, status: 'completed', coverUrl: null },
+    { id: 'bd725916-2415-4676-a070-5b5c777641d4', titulo: 'Tokyo Ghoul', descripcion: 'Ken Kaneki es atacado por un ghoul y se convierte en un híbrido mitad humano mitad ghoul en una ciudad aterradora.', tags: ['Horror', 'Action', 'Drama'], year: 2011, status: 'completed', coverUrl: null },
+    { id: 'e78a489f-26ee-4876-8545-9b2322384a56', titulo: 'Monster', descripcion: 'El Dr. Kenzo Tenma salva a un niño herido de bala sin saber que años más tarde se convertirá en un monstruo desalmado.', tags: ['Drama', 'Mystery', 'Psychological'], year: 1994, status: 'completed', coverUrl: null },
+    { id: 'd8f93256-547c-416e-8264-a6900f7b11c9', titulo: 'Berserk', descripcion: 'Guts, conocido como el Espadachín Negro, busca venganza contra su antiguo amigo y mentor Griffith.', tags: ['Action', 'Adventure', 'Fantasy', 'Horror'], year: 1989, status: 'ongoing', coverUrl: null }
+];
+
 /**
  * Busca mangas populares en MangaDex y verifica que tengan capítulos en español.
  * @param {string|null} genero      Género/tag en español (ej: "terror") o null para popular
@@ -561,38 +572,32 @@ async function recomendarManga(genero, excludeIds = []) {
     // Servir del caché filtrando los ya vistos
     if (cached && Date.now() - cached.ts < TTL_RECO && cached.mangas.length > 0) {
         let disponibles = cached.mangas.filter(r => !excludeIds.includes(r.manga.id));
-        if (disponibles.length > 0) {
-            return disponibles[Math.floor(Math.random() * disponibles.length)];
-        }
-        // Si ya se vieron todos los del caché, entregar uno aleatorio del grupo sin bloquear
-        return cached.mangas[Math.floor(Math.random() * cached.mangas.length)];
+        if (disponibles.length === 0) disponibles = cached.mangas; // Reiniciar filtro si ya vio todos los del caché
+        return disponibles[Math.floor(Math.random() * disponibles.length)];
     }
 
     try {
-        const candidatesMap = new Map();
-        // Probar offsets (0, 20, 40) para reunir una buena variedad de títulos
-        const offsetsToTry = [0, 20, 40];
+        // Consulta única limpia con límite alto (40) para evitar saturate/rate limit de MangaDex
+        const randomOffset = Math.floor(Math.random() * 15);
+        const params = {
+            limit: 40,
+            offset: randomOffset,
+            'availableTranslatedLanguage[]': ['es', 'es-la'],
+            'order[followedCount]': 'desc',
+            'contentRating[]': ['safe', 'suggestive'],
+            'includes[]': ['cover_art'],
+            hasAvailableChapters: true
+        };
 
-        for (const offset of offsetsToTry) {
-            const params = {
-                limit: 20,
-                offset,
-                'availableTranslatedLanguage[]': ['es', 'es-la'],
-                'order[followedCount]': 'desc',
-                'contentRating[]': ['safe', 'suggestive'],
-                'includes[]': ['cover_art'],
-                hasAvailableChapters: true
-            };
+        if (tagId) {
+            params['includedTags[]'] = [tagId];
+        }
 
-            if (tagId) {
-                params['includedTags[]'] = [tagId];
-            }
+        const data = await mdexGet('/manga', params);
+        const resultados = [];
 
-            const data = await mdexGet('/manga', params);
-            if (!data || !data.data || data.data.length === 0) continue;
-
+        if (data && data.data && data.data.length > 0) {
             for (const m of data.data) {
-                if (candidatesMap.has(m.id)) continue;
                 const attrs = m.attributes;
                 const titulo = attrs.title?.en || attrs.title?.es || attrs.title?.['ja-ro'] || Object.values(attrs.title || {})[0] || 'Sin título';
                 const descEs = attrs.description?.es || attrs.description?.['es-la'] || '';
@@ -601,8 +606,6 @@ async function recomendarManga(genero, excludeIds = []) {
                 const descLang = descEs ? 'es' : (descEn ? 'en' : 'es');
                 const tags = attrs.tags?.filter(t => t.attributes.group === 'genre')
                     .map(t => t.attributes.name.en) || [];
-                const year = attrs.year;
-                const status = attrs.status;
 
                 let coverUrl = null;
                 const coverRel = m.relationships?.find(r => r.type === 'cover_art');
@@ -610,43 +613,43 @@ async function recomendarManga(genero, excludeIds = []) {
                     coverUrl = `https://uploads.mangadex.org/covers/${m.id}/${coverRel.attributes.fileName}.256.jpg`;
                 }
 
-                candidatesMap.set(m.id, {
+                resultados.push({
                     manga: {
                         id: m.id,
                         titulo,
                         descripcion: desc.length > 400 ? desc.substring(0, 400) + '...' : desc,
                         descLang,
                         tags,
-                        year,
-                        status
+                        year: attrs.year,
+                        status: attrs.status
                     },
                     idioma: 'es',
                     coverUrl
                 });
             }
-
-            // Si ya juntamos al menos 15 mangas, es suficiente
-            if (candidatesMap.size >= 15) break;
         }
 
-        const resultados = Array.from(candidatesMap.values());
-        if (resultados.length === 0) return null;
+        if (resultados.length > 0) {
+            _recoCache.set(cacheKey, { mangas: resultados, ts: Date.now() });
 
-        _recoCache.set(cacheKey, { mangas: resultados, ts: Date.now() });
+            let disponibles = resultados.filter(r => !excludeIds.includes(r.manga.id));
+            if (disponibles.length === 0) disponibles = resultados; // Si ya vio todos, reiniciar filtro
 
-        // Filtrar los que no se hayan visto en este chat
-        let disponibles = resultados.filter(r => !excludeIds.includes(r.manga.id));
-
-        // Si todos ya fueron vistos, se reinicia el filtro para entregar uno al azar de la lista
-        if (disponibles.length === 0) {
-            disponibles = resultados;
+            return disponibles[Math.floor(Math.random() * disponibles.length)];
         }
-
-        return disponibles[Math.floor(Math.random() * disponibles.length)];
     } catch (e) {
-        console.error('[MangaDex] Error recomendando manga:', e.message);
-        return null;
+        console.error('[MangaDex] Error consultando API en recomendarManga:', e.message);
     }
+
+    // 🛡️ FALLBACK DE RESPALDO: Si la API falló o no devolvió resultados para ese offset, servir de la lista de respaldo local
+    const fallbackList = FALLBACK_MANGAS.map(m => ({
+        manga: { ...m, descLang: 'es' },
+        idioma: 'es',
+        coverUrl: m.coverUrl
+    }));
+    let disponiblesFallback = fallbackList.filter(r => !excludeIds.includes(r.manga.id));
+    if (disponiblesFallback.length === 0) disponiblesFallback = fallbackList;
+    return disponiblesFallback[Math.floor(Math.random() * disponiblesFallback.length)];
 }
 
 module.exports = {
