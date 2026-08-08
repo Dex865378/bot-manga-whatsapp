@@ -132,6 +132,7 @@ module.exports = {
                         tempCode,
                         titulo: m.titulo,
                         genero,
+                        pushName,
                         step: 'MAIN_MENU',
                         ts: Date.now()
                     });

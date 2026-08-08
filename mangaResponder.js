@@ -16,31 +16,65 @@ function normalizeInput(txt) {
     return clean;
 }
 
+function findMangaSession(botState, chatId, sender, pushName, msg) {
+    if (!botState.mangaSessions) return null;
+    const TTL = 5 * 60 * 1000;
+    const now = Date.now();
+    const senderClean = (sender || '').split('@')[0].split(':')[0];
+
+    // 1. Coincidencia directa por JID limpio
+    const directKey = `${chatId}_${senderClean}`;
+    const directSession = botState.mangaSessions.get(directKey);
+    if (directSession && (now - directSession.ts <= TTL)) {
+        return { key: directKey, session: directSession };
+    }
+
+    // 2. Buscar en las sesiones activas del mismo chatId
+    const chatSessions = [];
+    for (const [key, session] of botState.mangaSessions.entries()) {
+        if (key.startsWith(`${chatId}_`)) {
+            if (now - session.ts > TTL) {
+                botState.mangaSessions.delete(key);
+            } else {
+                chatSessions.push({ key, session });
+            }
+        }
+    }
+
+    if (chatSessions.length === 0) return null;
+
+    // 2a. Coincidencia por PushName (si WhatsApp ocultó el número con Username/@lid)
+    if (pushName && pushName.length > 1) {
+        const found = chatSessions.find(s => s.session.pushName && s.session.pushName.toLowerCase() === pushName.toLowerCase());
+        if (found) return found;
+    }
+
+    // 2b. Coincidencia por respuesta a mensaje citado del bot
+    const isQuotedBot = msg?.message?.extendedTextMessage?.contextInfo?.participant;
+    if (isQuotedBot && chatSessions.length > 0) {
+        chatSessions.sort((a, b) => b.session.ts - a.session.ts);
+        return chatSessions[0];
+    }
+
+    // 2c. Si hay una sola sesión activa en ese chat, asumir que pertenece a esa interacción
+    if (chatSessions.length === 1) {
+        return chatSessions[0];
+    }
+
+    // Si hay múltiples sesiones en el chat, tomar la más reciente
+    chatSessions.sort((a, b) => b.session.ts - a.session.ts);
+    return chatSessions[0];
+}
+
 async function handleMangaSession(sock, msg, context) {
     const { chatId, sender, txt, botState, db, isCommand, isGroup, isAdmin, isGlobalAdmin, pushName, downloadMediaMessage, traducirConCache, FFMPEG_PATH, ADMIN_NUM, quotedMsgId, quotedParticipant, msgType, chatWithLiquidAI } = context;
 
     if (!botState.mangaSessions) return false;
 
-    // Normalizar JID para eliminar sufijos de dispositivo (:14@s.whatsapp.net)
-    const senderClean = (sender || '').split('@')[0].split(':')[0];
-    const sessionKey = `${chatId}_${senderClean}`;
-    const session = botState.mangaSessions.get(sessionKey);
-    if (!session) return false;
+    const matched = findMangaSession(botState, chatId, sender, pushName, msg);
+    if (!matched) return false;
 
-    // Limpieza periódica de sesiones expiradas (5 minutos)
-    const TTL_MANGA_SESSION = 5 * 60 * 1000;
-    if (Math.random() < 0.1) {
-        const now = Date.now();
-        for (const [key, s] of botState.mangaSessions.entries()) {
-            if (now - s.ts > TTL_MANGA_SESSION) botState.mangaSessions.delete(key);
-        }
-    }
-
-    // Expiración a los 5 minutos para esta sesión
-    if (Date.now() - session.ts > TTL_MANGA_SESSION) {
-        botState.mangaSessions.delete(sessionKey);
-        return false;
-    }
+    const { key: sessionKey, session } = matched;
 
     const input = normalizeInput(txt);
 

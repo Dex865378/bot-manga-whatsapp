@@ -1039,7 +1039,18 @@ async function procesarMensaje(sock, msg) {
 
         // --- FILTRO DE RELEVANCIA (Ahorro de CPU) ---
         const senderJidClean = (sender || '').split('@')[0].split(':')[0];
-        const tieneMangaSesion = botState.mangaSessions && botState.mangaSessions.has(`${chatId}_${senderJidClean}`);
+        let tieneMangaSesion = false;
+        if (botState.mangaSessions) {
+            const TTL_MANGA_SES = 5 * 60 * 1000;
+            const nowMs = Date.now();
+            for (const [k, s] of botState.mangaSessions.entries()) {
+                if (k.startsWith(`${chatId}_`) && (nowMs - s.ts <= TTL_MANGA_SES)) {
+                    tieneMangaSesion = true;
+                    break;
+                }
+            }
+        }
+
         const participaEnJuego = tieneMangaSesion || (juegoActivo && (
             juegoActivo.responder === sender ||
             juegoActivo.pareja === sender ||
@@ -1082,7 +1093,7 @@ async function procesarMensaje(sock, msg) {
             if (wasGameResponse) return;
         }
 
-        if (botState.mangaSessions && botState.mangaSessions.has(`${chatId}_${senderJidClean}`)) {
+        if (tieneMangaSesion) {
             const context = {
                 chatId, sender, cmd, txt, msg, botState, db, isCommand, isGroup, isAdmin, isGlobalAdmin,
                 pushName, downloadMediaMessage, traducirConCache, FFMPEG_PATH, ADMIN_NUM,
