@@ -2,7 +2,7 @@
  * 📚 MANEJADOR DE SESIONES INTERACTIVAS DE MANGA
  * Permite la navegación paso a paso (1, 2, 3, etc.) sin escribir comandos largos.
  */
-const handler = require('./commands');
+const handler = require('./commandHandler');
 
 async function handleMangaSession(sock, msg, context) {
     const { chatId, sender, txt, botState, db, isCommand, isGroup, isAdmin, isGlobalAdmin, pushName, downloadMediaMessage, traducirConCache, FFMPEG_PATH, ADMIN_NUM, quotedMsgId, quotedParticipant, msgType, chatWithLiquidAI } = context;
