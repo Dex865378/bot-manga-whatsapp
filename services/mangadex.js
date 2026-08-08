@@ -544,7 +544,6 @@ const TTL_RECO = 2 * 60 * 60 * 1000; // 2h
  */
 async function recomendarManga(genero, excludeIds = []) {
     const cacheKey = genero || '__popular__';
-    const cached = _recoCache.get(cacheKey);
 
     // Normalizar género (quitar tildes) para lookup en TAGS_MAP
     const tagKey = genero
@@ -557,88 +556,93 @@ async function recomendarManga(genero, excludeIds = []) {
         return { error: 'genero_no_encontrado', genero };
     }
 
+    const cached = _recoCache.get(cacheKey);
+
     // Servir del caché filtrando los ya vistos
     if (cached && Date.now() - cached.ts < TTL_RECO && cached.mangas.length > 0) {
-        const disponibles = cached.mangas.filter(r => !excludeIds.includes(r.manga.id));
+        let disponibles = cached.mangas.filter(r => !excludeIds.includes(r.manga.id));
         if (disponibles.length > 0) {
             return disponibles[Math.floor(Math.random() * disponibles.length)];
         }
-        // Todos los del caché ya se vieron → limpiar caché y buscar de nuevo
-        _recoCache.delete(cacheKey);
+        // Si ya se vieron todos los del caché, entregar uno aleatorio del grupo sin bloquear
+        return cached.mangas[Math.floor(Math.random() * cached.mangas.length)];
     }
 
     try {
-        // Armar parámetros de búsqueda
-        const params = {
-            limit: 20,
-            'availableTranslatedLanguage[]': ['es', 'es-la'],
-            'order[followedCount]': 'desc',
-            'contentRating[]': ['safe', 'suggestive'],
-            'includes[]': ['cover_art'],
-            hasAvailableChapters: true
-        };
+        const candidatesMap = new Map();
+        // Probar offsets (0, 20, 40) para reunir una buena variedad de títulos
+        const offsetsToTry = [0, 20, 40];
 
-        // Si hay género, agregar tag
-        if (tagId) {
-            params['includedTags[]'] = [tagId];
-        }
+        for (const offset of offsetsToTry) {
+            const params = {
+                limit: 20,
+                offset,
+                'availableTranslatedLanguage[]': ['es', 'es-la'],
+                'order[followedCount]': 'desc',
+                'contentRating[]': ['safe', 'suggestive'],
+                'includes[]': ['cover_art'],
+                hasAvailableChapters: true
+            };
 
-        // Pedir varias páginas random para variedad
-        const randomOffset = Math.floor(Math.random() * 50);
-        params.offset = randomOffset;
-
-        const data = await mdexGet('/manga', params);
-        if (!data.data || data.data.length === 0) {
-            // Si offset alto no dio nada, reintentar desde 0
-            params.offset = 0;
-            const data2 = await mdexGet('/manga', params);
-            if (!data2.data || data2.data.length === 0) return null;
-            data.data = data2.data;
-        }
-
-        // Procesar resultados
-        const resultados = [];
-        for (const m of data.data) {
-            const attrs = m.attributes;
-            const titulo = attrs.title?.en || attrs.title?.es || attrs.title?.['ja-ro'] || Object.values(attrs.title || {})[0] || 'Sin título';
-            const descEs = attrs.description?.es || attrs.description?.['es-la'] || '';
-            const descEn = attrs.description?.en || '';
-            const desc = descEs || descEn;
-            const descLang = descEs ? 'es' : (descEn ? 'en' : 'es');
-            const tags = attrs.tags?.filter(t => t.attributes.group === 'genre')
-                .map(t => t.attributes.name.en) || [];
-            const year = attrs.year;
-            const status = attrs.status;
-
-            // Buscar cover
-            let coverUrl = null;
-            const coverRel = m.relationships?.find(r => r.type === 'cover_art');
-            if (coverRel?.attributes?.fileName) {
-                coverUrl = `https://uploads.mangadex.org/covers/${m.id}/${coverRel.attributes.fileName}.256.jpg`;
+            if (tagId) {
+                params['includedTags[]'] = [tagId];
             }
 
-            resultados.push({
-                manga: {
-                    id: m.id,
-                    titulo,
-                    descripcion: desc.length > 400 ? desc.substring(0, 400) + '...' : desc,
-                    descLang,
-                    tags,
-                    year,
-                    status
-                },
-                idioma: 'es',
-                coverUrl
-            });
+            const data = await mdexGet('/manga', params);
+            if (!data || !data.data || data.data.length === 0) continue;
+
+            for (const m of data.data) {
+                if (candidatesMap.has(m.id)) continue;
+                const attrs = m.attributes;
+                const titulo = attrs.title?.en || attrs.title?.es || attrs.title?.['ja-ro'] || Object.values(attrs.title || {})[0] || 'Sin título';
+                const descEs = attrs.description?.es || attrs.description?.['es-la'] || '';
+                const descEn = attrs.description?.en || '';
+                const desc = descEs || descEn;
+                const descLang = descEs ? 'es' : (descEn ? 'en' : 'es');
+                const tags = attrs.tags?.filter(t => t.attributes.group === 'genre')
+                    .map(t => t.attributes.name.en) || [];
+                const year = attrs.year;
+                const status = attrs.status;
+
+                let coverUrl = null;
+                const coverRel = m.relationships?.find(r => r.type === 'cover_art');
+                if (coverRel?.attributes?.fileName) {
+                    coverUrl = `https://uploads.mangadex.org/covers/${m.id}/${coverRel.attributes.fileName}.256.jpg`;
+                }
+
+                candidatesMap.set(m.id, {
+                    manga: {
+                        id: m.id,
+                        titulo,
+                        descripcion: desc.length > 400 ? desc.substring(0, 400) + '...' : desc,
+                        descLang,
+                        tags,
+                        year,
+                        status
+                    },
+                    idioma: 'es',
+                    coverUrl
+                });
+            }
+
+            // Si ya juntamos al menos 15 mangas, es suficiente
+            if (candidatesMap.size >= 15) break;
         }
 
+        const resultados = Array.from(candidatesMap.values());
         if (resultados.length === 0) return null;
 
         _recoCache.set(cacheKey, { mangas: resultados, ts: Date.now() });
-        const disponibles = resultados.filter(r => !excludeIds.includes(r.manga.id));
-        return disponibles.length > 0
-            ? disponibles[Math.floor(Math.random() * disponibles.length)]
-            : resultados[Math.floor(Math.random() * resultados.length)];
+
+        // Filtrar los que no se hayan visto en este chat
+        let disponibles = resultados.filter(r => !excludeIds.includes(r.manga.id));
+
+        // Si todos ya fueron vistos, se reinicia el filtro para entregar uno al azar de la lista
+        if (disponibles.length === 0) {
+            disponibles = resultados;
+        }
+
+        return disponibles[Math.floor(Math.random() * disponibles.length)];
     } catch (e) {
         console.error('[MangaDex] Error recomendando manga:', e.message);
         return null;
