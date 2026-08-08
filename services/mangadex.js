@@ -415,59 +415,156 @@ function forzarMangaId(codigo, id) {
 
 // ─── Tags de MangaDex (español → UUID) ────────────────────────────────────────
 const TAGS_MAP = {
+    // Acción
     'accion': '391b0423-d847-456f-aff0-8b0cfc03066b',
+    'acción': '391b0423-d847-456f-aff0-8b0cfc03066b',
+    // Aventura
     'aventura': '87cc87cd-a395-47af-b27a-93258283bbc6',
+    // Comedia
     'comedia': '4d32cc48-9f00-4cca-9b5a-a839f0764984',
+    'humor': '4d32cc48-9f00-4cca-9b5a-a839f0764984',
+    // Drama
     'drama': 'b9af3a63-f058-46de-a9a0-e0c13906197a',
+    // Fantasía
     'fantasia': 'cdc58593-87dd-415e-bbc0-2ec27bf404cc',
+    'fantasía': 'cdc58593-87dd-415e-bbc0-2ec27bf404cc',
+    // Terror / Horror
+    'terror': 'cdad7e68-1419-41dd-bdce-27753074a640',
     'horror': 'cdad7e68-1419-41dd-bdce-27753074a640',
+    'miedo': 'cdad7e68-1419-41dd-bdce-27753074a640',
+    'suspenso': 'cdad7e68-1419-41dd-bdce-27753074a640',
+    // Misterio
     'misterio': 'ee968100-4191-4968-93d3-f82d72be7e46',
+    // Romance
     'romance': '423e2eae-a7a2-4a8b-ac03-a8351462d71d',
+    'amor': '423e2eae-a7a2-4a8b-ac03-a8351462d71d',
+    // Ciencia Ficción
     'scifi': '256c8bd9-4904-4360-bf4f-508a76d67183',
+    'sci-fi': '256c8bd9-4904-4360-bf4f-508a76d67183',
+    'ciencia ficcion': '256c8bd9-4904-4360-bf4f-508a76d67183',
+    'ciencia ficción': '256c8bd9-4904-4360-bf4f-508a76d67183',
+    // Thriller
     'thriller': '07251805-a27e-4d59-b488-f0bfbec15168',
+    // Psicológico
     'psicologico': '3b60b75c-a2d7-4860-ab56-05f391bb889c',
+    'psicológico': '3b60b75c-a2d7-4860-ab56-05f391bb889c',
+    'psicologia': '3b60b75c-a2d7-4860-ab56-05f391bb889c',
+    // Sobrenatural
     'sobrenatural': 'eabc5b4c-6aff-42f3-b657-3e90cbd00b75',
+    'supernatural': 'eabc5b4c-6aff-42f3-b657-3e90cbd00b75',
+    // Artes Marciales
     'artes marciales': '799c202e-7daa-44eb-9571-7a0eca22dc45',
+    'artes': '799c202e-7daa-44eb-9571-7a0eca22dc45',
+    'pelea': '799c202e-7daa-44eb-9571-7a0eca22dc45',
+    // Isekai
     'isekai': 'ace04997-f6bd-436e-b261-779182193d3d',
+    'otro mundo': 'ace04997-f6bd-436e-b261-779182193d3d',
+    // Reencarnación
     'reencarnacion': '0bc90acb-ccc1-44ca-a34a-b9f3a73259d0',
+    'reencarnación': '0bc90acb-ccc1-44ca-a34a-b9f3a73259d0',
+    'regresion': '0bc90acb-ccc1-44ca-a34a-b9f3a73259d0',
+    'regresión': '0bc90acb-ccc1-44ca-a34a-b9f3a73259d0',
+    // Magia
     'magia': 'a1f53773-c69a-4ce5-8cab-fffcd90b1565',
+    // Escolar / Vida escolar
     'escolar': 'caaa44eb-cd40-4177-b930-79d3ef2afe87',
+    'colegio': 'caaa44eb-cd40-4177-b930-79d3ef2afe87',
+    'escuela': 'caaa44eb-cd40-4177-b930-79d3ef2afe87',
+    // Deportes
     'deportes': '69964a64-2f90-4d33-beeb-f3ed2875eb4c',
+    'deporte': '69964a64-2f90-4d33-beeb-f3ed2875eb4c',
+    // Música
     'musica': 'f42fbf9e-188a-447b-9571-21b5b1ef7b37',
+    'música': 'f42fbf9e-188a-447b-9571-21b5b1ef7b37',
+    // Mecha
     'mecha': 'fb83baab-eabc-4b75-ae1a-7d244fa347b1',
+    'robots': 'fb83baab-eabc-4b75-ae1a-7d244fa347b1',
+    // Militar
     'militar': 'ac72833b-c4e9-4571-8c65-36ef658baf4e',
+    'guerra': 'ac72833b-c4e9-4571-8c65-36ef658baf4e',
+    // Policía
     'policia': 'df33b754-73a3-4c54-80e6-0a7338571b2e',
+    'policía': 'df33b754-73a3-4c54-80e6-0a7338571b2e',
+    'crimen': 'df33b754-73a3-4c54-80e6-0a7338571b2e',
+    // Vida cotidiana / Slice of life
     'vida cotidiana': 'e5301a23-ebd9-49dd-a0cb-2add944c7fe9',
+    'slice of life': 'e5301a23-ebd9-49dd-a0cb-2add944c7fe9',
     'recuentos': 'e5301a23-ebd9-49dd-a0cb-2add944c7fe9',
+    'cotidiano': 'e5301a23-ebd9-49dd-a0cb-2add944c7fe9',
+    // Supervivencia
     'supervivencia': '5fff9cde-849c-4d78-aab0-0d52b2ee1d25',
+    'survival': '5fff9cde-849c-4d78-aab0-0d52b2ee1d25',
+    // Demonios
     'demonios': '39730448-9a5f-48a2-85b0-a70db87b1233',
+    'demonio': '39730448-9a5f-48a2-85b0-a70db87b1233',
+    // Monstruos
     'monstruos': '36fd93ea-e8b8-445e-b836-358f02b3d33d',
+    'monstruo': '36fd93ea-e8b8-445e-b836-358f02b3d33d',
+    // Histórico
     'historico': '33771934-028e-4cb3-8744-691e866a923e',
+    'histórico': '33771934-028e-4cb3-8744-691e866a923e',
+    'historia': '33771934-028e-4cb3-8744-691e866a923e',
+    // Gore
     'gore': 'b29d6a3d-1569-4e7a-8caf-7557bc92cd5d',
+    'sangre': 'b29d6a3d-1569-4e7a-8caf-7557bc92cd5d',
+    // Vampiros
     'vampiros': 'd7d1730f-6eb0-4ba6-9437-602cac38664c',
+    'vampiro': 'd7d1730f-6eb0-4ba6-9437-602cac38664c',
+    // Samurai
     'samurai': '81183756-1453-4c81-aa9e-f6e1b63be016',
+    // Ninja
     'ninja': '489dd859-9b61-4c37-af75-f8b0c4b29d3d',
+    // Harem
     'harem': 'aafb99c1-7f60-43e4-bbc8-0234c72d56d0',
-    'cooking': '9ab53f92-3f2c-4f4e-87a5-b56c1cecff7c',
-    'cocina': '9ab53f92-3f2c-4f4e-87a5-b56c1cecff7c'
+    // Cocina
+    'cocina': '9ab53f92-3f2c-4f4e-87a5-b56c1cecff7c',
+    'comida': '9ab53f92-3f2c-4f4e-87a5-b56c1cecff7c',
+    'cooking': '9ab53f92-3f2c-4f4e-87a5-b56c1cecff7c'
 };
 
+// Géneros únicos para mostrar en el menú (sin duplicados)
+const GENEROS_DISPLAY = [
+    'accion', 'aventura', 'comedia', 'drama', 'fantasia',
+    'terror', 'misterio', 'romance', 'scifi', 'thriller',
+    'psicologico', 'sobrenatural', 'artes marciales', 'isekai',
+    'reencarnacion', 'magia', 'escolar', 'deportes', 'musica',
+    'mecha', 'militar', 'supervivencia', 'historico', 'vampiros',
+    'gore', 'demonios', 'cocina', 'samurai', 'harem', 'vida cotidiana'
+];
+
 /** Caché de recomendaciones para no repetir la misma búsqueda */
-const _recoCache = new Map(); // tag → { mangas, ts }
+const _recoCache = new Map(); // cacheKey → { mangas, ts }
 const TTL_RECO = 2 * 60 * 60 * 1000; // 2h
 
 /**
  * Busca mangas populares en MangaDex y verifica que tengan capítulos en español.
- * @param {string|null} genero   Género/tag en español (ej: "accion") o null para popular general
- * @returns {{ manga: object, idioma: string, totalCaps: number, coverUrl: string|null }|null}
+ * @param {string|null} genero      Género/tag en español (ej: "terror") o null para popular
+ * @param {string[]}    excludeIds  IDs de MangaDex ya vistos (para evitar repetidos)
+ * @returns {{ manga: object, idioma: string, coverUrl: string|null }|null}
  */
-async function recomendarManga(genero) {
+async function recomendarManga(genero, excludeIds = []) {
     const cacheKey = genero || '__popular__';
     const cached = _recoCache.get(cacheKey);
-    // Servir de caché solo si hay mangas disponibles y no expiró
+
+    // Normalizar género (quitar tildes) para lookup en TAGS_MAP
+    const tagKey = genero
+        ? genero.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        : null;
+    const tagId = tagKey ? TAGS_MAP[tagKey] : null;
+
+    // Si el género no existe en el mapa, avisarlo
+    if (genero && !tagId) {
+        return { error: 'genero_no_encontrado', genero };
+    }
+
+    // Servir del caché filtrando los ya vistos
     if (cached && Date.now() - cached.ts < TTL_RECO && cached.mangas.length > 0) {
-        const pick = cached.mangas[Math.floor(Math.random() * cached.mangas.length)];
-        return pick;
+        const disponibles = cached.mangas.filter(r => !excludeIds.includes(r.manga.id));
+        if (disponibles.length > 0) {
+            return disponibles[Math.floor(Math.random() * disponibles.length)];
+        }
+        // Todos los del caché ya se vieron → limpiar caché y buscar de nuevo
+        _recoCache.delete(cacheKey);
     }
 
     try {
@@ -482,16 +579,12 @@ async function recomendarManga(genero) {
         };
 
         // Si hay género, agregar tag
-        if (genero) {
-            const tagKey = genero.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-            const tagId = TAGS_MAP[tagKey];
-            if (tagId) {
-                params['includedTags[]'] = [tagId];
-            }
+        if (tagId) {
+            params['includedTags[]'] = [tagId];
         }
 
         // Pedir varias páginas random para variedad
-        const randomOffset = Math.floor(Math.random() * 80);
+        const randomOffset = Math.floor(Math.random() * 50);
         params.offset = randomOffset;
 
         const data = await mdexGet('/manga', params);
@@ -542,7 +635,10 @@ async function recomendarManga(genero) {
         if (resultados.length === 0) return null;
 
         _recoCache.set(cacheKey, { mangas: resultados, ts: Date.now() });
-        return resultados[Math.floor(Math.random() * resultados.length)];
+        const disponibles = resultados.filter(r => !excludeIds.includes(r.manga.id));
+        return disponibles.length > 0
+            ? disponibles[Math.floor(Math.random() * disponibles.length)]
+            : resultados[Math.floor(Math.random() * resultados.length)];
     } catch (e) {
         console.error('[MangaDex] Error recomendando manga:', e.message);
         return null;
@@ -561,5 +657,6 @@ module.exports = {
     forzarMangaId,
     recomendarManga,
     TAGS_MAP,
+    GENEROS_DISPLAY,
     MAX_PAGES_PDF
 };

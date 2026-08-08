@@ -51,7 +51,7 @@ const ADMIN_NUMBERS_CLEAN = (process.env.NUMERO_ADMIN || '')
     .map(n => (n || '').split('@')[0].replace(/\D/g, ''))
     .filter(n => n && n.length >= 7);
 const VERBOSE_LOGS = process.env.VERBOSE_LOGS === '1';
-const FAST_COMMANDS = new Set(['!ping', '!menu', '!menu2', '!help']);
+const FAST_COMMANDS = new Set(['!ping']); // !menu excluido para respetar el filtro de manga mode
 const PAIRING_CODE_TTL_MS = Math.max(60000, parseInt(process.env.PAIRING_CODE_TTL_MS || '180000', 10));
 const PAIRING_MIN_INTERVAL_MS = Math.max(60000, parseInt(process.env.PAIRING_MIN_INTERVAL_MS || '180000', 10));
 const PAIRING_RATE_LIMIT_BACKOFF_MS = Math.max(300000, parseInt(process.env.PAIRING_RATE_LIMIT_BACKOFF_MS || '3600000', 10));

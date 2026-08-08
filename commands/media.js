@@ -32,6 +32,9 @@ const cancelMap = new Map();
 let recoCounter = 0;
 const recoTitles = new Map(); // código R### → { titulo, id }
 
+// Tracker de mangas ya recomendados por chat para no repetir
+const recoSent = new Map(); // chatId -> Set(mangaId)
+
 module.exports = {
     name: 'media',
     isMultiple: true,
@@ -58,24 +61,37 @@ module.exports = {
         if (start === '!recomanga') {
             const genero = args.length > 0 ? args.join(' ').trim() : null;
 
+            const generosDisponibles = mangadex.GENEROS_DISPLAY || Object.keys(mangadex.TAGS_MAP);
+            const genListText = generosDisponibles.map(g => `• *${g}*`).join('\n');
+
             // Si pide la lista de géneros
             if (genero === 'generos' || genero === 'géneros' || genero === 'lista') {
-                const genList = Object.keys(mangadex.TAGS_MAP)
-                    .filter((v, i, a) => a.indexOf(v) === i)
-                    .map(g => `• ${g}`)
-                    .join('\n');
-                return sock.sendMessage(chatId, { text: `🏷️ *Géneros disponibles para !recomanga:*\n\n${genList}\n\n💡 Ejemplo: *!recomanga accion*` }, { quoted: msg });
+                return sock.sendMessage(chatId, {
+                    text: `🏷️ *Géneros de Manga disponibles:*\n\n${genListText}\n\n💡 *Uso:* !recomanga <género>\n*Ejemplo:* !recomanga terror`
+                }, { quoted: msg });
             }
 
             await sock.sendMessage(chatId, { text: `🔍 Buscando manga${genero ? ` de *${genero}*` : ' popular'} en español...` }, { quoted: msg });
 
             try {
-                const reco = await mangadex.recomendarManga(genero);
-                if (!reco) {
-                    return sock.sendMessage(chatId, { text: `❌ No se encontraron mangas${genero ? ` de "${genero}"` : ''} con capítulos en español.\n\n💡 Prueba *!recomanga generos* para ver los géneros disponibles.` }, { quoted: msg });
+                if (!recoSent.has(chatId)) recoSent.set(chatId, new Set());
+                const sentSet = recoSent.get(chatId);
+                const excludeIds = Array.from(sentSet);
+
+                const reco = await mangadex.recomendarManga(genero, excludeIds);
+
+                if (reco?.error === 'genero_no_encontrado') {
+                    return sock.sendMessage(chatId, {
+                        text: `❌ El género "*${genero}*" no fue reconocido.\n\n🏷️ *Géneros válidos:*\n${genListText}\n\n💡 Ejemplo: *!recomanga terror*`
+                    }, { quoted: msg });
+                }
+
+                if (!reco || !reco.manga) {
+                    return sock.sendMessage(chatId, { text: `❌ No se encontraron más mangas${genero ? ` de "${genero}"` : ''} con capítulos en español.\n\n💡 Prueba *!recomanga generos* para ver la lista.` }, { quoted: msg });
                 }
 
                 const m = reco.manga;
+                sentSet.add(m.id); // Guardar para no repetir en este chat
 
                 // Generar código temporal R001, R002...
                 recoCounter++;
