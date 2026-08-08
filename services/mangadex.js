@@ -508,7 +508,10 @@ async function recomendarManga(genero) {
         for (const m of data.data) {
             const attrs = m.attributes;
             const titulo = attrs.title?.en || attrs.title?.es || attrs.title?.['ja-ro'] || Object.values(attrs.title || {})[0] || 'Sin título';
-            const desc = attrs.description?.es || attrs.description?.['es-la'] || attrs.description?.en || '';
+            const descEs = attrs.description?.es || attrs.description?.['es-la'] || '';
+            const descEn = attrs.description?.en || '';
+            const desc = descEs || descEn;
+            const descLang = descEs ? 'es' : (descEn ? 'en' : 'es');
             const tags = attrs.tags?.filter(t => t.attributes.group === 'genre')
                 .map(t => t.attributes.name.en) || [];
             const year = attrs.year;
@@ -526,6 +529,7 @@ async function recomendarManga(genero) {
                     id: m.id,
                     titulo,
                     descripcion: desc.length > 400 ? desc.substring(0, 400) + '...' : desc,
+                    descLang,
                     tags,
                     year,
                     status

@@ -87,7 +87,14 @@ module.exports = {
                 const statusMap = { 'ongoing': '📡 En emisión', 'completed': '✅ Completado', 'hiatus': '⏸️ En pausa', 'cancelled': '❌ Cancelado' };
                 const estadoTxt = statusMap[m.status] || m.status || '❓';
                 const tagsText = m.tags.length > 0 ? m.tags.join(', ') : 'Sin género';
-                const descText = m.descripcion || 'Sin descripción disponible.';
+
+                // Traducir sinopsis al español si viene en inglés
+                let descText = m.descripcion || 'Sin descripción disponible.';
+                if (m.descLang === 'en' && m.descripcion) {
+                    try {
+                        descText = await traducirConCache(m.descripcion, `reco_${m.id}`);
+                    } catch (_) { /* si falla la traducción, usar el original */ }
+                }
 
                 let caption = `📚 *Te recomiendo este manga:*\n\n`;
                 caption += `📖 *${m.titulo}*\n`;
