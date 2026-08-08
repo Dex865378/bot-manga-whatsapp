@@ -51,22 +51,48 @@ module.exports = {
                 mt += `🕒 *UPTIME:* ${h}h ${mn}m\n\n`;
                 mt += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-                mt += `📖 *[ MANGA ]*\n`;
-                mt += `• !catalogo (Ver mangas del catálogo)\n`;
-                mt += `• !manga <nombre> (Info de un manga)\n`;
-                mt += `• !leer <código> (Lista capítulos)\n`;
-                mt += `• !leer <código> <cap> (Leer capítulo)\n`;
-                mt += `• !leer <código> all (Descargar todo)\n`;
-                mt += `• !buscar <nombre> (Buscar en catálogo)\n`;
-                mt += `• !recomanga (Recomendación random)\n`;
-                mt += `• !recomanga <género> (Por género)\n`;
-                mt += `• !recomanga generos (Ver géneros)\n`;
-                mt += `• !parar (Detener descarga masiva)\n\n`;
+                mt += `📖 *[ COMANDOS DE MANGA ]*\n\n`;
 
-                mt += `⚙️ *[ ADMINISTRACIÓN ]*\n`;
-                mt += `• !bot <on/off>\n`;
-                mt += `• !adm <on/off>\n`;
-                mt += `• !manga off (Desactivar modo manga)\n\n`;
+                mt += `• *!catalogo*\n`;
+                mt += `└ _Lista los mangas disponibles con sus códigos._\n\n`;
+
+                mt += `• *!manga <nombre o código>*\n`;
+                mt += `└ _Ver portada e información de un manga._\n\n`;
+
+                mt += `• *!leer <código>*\n`;
+                mt += `└ _Ver lista de capítulos disponibles._\n\n`;
+
+                mt += `• *!leer <código> <número>*\n`;
+                mt += `└ _Descargar un capítulo en PDF._\n\n`;
+
+                mt += `• *!leer <código> all*\n`;
+                mt += `└ _Descargar todos los capítulos seguidos._\n\n`;
+
+                mt += `• *!buscar <nombre>*\n`;
+                mt += `└ _Buscar un manga por su título._\n\n`;
+
+                mt += `• *!recomanga*\n`;
+                mt += `└ _Recomienda un manga aleatorio en español._\n\n`;
+
+                mt += `• *!recomanga <género>*\n`;
+                mt += `└ _Recomienda un manga del género elegido (ej: terror)._\n\n`;
+
+                mt += `• *!recomanga generos*\n`;
+                mt += `└ _Ver la lista de géneros disponibles._\n\n`;
+
+                mt += `• *!parar*\n`;
+                mt += `└ _Detener una descarga masiva en curso._\n\n`;
+
+                mt += `⚙️ *[ ADMINISTRACIÓN ]*\n\n`;
+
+                mt += `• *!bot <on/off>*\n`;
+                mt += `└ _Encender o apagar el bot en el grupo._\n\n`;
+
+                mt += `• *!adm <on/off>*\n`;
+                mt += `└ _Permitir comandos solo a administradores._\n\n`;
+
+                mt += `• *!manga off*\n`;
+                mt += `└ _Desactivar modo manga y restaurar todo el bot._\n\n`;
 
                 mt += `━━━━━━━━━━━━━━━━━━━━━━\n`;
                 mt += `> _Modo manga activo. Solo comandos de manga._\n`;
