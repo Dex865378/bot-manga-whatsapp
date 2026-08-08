@@ -61,9 +61,9 @@ function findMangaSession(botState, chatId, sender, pushName, msg) {
         return chatSessions[0];
     }
 
-    // Si hay múltiples sesiones en el chat, tomar la más reciente
-    chatSessions.sort((a, b) => b.session.ts - a.session.ts);
-    return chatSessions[0];
+    // 🔒 SEGURIDAD: Si hay MÚLTIPLES usuarios solicitando recomendaciones al mismo tiempo en el mismo grupo,
+    // NO adivinar sin coincidencia explícita (JID, pushName o mensaje citado) para evitar descargar el manga equivocado.
+    return null;
 }
 
 async function handleMangaSession(sock, msg, context) {
