@@ -39,11 +39,17 @@ const recoSent = new Map(); // chatId -> Set(mangaId)
 function esTextoIngles(text) {
     if (!text || text.length < 10) return false;
     const lower = ' ' + text.toLowerCase() + ' ';
-    const enIndicators = [' the ', ' and ', ' of ', ' to ', ' in ', ' is ', ' was ', ' with ', ' for ', ' that ', ' this ', ' from ', ' has ', ' have ', ' who ', ' which '];
-    let count = 0;
+    // Umbral bajado a 1 coincidencia (antes 2): con 2, sinopsis cortas o con
+    // muchos nombres propios se colaban sin traducir. Lista ampliada de
+    // indicadores comunes en sinopsis de MangaDex/Jikan en ingles.
+    const enIndicators = [
+        ' the ', ' and ', ' of ', ' to ', ' in ', ' is ', ' was ', ' with ', ' for ',
+        ' that ', ' this ', ' from ', ' has ', ' have ', ' who ', ' which ', ' his ',
+        ' her ', ' their ', ' but ', ' not ', ' will ', ' can ', ' been ', ' were ',
+        ' when ', ' after ', ' before ', ' story ', ' however ', ' becomes ', ' one day '
+    ];
     for (const w of enIndicators) {
-        if (lower.includes(w)) count++;
-        if (count >= 2) return true;
+        if (lower.includes(w)) return true;
     }
     return false;
 }

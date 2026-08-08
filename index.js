@@ -445,24 +445,56 @@ async function traducirConCache(texto, tipo = 'resumen') {
     const cached = getCacheTrad(cacheKey);
     if (cached) return cached;
 
-    try {
-        let traducido = '';
-        if (aiModel) {
-            const prompt = `Translate the following ${tipo} into Spanish. Respond ONLY with the Spanish translation. Do not include English text. Content: ${texto.substring(0, 600)}`;
-            const result = await aiModel.generateContent(prompt);
-            traducido = (await result.response).text().trim();
-        } else {
-            // Fallback: Google Translate "Free" API
-            const res = await axios.get(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=es&dt=t&q=${encodeURIComponent(texto.substring(0, 1000))}`);
-            traducido = res.data[0].map(x => x[0]).join('').trim();
-        }
+    const textoRecortado = texto.substring(0, 1000);
 
-        setCacheTrad(cacheKey, traducido);
-        return traducido;
-    } catch (e) {
-        console.error('Error traducción:', e.message);
-        return texto.substring(0, 200) + '...';
+    // Intento 1: Gemini (si hay API key configurada)
+    if (aiModel) {
+        try {
+            const prompt = `Translate the following ${tipo} into Spanish. Respond ONLY with the Spanish translation. Do not include English text. Content: ${texto.substring(0, 600)}`;
+            const result = await Promise.race([
+                aiModel.generateContent(prompt),
+                new Promise((_, rej) => setTimeout(() => rej(new Error('Gemini timeout')), 8000))
+            ]);
+            const traducido = (await result.response).text().trim();
+            if (traducido) {
+                setCacheTrad(cacheKey, traducido);
+                return traducido;
+            }
+        } catch (e) {
+            console.error('[TRADUCCION] Gemini fallo, probando Google Translate:', e.message);
+        }
     }
+
+    // Intento 2: Google Translate endpoint principal (translate.googleapis.com)
+    try {
+        const res = await axios.get(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=es&dt=t&q=${encodeURIComponent(textoRecortado)}`, { timeout: 8000 });
+        const traducido = res.data[0].map(x => x[0]).join('').trim();
+        if (traducido) {
+            setCacheTrad(cacheKey, traducido);
+            return traducido;
+        }
+    } catch (e) {
+        console.error('[TRADUCCION] Endpoint principal fallo, probando endpoint alterno:', e.message);
+    }
+
+    // Intento 3: Google Translate endpoint alterno (translate.google.com, a veces
+    // responde cuando translate.googleapis.com esta rate-limited)
+    try {
+        const res2 = await axios.get(`https://translate.google.com/translate_a/single?client=gtx&sl=en&tl=es&dt=t&q=${encodeURIComponent(textoRecortado)}`, {
+            timeout: 8000,
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
+        });
+        const traducido2 = res2.data[0].map(x => x[0]).join('').trim();
+        if (traducido2) {
+            setCacheTrad(cacheKey, traducido2);
+            return traducido2;
+        }
+    } catch (e2) {
+        console.error('[TRADUCCION] Endpoint alterno tambien fallo, se enviara texto original en ingles:', e2.message);
+    }
+
+    // Ultimo recurso: texto original (en ingles) recortado
+    return texto.substring(0, 200) + '...';
 }
 
 // 🔄 Wrapper del servicio de IA (migrado a services/aiService.js)
