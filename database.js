@@ -127,7 +127,8 @@ async function crearTablas() {
             'ALTER TABLE usuarios ADD COLUMN mascota_last_fed BIGINT DEFAULT 0',
             'ALTER TABLE grupos_activados ADD COLUMN flash_enabled INTEGER DEFAULT 0',
             'ALTER TABLE grupos_activados ADD COLUMN antispam INTEGER DEFAULT 1',
-            'ALTER TABLE grupos_activados ADD COLUMN modo_admin INTEGER DEFAULT 0'
+            'ALTER TABLE grupos_activados ADD COLUMN modo_admin INTEGER DEFAULT 0',
+            'ALTER TABLE grupos_activados ADD COLUMN modo_manga INTEGER DEFAULT 0'
         ];
         for (const sql of allCols) {
             try { await dbClient.execute(sql); } catch (e) { }
@@ -701,6 +702,28 @@ async function desactivarModoAdmin(chatId) {
     } catch (e) { return false; }
 }
 
+async function activarModoManga(chatId) {
+    if (!connected) await init();
+    try {
+        await dbClient.execute({
+            sql: 'UPDATE grupos_activados SET modo_manga = 1 WHERE chat_id = ?',
+            args: [chatId]
+        });
+        return true;
+    } catch (e) { return false; }
+}
+
+async function desactivarModoManga(chatId) {
+    if (!connected) await init();
+    try {
+        await dbClient.execute({
+            sql: 'UPDATE grupos_activados SET modo_manga = 0 WHERE chat_id = ?',
+            args: [chatId]
+        });
+        return true;
+    } catch (e) { return false; }
+}
+
 // ========== FUNCIONES DE MASCOTAS ==========
 
 async function getMascotasUsuario(userId) {
@@ -905,6 +928,7 @@ module.exports = {
     sumarKarma, obtenerTopMonedas, obtenerTopNivel, registrarHistorial,
     crearSubasta, obtenerSubastasActivas, pujarSubasta, finalizarSubasta, obtenerSubasta,
     activarAntiSpam, desactivarAntiSpam, activarModoAdmin, desactivarModoAdmin,
+    activarModoManga, desactivarModoManga,
     getMascotasUsuario, getMascotaPrincipal, getCantidadMascota, agregarMascota,
     setPrincipalMascota, alimentarMascota, activarEscudoMascota, tieneEscudoActivo,
     getMascotasPaginadas,

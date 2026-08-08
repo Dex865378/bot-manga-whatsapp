@@ -1195,7 +1195,8 @@ async function procesarMensaje(sock, msg) {
                 if (isGroup && isModoAdminActivo && !isAdmin) return;
 
                 // 3.5. Modo Manga (solo comandos de manga + admin)
-                if (isGroup && botState.mangaMode.get(chatId)) {
+                const isModoMangaActivo = groupConf ? groupConf.modo_manga === 1 : (botState.mangaMode.get(chatId) || false);
+                if (isGroup && isModoMangaActivo) {
                     const mangaAllowed = [
                         '!manga', '!leer', '!catalogo', '!buscar', '!recomanga', '!parar', '!setmanga',
                         '!bot', '!adm', '!menu', '!menu2', '!help', '!ping'

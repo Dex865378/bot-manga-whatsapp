@@ -160,16 +160,69 @@ module.exports = {
         // !manga on/off - Modo manga exclusivo (desactiva todo menos manga + admin)
         if (start === '!manga') {
             const mode = args[0]?.toLowerCase();
-            // Solo manejar on/off y sin argumentos. Cualquier otra cosa → media.js lo maneja
             if (mode === 'on') {
                 if (!isAdmin) return sock.sendMessage(chatId, { text: 'Solo admins.' }, { quoted: msg });
+                await db.activarModoManga(chatId);
                 botState.mangaMode.set(chatId, true);
-                return sock.sendMessage(chatId, {
-                    text: '📚 *MODO MANGA ACTIVADO*\n\nEste grupo ahora es exclusivo de manga.\nSolo funcionarán los comandos de manga:\n\n• !catalogo\n• !manga <nombre>\n• !leer <código> [cap|all]\n• !buscar <nombre>\n• !recomanga [género]\n• !parar\n• !menu\n• !bot on/off\n• !adm on/off\n\n💡 Usa *!manga off* para volver al modo normal.'
-                }, { quoted: msg });
+                if (botState.groupCache) botState.groupCache.delete(chatId);
+
+                let mt = `📚 *DIKY BOT — MODO MANGA ACTIVADO* 📚\n`;
+                mt += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+                mt += `Este grupo ahora es exclusivo para lectura de manga.\n\n`;
+
+                mt += `📖 *[ COMANDOS DE MANGA ]*\n\n`;
+
+                mt += `• *!catalogo*\n`;
+                mt += `└ _Lista los mangas disponibles con sus códigos._\n\n`;
+
+                mt += `• *!manga <nombre o código>*\n`;
+                mt += `└ _Ver portada e información de un manga._\n\n`;
+
+                mt += `• *!leer <código>*\n`;
+                mt += `└ _Ver lista de capítulos disponibles._\n\n`;
+
+                mt += `• *!leer <código> <número>*\n`;
+                mt += `└ _Descargar un capítulo en PDF._\n\n`;
+
+                mt += `• *!leer <código> all*\n`;
+                mt += `└ _Descargar todos los capítulos seguidos._\n\n`;
+
+                mt += `• *!buscar <nombre>*\n`;
+                mt += `└ _Buscar un manga por su título._\n\n`;
+
+                mt += `• *!recomanga*\n`;
+                mt += `└ _Recomienda un manga aleatorio en español._\n\n`;
+
+                mt += `• *!recomanga <género>*\n`;
+                mt += `└ _Recomienda un manga del género elegido (ej: terror)._\n\n`;
+
+                mt += `• *!recomanga generos*\n`;
+                mt += `└ _Ver la lista de géneros disponibles._\n\n`;
+
+                mt += `• *!parar*\n`;
+                mt += `└ _Detener una descarga masiva en curso._\n\n`;
+
+                mt += `⚙️ *[ ADMINISTRACIÓN ]*\n\n`;
+
+                mt += `• *!bot <on/off>*\n`;
+                mt += `└ _Encender o apagar el bot en el grupo._\n\n`;
+
+                mt += `• *!adm <on/off>*\n`;
+                mt += `└ _Permitir comandos solo a administradores._\n\n`;
+
+                mt += `• *!manga off*\n`;
+                mt += `└ _Desactivar modo manga y restaurar todo el bot._\n\n`;
+
+                mt += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+                mt += `> _Guarda la configuración en la base de datos._`;
+
+                return sock.sendMessage(chatId, { text: mt }, { quoted: msg });
             } else if (mode === 'off') {
                 if (!isAdmin) return sock.sendMessage(chatId, { text: 'Solo admins.' }, { quoted: msg });
+                await db.desactivarModoManga(chatId);
                 botState.mangaMode.delete(chatId);
+                if (botState.groupCache) botState.groupCache.delete(chatId);
+
                 return sock.sendMessage(chatId, {
                     text: '🔓 *MODO MANGA DESACTIVADO*\n\nTodos los comandos del bot vuelven a estar disponibles en este grupo.'
                 }, { quoted: msg });

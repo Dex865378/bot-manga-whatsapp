@@ -41,7 +41,16 @@ module.exports = {
             const pick = (v) => v[Math.floor(Math.random() * v.length)];
 
             // ── MODO MANGA: menú reducido ──
-            if (isGroup && botState.mangaMode?.get(chatId)) {
+            let isMangaActive = isGroup && botState.mangaMode?.get(chatId);
+            if (isGroup && !isMangaActive && db) {
+                const gConf = await db.estaGrupoActivo(chatId);
+                if (gConf && gConf.modo_manga === 1) {
+                    isMangaActive = true;
+                    botState.mangaMode?.set(chatId, true);
+                }
+            }
+
+            if (isMangaActive) {
                 const up = Math.floor((Date.now() - botState.startTime) / 1000);
                 const h = Math.floor(up / 3600), mn = Math.floor((up % 3600) / 60);
 
