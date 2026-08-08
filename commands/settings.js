@@ -17,7 +17,7 @@ async function refreshGroupCache(db, botState, chatId) {
 module.exports = {
     name: 'settings',
     isMultiple: true,
-    names: ['!bienvenida', '!setbienvenida', '!adm', '!bot', '!reglas', '!tag', '!antispam', '!mododios', '!ia', '!sincronizar'],
+    names: ['!bienvenida', '!setbienvenida', '!adm', '!bot', '!reglas', '!tag', '!antispam', '!mododios', '!ia', '!sincronizar', '!manga'],
     async execute(sock, chatId, msg, args, { start, isGroup, isAdmin, isGlobalAdmin, db, botState, sender }) {
         if (!isGroup && !isGlobalAdmin) return sock.sendMessage(chatId, { text: 'Este comando solo funciona en grupos.' }, { quoted: msg });
 
@@ -155,6 +155,26 @@ module.exports = {
                 const meta = await sock.groupMetadata(chatId);
                 return sock.sendMessage(chatId, { text: `*REGLAS DEL GRUPO:*\n\n${meta.desc || 'No hay reglas configuradas.'}` }, { quoted: msg });
             } catch (e) { return sock.sendMessage(chatId, { text: 'Error al obtener reglas.' }); }
+        }
+
+        // !manga on/off - Modo manga exclusivo (desactiva todo menos manga + admin)
+        if (start === '!manga') {
+            const mode = args[0]?.toLowerCase();
+            // Solo manejar on/off y sin argumentos. Cualquier otra cosa → media.js lo maneja
+            if (mode === 'on') {
+                if (!isAdmin) return sock.sendMessage(chatId, { text: 'Solo admins.' }, { quoted: msg });
+                botState.mangaMode.set(chatId, true);
+                return sock.sendMessage(chatId, {
+                    text: '📚 *MODO MANGA ACTIVADO*\n\nEste grupo ahora es exclusivo de manga.\nSolo funcionarán los comandos de manga:\n\n• !catalogo\n• !manga <nombre>\n• !leer <código> [cap|all]\n• !buscar <nombre>\n• !recomanga [género]\n• !parar\n• !menu\n• !bot on/off\n• !adm on/off\n\n💡 Usa *!manga off* para volver al modo normal.'
+                }, { quoted: msg });
+            } else if (mode === 'off') {
+                if (!isAdmin) return sock.sendMessage(chatId, { text: 'Solo admins.' }, { quoted: msg });
+                botState.mangaMode.delete(chatId);
+                return sock.sendMessage(chatId, {
+                    text: '🔓 *MODO MANGA DESACTIVADO*\n\nTodos los comandos del bot vuelven a estar disponibles en este grupo.'
+                }, { quoted: msg });
+            }
+            // Si tiene argumentos que no son on/off → NO hacer nada aquí, media.js lo maneja
         }
 
         if (start === '!sincronizar') {

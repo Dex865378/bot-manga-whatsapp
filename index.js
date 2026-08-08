@@ -387,7 +387,8 @@ const botState = {
     bounties: new LRUCache(CONFIG.CACHE.TRADUCCIONES.max, 7 * 24 * 60 * 60 * 1000),
     escudos: new LRUCache(200, 24 * 60 * 60 * 1000),
     groupCache: new LRUCache(CONFIG.CACHE.GROUP_CONFIG.max, CONFIG.CACHE.GROUP_CONFIG.ttl),
-    adminCache: new LRUCache(CONFIG.CACHE.ADMIN_CACHE.max, CONFIG.CACHE.ADMIN_CACHE.ttl)
+    adminCache: new LRUCache(CONFIG.CACHE.ADMIN_CACHE.max, CONFIG.CACHE.ADMIN_CACHE.ttl),
+    mangaMode: new Map() // chatId → true/false para modo manga exclusivo
 };
 
 const TTL_CONFIG = 5 * 60 * 1000; // 5 minutos para caché de config
@@ -1179,6 +1180,17 @@ async function procesarMensaje(sock, msg) {
                 // 3. Modo Admin (Restricción)
                 const isModoAdminActivo = groupConf ? groupConf.modo_admin === 1 : (botState.modoAdmin[chatId] || false);
                 if (isGroup && isModoAdminActivo && !isAdmin) return;
+
+                // 3.5. Modo Manga (solo comandos de manga + admin)
+                if (isGroup && botState.mangaMode.get(chatId)) {
+                    const mangaAllowed = [
+                        '!manga', '!leer', '!catalogo', '!buscar', '!recomanga', '!parar', '!setmanga',
+                        '!bot', '!adm', '!menu', '!menu2', '!help', '!ping'
+                    ];
+                    if (!mangaAllowed.includes(start)) {
+                        return; // Silenciosamente ignorar
+                    }
+                }
 
                 // --- ESTADÍSTICAS Y RACHAS (Write-Behind: acumula en RAM, sincroniza cada 2 min) ---
                 batchRegistrarComando(sender);

@@ -39,6 +39,43 @@ module.exports = {
         // !menu / !menu2 (REDiseño TOTAL PROFESIONAL Y EXHAUSTIVO)
         if (start === '!menu' || start === '!menu2' || start === '!help') {
             const pick = (v) => v[Math.floor(Math.random() * v.length)];
+
+            // ── MODO MANGA: menú reducido ──
+            if (isGroup && botState.mangaMode?.get(chatId)) {
+                const up = Math.floor((Date.now() - botState.startTime) / 1000);
+                const h = Math.floor(up / 3600), mn = Math.floor((up % 3600) / 60);
+
+                let mt = `📚 *DIKY BOT — MODO MANGA* 📚\n`;
+                mt += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+                mt += `👤 *USUARIO:* ${pushName}\n`;
+                mt += `🕒 *UPTIME:* ${h}h ${mn}m\n\n`;
+                mt += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+                mt += `📖 *[ MANGA ]*\n`;
+                mt += `• !catalogo (Ver mangas del catálogo)\n`;
+                mt += `• !manga <nombre> (Info de un manga)\n`;
+                mt += `• !leer <código> (Lista capítulos)\n`;
+                mt += `• !leer <código> <cap> (Leer capítulo)\n`;
+                mt += `• !leer <código> all (Descargar todo)\n`;
+                mt += `• !buscar <nombre> (Buscar en catálogo)\n`;
+                mt += `• !recomanga (Recomendación random)\n`;
+                mt += `• !recomanga <género> (Por género)\n`;
+                mt += `• !recomanga generos (Ver géneros)\n`;
+                mt += `• !parar (Detener descarga masiva)\n\n`;
+
+                mt += `⚙️ *[ ADMINISTRACIÓN ]*\n`;
+                mt += `• !bot <on/off>\n`;
+                mt += `• !adm <on/off>\n`;
+                mt += `• !manga off (Desactivar modo manga)\n\n`;
+
+                mt += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+                mt += `> _Modo manga activo. Solo comandos de manga._\n`;
+                mt += `> _Usa *!manga off* para volver al modo normal._`;
+
+                return sock.sendMessage(chatId, { text: mt }, { quoted: msg });
+            }
+
+            // ── MENÚ COMPLETO (modo normal) ──
             const mottos = [
                 "¡Tu compañero digital definitivo!",
                 "¡El bot más loco de WhatsApp!",
