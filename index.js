@@ -30,6 +30,7 @@ const { useTursoAuthState } = require('./turso-auth');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const handler = require('./commandHandler');
 const { handleGameResponse } = require('./gameResponder');
+const { handleMangaSession } = require('./mangaResponder');
 const execFileAsync = promisify(execFile);
 
 // 🧰 Utils modularizados
@@ -388,7 +389,8 @@ const botState = {
     escudos: new LRUCache(200, 24 * 60 * 60 * 1000),
     groupCache: new LRUCache(CONFIG.CACHE.GROUP_CONFIG.max, CONFIG.CACHE.GROUP_CONFIG.ttl),
     adminCache: new LRUCache(CONFIG.CACHE.ADMIN_CACHE.max, CONFIG.CACHE.ADMIN_CACHE.ttl),
-    mangaMode: new Map() // chatId → true/false para modo manga exclusivo
+    mangaMode: new Map(), // chatId → true/false para modo manga exclusivo
+    mangaSessions: new Map() // `${chatId}_${sender}` → { tempCode, titulo, genero, step, ts }
 };
 
 const TTL_CONFIG = 5 * 60 * 1000; // 5 minutos para caché de config
@@ -1036,12 +1038,13 @@ async function procesarMensaje(sock, msg) {
         }
 
         // --- FILTRO DE RELEVANCIA (Ahorro de CPU) ---
-        const participaEnJuego = juegoActivo && (
+        const tieneMangaSesion = botState.mangaSessions && botState.mangaSessions.has(`${chatId}_${sender}`);
+        const participaEnJuego = tieneMangaSesion || (juegoActivo && (
             juegoActivo.responder === sender ||
             juegoActivo.pareja === sender ||
             juegoActivo.solicitante === sender ||
             juegoActivo.tipo === 'ahorcado'
-        );
+        ));
 
         if (!isCommand && !participaEnJuego && !isGroup) return;
 
@@ -1071,11 +1074,21 @@ async function procesarMensaje(sock, msg) {
             }
         }
 
-        // --- LÓGICA DE RESPUESTA A JUEGOS (Antes de Comandos) ---
+        // --- LÓGICA DE RESPUESTA A JUEGOS Y SESIONES INTERACTIVAS ---
         if (botState.juegos[chatId]) {
             const context = { chatId, sender, cmd, txt, quotedMsgId, botState, db, isCommand };
             const wasGameResponse = await handleGameResponse(sock, msg, context);
             if (wasGameResponse) return;
+        }
+
+        if (botState.mangaSessions && botState.mangaSessions.has(`${chatId}_${sender}`)) {
+            const context = {
+                chatId, sender, cmd, txt, msg, botState, db, isCommand, isGroup, isAdmin, isGlobalAdmin,
+                pushName, downloadMediaMessage, traducirConCache, FFMPEG_PATH, ADMIN_NUM,
+                quotedMsgId, quotedParticipant, msgType, chatWithLiquidAI
+            };
+            const wasMangaResponse = await handleMangaSession(sock, msg, context);
+            if (wasMangaResponse) return;
         }
 
         if (isCommand) {

@@ -112,6 +112,17 @@ module.exports = {
                     } catch (_) { /* si falla la traducción, usar el original */ }
                 }
 
+                // Registrar sesión interactiva para responder con números (1, 2, 3, etc.)
+                if (botState.mangaSessions) {
+                    botState.mangaSessions.set(`${chatId}_${sender}`, {
+                        tempCode,
+                        titulo: m.titulo,
+                        genero,
+                        step: 'MAIN_MENU',
+                        ts: Date.now()
+                    });
+                }
+
                 let caption = `📚 *Te recomiendo este manga:*\n\n`;
                 caption += `📖 *${m.titulo}*\n`;
                 caption += `🔑 *Código:* ${tempCode}\n`;
@@ -120,10 +131,12 @@ module.exports = {
                 caption += `📊 *Estado:* ${estadoTxt}\n`;
                 caption += `🌐 *Idioma:* 🇪🇸 Español\n\n`;
                 caption += `📝 *Sinopsis:*\n${descText}\n\n`;
-                caption += `💡 *Para leerlo:*\n`;
-                caption += `• !leer ${tempCode} — ver capítulos\n`;
-                caption += `• !leer ${tempCode} 1 — leer cap. 1\n`;
-                caption += `• !leer ${tempCode} all — descargar todo`;
+                caption += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+                caption += `🔢 *Responde con un número:*\n`;
+                caption += `1️⃣ Ver lista de capítulos\n`;
+                caption += `2️⃣ Descargar TODOS los capítulos (all)\n`;
+                caption += `3️⃣ Recomendar otro manga\n`;
+                caption += `❌ Escribe *0* o *cancelar* para salir`;
 
                 if (reco.coverUrl) {
                     return sock.sendMessage(chatId, { image: { url: reco.coverUrl }, caption }, { quoted: msg });
