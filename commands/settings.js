@@ -18,7 +18,8 @@ module.exports = {
     name: 'settings',
     isMultiple: true,
     names: ['!bienvenida', '!setbienvenida', '!adm', '!bot', '!reglas', '!tag', '!antispam', '!mododios', '!ia', '!sincronizar', '!manga'],
-    async execute(sock, chatId, msg, args, { start, isGroup, isAdmin, isGlobalAdmin, db, botState, sender }) {
+    async execute(sock, chatId, msg, args, extras) {
+        const { start, isGroup, isAdmin, isGlobalAdmin, db, botState, sender } = extras;
         if (!isGroup && !isGlobalAdmin) return sock.sendMessage(chatId, { text: 'Este comando solo funciona en grupos.' }, { quoted: msg });
 
         if (start === '!mododios') {
@@ -227,7 +228,13 @@ module.exports = {
                     text: '🔓 *MODO MANGA DESACTIVADO*\n\nTodos los comandos del bot vuelven a estar disponibles en este grupo.'
                 }, { quoted: msg });
             }
-            // Si tiene argumentos que no son on/off → NO hacer nada aquí, media.js lo maneja
+            // Si tiene argumentos que no son on/off (ej: !manga 019 o !manga Solo Leveling) →
+            // delegar a media.js, que tiene el handler real de ficha de manga.
+            // Necesario porque !manga está registrado en AMBOS módulos y commandHandler.js
+            // solo conserva el último registrado (settings.js, por orden alfabético) en su Map,
+            // pisando el handler de media.js.
+            const mediaModule = require('./media');
+            return mediaModule.execute(sock, chatId, msg, args, extras);
         }
 
         if (start === '!sincronizar') {
