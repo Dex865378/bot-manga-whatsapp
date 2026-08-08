@@ -7,7 +7,7 @@ module.exports = {
     name: 'main',
     isMultiple: true,
     names: ['!menu', '!menu2', '!help', '!s', '!sticker', '!toimg'],
-    async execute(sock, chatId, msg, args, { start, cmd, txt, isGroup, sender, pushName, downloadMediaMessage, convertirAWebp, FFMPEG_PATH, botState }) {
+    async execute(sock, chatId, msg, args, { start, cmd, txt, isGroup, sender, pushName, downloadMediaMessage, convertirAWebp, FFMPEG_PATH, botState, db }) {
 
         // !ping esta manejado por commands/ping.js (mide latencia real con timestamp).
         // Se elimino la version duplicada de aqui, que nunca se ejecutaba (ping.js
