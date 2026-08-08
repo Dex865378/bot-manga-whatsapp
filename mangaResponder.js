@@ -9,10 +9,10 @@ function normalizeInput(txt) {
     const raw = txt.trim().toLowerCase();
     const clean = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
 
-    if (['1', '1', 'uno', 'opcion1'].includes(clean) || raw === '1' || raw.startsWith('1')) return '1';
-    if (['2', '2', 'dos', 'opcion2', 'all', 'todos'].includes(clean) || raw === '2' || raw === 'all') return '2';
-    if (['3', '3', 'tres', 'opcion3', 'otro', 'otra', 'recomendar'].includes(clean) || raw === '3') return '3';
-    if (['0', '0', 'cero', 'cancelar', 'salir', 'cancel'].includes(clean) || raw === '0') return '0';
+    if (raw === '1' || clean === '1' || clean === 'uno' || clean === 'opcion1' || clean.includes('capitulo')) return '1';
+    if (raw === '2' || clean === '2' || clean === 'dos' || clean === 'opcion2' || clean === 'all' || clean.includes('todo') || clean.includes('descargar')) return '2';
+    if (raw === '3' || clean === '3' || clean === 'tres' || clean === 'opcion3' || ['otro', 'otra', 'recomendar', 'siguiente', 'mas', 'cambiar', 'recomienda'].some(w => clean.includes(w))) return '3';
+    if (raw === '0' || clean === '0' || clean === 'cero' || ['cancelar', 'salir', 'cancel', 'cerrar'].some(w => clean.includes(w))) return '0';
     return clean;
 }
 
