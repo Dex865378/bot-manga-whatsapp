@@ -904,12 +904,23 @@ async function startBot() {
 
             const sender = msg.key.participant || chatId;
             const juegoActivo = botState.juegos[chatId];
-            const participaEnJuego = juegoActivo && (
+            let tieneMangaSesionUpsert = false;
+            if (botState.mangaSessions) {
+                const TTL_MANGA_UPSERT = 5 * 60 * 1000;
+                const nowUpsert = Date.now();
+                for (const [k, s] of botState.mangaSessions.entries()) {
+                    if (k.startsWith(`${chatId}_`) && (nowUpsert - s.ts <= TTL_MANGA_UPSERT)) {
+                        tieneMangaSesionUpsert = true;
+                        break;
+                    }
+                }
+            }
+            const participaEnJuego = tieneMangaSesionUpsert || (juegoActivo && (
                 juegoActivo.tipo === 'ahorcado' ||
                 juegoActivo.responder === sender ||
                 juegoActivo.pareja === sender ||
                 juegoActivo.solicitante === sender
-            );
+            ));
             const isCommand = texto.trim().startsWith('!');
             const botBare = (sock.user?.id || '').split(':')[0];
             const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
