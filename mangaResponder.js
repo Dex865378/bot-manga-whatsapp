@@ -9,10 +9,22 @@ function normalizeInput(txt) {
     const raw = txt.trim().toLowerCase();
     const clean = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
 
-    if (raw === '1' || clean === '1' || clean === 'uno' || clean === 'opcion1' || clean.includes('capitulo')) return '1';
-    if (raw === '2' || clean === '2' || clean === 'dos' || clean === 'opcion2' || clean === 'all' || clean.includes('todo') || clean.includes('descargar')) return '2';
-    if (raw === '3' || clean === '3' || clean === 'tres' || clean === 'opcion3' || ['otro', 'otra', 'recomendar', 'siguiente', 'mas', 'cambiar', 'recomienda'].some(w => clean.includes(w))) return '3';
-    if (raw === '0' || clean === '0' || clean === 'cero' || ['cancelar', 'salir', 'cancel', 'cerrar'].some(w => clean.includes(w))) return '0';
+    // IMPORTANTE: comparaciones EXACTAS (===), nunca .includes() sobre frases
+    // libres. Antes, un mensaje casual como "ya vi todo el capitulo" o "no
+    // puedo descargar nada" se interpretaba como la opcion "2" (descargar
+    // TODOS los capitulos) solo por contener esas palabras sueltas, lo que
+    // disparaba una segunda descarga masiva duplicada mientras la primera
+    // seguia corriendo. Ahora solo dispara si el mensaje ES esa palabra/frase
+    // completa (ignorando tildes/puntuacion), no si la CONTIENE.
+    const exact1 = ['1', 'uno', 'opcion1', 'capitulo', 'capitulos'];
+    const exact2 = ['2', 'dos', 'opcion2', 'all', 'todo', 'todos', 'descargar', 'descargartodo'];
+    const exact3 = ['3', 'tres', 'opcion3', 'otro', 'otra', 'recomendar', 'siguiente', 'mas', 'cambiar', 'recomienda'];
+    const exact0 = ['0', 'cero', 'cancelar', 'salir', 'cancel', 'cerrar'];
+
+    if (exact1.includes(clean)) return '1';
+    if (exact2.includes(clean)) return '2';
+    if (exact3.includes(clean)) return '3';
+    if (exact0.includes(clean)) return '0';
     return clean;
 }
 

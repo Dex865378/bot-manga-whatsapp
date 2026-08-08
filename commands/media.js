@@ -28,6 +28,12 @@ function setApiCache(key, data) {
 // Mapa para controlar cancelaciones de descargas masivas (!parar)
 const cancelMap = new Map();
 
+// Rastrea descargas masivas ("all") en curso para evitar que una segunda
+// invocacion del mismo codigo en el mismo chat dispare una descarga duplicada
+// en paralelo (ej: dos !leer <codigo> all casi simultaneos, o un mensaje
+// casual mal interpretado por la sesion interactiva de manga).
+const descargasMasivasActivas = new Set(); // claves: `${chatId}:${codigo}`
+
 // Contador y mapa para códigos temporales de !recomanga
 let recoCounter = 0;
 const recoTitles = new Map(); // código R### → { titulo, id }
@@ -443,6 +449,17 @@ module.exports = {
             // ── Caso B: código + número → descargar y enviar ────────────────
             const isAll = numCap.toLowerCase() === 'all';
 
+            // 🔒 Candado anti-duplicado: si ya hay una descarga masiva de este
+            // mismo codigo corriendo en este chat, no arrancar otra en paralelo.
+            const descargaKey = `${chatId}:${codigo}`;
+            if (isAll && descargasMasivasActivas.has(descargaKey)) {
+                return sock.sendMessage(chatId,
+                    { text: `⚠️ Ya hay una descarga masiva de *${titulo}* en curso en este chat.\n💡 Usa *!parar* si quieres cancelarla antes de pedir otra.` },
+                    { quoted: msg }
+                );
+            }
+            if (isAll) descargasMasivasActivas.add(descargaKey);
+
             // Ejecutar en background para no bloquear al bot
             (async () => {
                 try {
@@ -520,6 +537,10 @@ module.exports = {
                         { text: `❌ Ocurrió un error: ${e.message}\n\n💡 Prueba *!leer ${codigo}* para ver los capítulos disponibles.` },
                         { quoted: msg }
                     );
+                } finally {
+                    // Liberar el candado SIEMPRE (exito, error o cancelacion) para que
+                    // un futuro !leer <codigo> all de este manga pueda volver a correr.
+                    if (isAll) descargasMasivasActivas.delete(descargaKey);
                 }
             })();
 
