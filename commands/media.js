@@ -35,6 +35,19 @@ const recoTitles = new Map(); // código R### → { titulo, id }
 // Tracker de mangas ya recomendados por chat para no repetir
 const recoSent = new Map(); // chatId -> Set(mangaId)
 
+// Helper para detectar si un texto de sinopsis está en inglés
+function esTextoIngles(text) {
+    if (!text || text.length < 10) return false;
+    const lower = ' ' + text.toLowerCase() + ' ';
+    const enIndicators = [' the ', ' and ', ' of ', ' to ', ' in ', ' is ', ' was ', ' with ', ' for ', ' that ', ' this ', ' from ', ' has ', ' have ', ' who ', ' which '];
+    let count = 0;
+    for (const w of enIndicators) {
+        if (lower.includes(w)) count++;
+        if (count >= 2) return true;
+    }
+    return false;
+}
+
 module.exports = {
     name: 'media',
     isMultiple: true,
@@ -104,9 +117,9 @@ module.exports = {
                 const estadoTxt = statusMap[m.status] || m.status || '❓';
                 const tagsText = m.tags.length > 0 ? m.tags.join(', ') : 'Sin género';
 
-                // Traducir sinopsis al español si viene en inglés
+                // Traducir sinopsis al español si viene en inglés o contiene texto en inglés
                 let descText = m.descripcion || 'Sin descripción disponible.';
-                if (m.descLang === 'en' && m.descripcion) {
+                if (m.descripcion && (m.descLang === 'en' || esTextoIngles(m.descripcion))) {
                     try {
                         descText = await traducirConCache(m.descripcion, `reco_${m.id}`);
                     } catch (_) { /* si falla la traducción, usar el original */ }
