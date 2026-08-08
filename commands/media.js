@@ -28,6 +28,10 @@ function setApiCache(key, data) {
 // Mapa para controlar cancelaciones de descargas masivas (!parar)
 const cancelMap = new Map();
 
+// Contador y mapa para códigos temporales de !recomanga
+let recoCounter = 0;
+const recoTitles = new Map(); // código R### → { titulo, id }
+
 module.exports = {
     name: 'media',
     isMultiple: true,
@@ -72,6 +76,14 @@ module.exports = {
                 }
 
                 const m = reco.manga;
+
+                // Generar código temporal R001, R002...
+                recoCounter++;
+                const tempCode = `R${String(recoCounter).padStart(3, '0')}`;
+                // Guardar el ID de MangaDex vinculado a ese código
+                mangadex.forzarMangaId(tempCode, m.id);
+                recoTitles.set(tempCode, { titulo: m.titulo, id: m.id });
+
                 const statusMap = { 'ongoing': '📡 En emisión', 'completed': '✅ Completado', 'hiatus': '⏸️ En pausa', 'cancelled': '❌ Cancelado' };
                 const estadoTxt = statusMap[m.status] || m.status || '❓';
                 const tagsText = m.tags.length > 0 ? m.tags.join(', ') : 'Sin género';
@@ -79,12 +91,16 @@ module.exports = {
 
                 let caption = `📚 *Te recomiendo este manga:*\n\n`;
                 caption += `📖 *${m.titulo}*\n`;
+                caption += `🔑 *Código:* ${tempCode}\n`;
                 caption += `🏷️ *Géneros:* ${tagsText}\n`;
                 caption += `📅 *Año:* ${m.year || '?'}\n`;
                 caption += `📊 *Estado:* ${estadoTxt}\n`;
                 caption += `🌐 *Idioma:* 🇪🇸 Español\n\n`;
                 caption += `📝 *Sinopsis:*\n${descText}\n\n`;
-                caption += `🔗 mangadex.org/title/${m.id}`;
+                caption += `💡 *Para leerlo:*\n`;
+                caption += `• !leer ${tempCode} — ver capítulos\n`;
+                caption += `• !leer ${tempCode} 1 — leer cap. 1\n`;
+                caption += `• !leer ${tempCode} all — descargar todo`;
 
                 if (reco.coverUrl) {
                     return sock.sendMessage(chatId, { image: { url: reco.coverUrl }, caption }, { quoted: msg });
@@ -323,35 +339,41 @@ module.exports = {
             }
 
             const m = cargarMangasLocal().find(x => x.codigo === cod);
-            if (!m) {
+            // Si no está en mangas.json, verificar si es un código temporal de !recomanga (R###)
+            const recoInfo = !m ? recoTitles.get(cod.toUpperCase()) : null;
+            if (!m && !recoInfo) {
                 return sock.sendMessage(chatId,
-                    { text: `❌ Código *${cod}* no encontrado.\nUsa *!catalogo* para ver los códigos disponibles.` },
+                    { text: `❌ Código *${cod}* no encontrado.\nUsa *!catalogo* para ver los códigos disponibles o *!recomanga* para descubrir nuevos mangas.` },
                     { quoted: msg }
                 );
             }
 
+            // Usar datos del catálogo o del código temporal
+            const titulo = m ? m.titulo : recoInfo.titulo;
+            const codigo = m ? m.codigo : cod.toUpperCase();
+
             // ── Caso A: solo código → listar capítulos ──────────────────────
             if (!numCap) {
                 await sock.sendMessage(chatId,
-                    { text: `🔍 Buscando capítulos de *${m.titulo}* en MangaDex...` },
+                    { text: `🔍 Buscando capítulos de *${titulo}* en MangaDex...` },
                     { quoted: msg }
                 );
                 try {
-                    const info = await mangadex.listarCapitulos(m.titulo, m.codigo);
+                    const info = await mangadex.listarCapitulos(titulo, codigo);
                     if (!info || info.disponibles === 0) {
                         return sock.sendMessage(chatId,
-                            { text: `❌ No se encontraron capítulos de *${m.titulo}* en MangaDex.\n\n💡 Puede que esté bajo otro título. Prueba *!manga ${m.codigo}* para ver el título original.` },
+                            { text: `❌ No se encontraron capítulos de *${titulo}* en MangaDex.\n\n💡 Puede que esté bajo otro título. Prueba *!setmanga ${codigo} <id>* para vincularlo manualmente.` },
                             { quoted: msg }
                         );
                     }
                     const sample = info.caps.slice(0, 30);
                     const langEmoji = info.idioma === 'es' ? '🇪🇸' : '🇺🇸';
                     const langText = info.idioma === 'es' ? 'en español' : 'en inglés';
-                    let lista = `📚 *${m.titulo}*\n━━━━━━━━━━━━━━\n📖 *${info.disponibles} capítulos ${langText}*\n\n`;
+                    let lista = `📚 *${titulo}*\n━━━━━━━━━━━━━━\n📖 *${info.disponibles} capítulos ${langText}*\n\n`;
                     lista += sample.map(c => `${langEmoji} Cap. *${c.num}*${c.titulo ? ` — ${c.titulo}` : ''}`).join('\n');
                     if (info.disponibles > 30) lista += `\n...y ${info.disponibles - 30} más.`;
                     if (info.idioma === 'en') lista += `\n\n⚠️ *Aviso: No se encontraron capítulos en español, mostrando en inglés.*`;
-                    lista += `\n\n💡 *!leer ${m.codigo} <número>* para leer un capítulo`;
+                    lista += `\n\n💡 *!leer ${codigo} <número>* para leer un capítulo`;
                     return sock.sendMessage(chatId, { text: lista }, { quoted: msg });
                 } catch (e) {
                     console.error('[!leer] Error listando:', e.message);
@@ -370,17 +392,17 @@ module.exports = {
                 try {
                     let capsToDownload = [];
                     if (isAll) {
-                        await sock.sendMessage(chatId, { text: `⏳ Preparando descarga masiva de *${m.titulo}*...\n📡 Obteniendo lista de capítulos...` }, { quoted: msg });
-                        const info = await mangadex.listarCapitulos(m.titulo, m.codigo);
+                        await sock.sendMessage(chatId, { text: `⏳ Preparando descarga masiva de *${titulo}*...\n📡 Obteniendo lista de capítulos...` }, { quoted: msg });
+                        const info = await mangadex.listarCapitulos(titulo, codigo);
                         if (!info || info.disponibles === 0) {
                             return sock.sendMessage(chatId, { text: `❌ No hay capítulos disponibles para descargar.` });
                         }
                         capsToDownload = info.caps.map(c => c.num);
-                        await sock.sendMessage(chatId, { text: `🚀 Comenzando descarga de *${capsToDownload.length}* capítulos.\n⚠️ Esto tomará tiempo. Los capítulos llegarán uno por uno con pausas para no saturar el servidor.` });
+                        await sock.sendMessage(chatId, { text: `🚀 Comenzando descarga de *${capsToDownload.length}* capítulos de *${titulo}*.\n⚠️ Esto tomará tiempo. Los capítulos llegarán uno por uno con pausas para no saturar el servidor.` });
                     } else {
                         capsToDownload = [numCap];
                         await sock.sendMessage(chatId,
-                            { text: `⏳ Descargando *${m.titulo}* — Cap. *${numCap}*...\n📡 Obteniendo páginas desde MangaDex (calidad optimizada)` },
+                            { text: `⏳ Descargando *${titulo}* — Cap. *${numCap}*...\n📡 Obteniendo páginas desde MangaDex (calidad optimizada)` },
                             { quoted: msg }
                         );
                     }
@@ -395,7 +417,7 @@ module.exports = {
                         }
 
                         try {
-                            const resultado = await mangadex.obtenerCapitulo(m.titulo, m.codigo, num);
+                            const resultado = await mangadex.obtenerCapitulo(titulo, codigo, num);
 
                             if (resultado.modo === 'pdf') {
                                 // ✅ Modo principal: 1 PDF por capítulo
@@ -403,7 +425,7 @@ module.exports = {
                                     document: resultado.pdf,
                                     mimetype: 'application/pdf',
                                     fileName: resultado.nombreArchivo,
-                                    caption: `📖 *${m.titulo}*\nCap. *${num}* — ${resultado.paginas} páginas ${resultado.idioma === 'es' ? '🇪🇸' : '🇺🇸'}`
+                                    caption: `📖 *${titulo}*\nCap. *${num}* — ${resultado.paginas} páginas ${resultado.idioma === 'es' ? '🇪🇸' : '🇺🇸'}`
                                 }, isAll ? {} : { quoted: msg });
                             } else {
                                 // ⚠️ Modo fallback: capítulo muy largo → imágenes sueltas
@@ -434,12 +456,12 @@ module.exports = {
                     }
 
                     if (isAll && !cancelMap.get(chatId)) {
-                        await sock.sendMessage(chatId, { text: `✅ Descarga masiva de *${m.titulo}* completada.` });
+                        await sock.sendMessage(chatId, { text: `✅ Descarga masiva de *${titulo}* completada.` });
                     }
                 } catch (e) {
                     console.error(`[!leer] Error general:`, e.message);
                     await sock.sendMessage(chatId,
-                        { text: `❌ Ocurrió un error: ${e.message}\n\n💡 Prueba *!leer ${m.codigo}* para ver los capítulos disponibles.` },
+                        { text: `❌ Ocurrió un error: ${e.message}\n\n💡 Prueba *!leer ${codigo}* para ver los capítulos disponibles.` },
                         { quoted: msg }
                     );
                 }
