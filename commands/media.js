@@ -125,7 +125,6 @@ module.exports = {
 
                 let caption = `📚 *Te recomiendo este manga:*\n\n`;
                 caption += `📖 *${m.titulo}*\n`;
-                caption += `🔑 *Código:* ${tempCode}\n`;
                 caption += `🏷️ *Géneros:* ${tagsText}\n`;
                 caption += `📅 *Año:* ${m.year || '?'}\n`;
                 caption += `📊 *Estado:* ${estadoTxt}\n`;

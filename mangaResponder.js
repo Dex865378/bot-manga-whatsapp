@@ -13,8 +13,17 @@ async function handleMangaSession(sock, msg, context) {
     const session = botState.mangaSessions.get(sessionKey);
     if (!session) return false;
 
-    // Expiración a los 10 minutos
-    if (Date.now() - session.ts > 10 * 60 * 1000) {
+    // Limpieza periódica de sesiones expiradas (5 minutos)
+    const TTL_MANGA_SESSION = 5 * 60 * 1000;
+    if (Math.random() < 0.1) {
+        const now = Date.now();
+        for (const [key, s] of botState.mangaSessions.entries()) {
+            if (now - s.ts > TTL_MANGA_SESSION) botState.mangaSessions.delete(key);
+        }
+    }
+
+    // Expiración a los 5 minutos para esta sesión
+    if (Date.now() - session.ts > TTL_MANGA_SESSION) {
         botState.mangaSessions.delete(sessionKey);
         return false;
     }
