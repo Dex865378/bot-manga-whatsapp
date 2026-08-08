@@ -127,7 +127,8 @@ module.exports = {
 
                 // Registrar sesión interactiva para responder con números (1, 2, 3, etc.)
                 if (botState.mangaSessions) {
-                    botState.mangaSessions.set(`${chatId}_${sender}`, {
+                    const senderClean = (sender || '').split('@')[0].split(':')[0];
+                    botState.mangaSessions.set(`${chatId}_${senderClean}`, {
                         tempCode,
                         titulo: m.titulo,
                         genero,

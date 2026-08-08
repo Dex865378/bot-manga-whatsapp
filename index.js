@@ -1038,7 +1038,8 @@ async function procesarMensaje(sock, msg) {
         }
 
         // --- FILTRO DE RELEVANCIA (Ahorro de CPU) ---
-        const tieneMangaSesion = botState.mangaSessions && botState.mangaSessions.has(`${chatId}_${sender}`);
+        const senderJidClean = (sender || '').split('@')[0].split(':')[0];
+        const tieneMangaSesion = botState.mangaSessions && botState.mangaSessions.has(`${chatId}_${senderJidClean}`);
         const participaEnJuego = tieneMangaSesion || (juegoActivo && (
             juegoActivo.responder === sender ||
             juegoActivo.pareja === sender ||
@@ -1081,7 +1082,7 @@ async function procesarMensaje(sock, msg) {
             if (wasGameResponse) return;
         }
 
-        if (botState.mangaSessions && botState.mangaSessions.has(`${chatId}_${sender}`)) {
+        if (botState.mangaSessions && botState.mangaSessions.has(`${chatId}_${senderJidClean}`)) {
             const context = {
                 chatId, sender, cmd, txt, msg, botState, db, isCommand, isGroup, isAdmin, isGlobalAdmin,
                 pushName, downloadMediaMessage, traducirConCache, FFMPEG_PATH, ADMIN_NUM,
