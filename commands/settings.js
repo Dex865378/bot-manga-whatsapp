@@ -130,25 +130,37 @@ module.exports = {
         }
 
         if (start === '!ia') {
-            if (!isAdmin) return sock.sendMessage(chatId, { text: 'Solo admins.' }, { quoted: msg });
             const sub = args[0]?.toLowerCase();
+
+            // !ia perfil - cualquier usuario puede ver su propio perfil de
+            // personalidad guardado (no requiere ser admin, es informacion propia)
+            if (sub === 'perfil') {
+                const targetSender = msg.key.participant || msg.key.remoteJid;
+                const perfil = await db.getPerfilIA(targetSender);
+                if (!perfil || !perfil.resumen) {
+                    return sock.sendMessage(chatId, { text: '🧠 Todavía no tengo un perfil guardado sobre ti. Sigue chateando conmigo y lo iré construyendo poco a poco.' }, { quoted: msg });
+                }
+                return sock.sendMessage(chatId, { text: `🧠 *Lo que sé sobre ti:*\n\n${perfil.resumen}\n\n_Basado en ${perfil.interacciones || 0} interacciones conmigo. Se actualiza cada cierto tiempo._` }, { quoted: msg });
+            }
+
+            if (!isAdmin) return sock.sendMessage(chatId, { text: 'Solo admins.' }, { quoted: msg });
             if (sub === 'on') {
                 await db.setModoAI(chatId, true);
                 await refreshGroupCache(db, botState, chatId);
-                return sock.sendMessage(chatId, { text: '**MODO AI ACTIVADO**\nAhora respondere a los mensajes del grupo usando Liquid AI.' }, { quoted: msg });
+                return sock.sendMessage(chatId, { text: '**MODO AI ACTIVADO**\nAhora respondere a los mensajes del grupo, recordando la conversacion reciente y adaptandome a cada persona con el tiempo.' }, { quoted: msg });
             } else if (sub === 'off') {
                 await db.setModoAI(chatId, false);
                 await refreshGroupCache(db, botState, chatId);
                 return sock.sendMessage(chatId, { text: '**MODO AI DESACTIVADO**' }, { quoted: msg });
             } else if (sub === 'set') {
                 const ctx = args.slice(1).join(' ');
-                if (!ctx) return sock.sendMessage(chatId, { text: 'Especifica un contexto: *!ia set Eres un bot de anime muy sarcastico*' }, { quoted: msg });
+                if (!ctx) return sock.sendMessage(chatId, { text: 'Especifica de que trata el grupo o como debo comportarme: *!ia set Somos un grupo de fans de manga y anime, hablamos de series y recomendaciones*' }, { quoted: msg });
                 await db.setModoAI(chatId, true, ctx);
                 await refreshGroupCache(db, botState, chatId);
-                return sock.sendMessage(chatId, { text: `**CONTEXTO ACTUALIZADO**\nConfigurado como: _${ctx}_` }, { quoted: msg });
+                return sock.sendMessage(chatId, { text: `**CONTEXTO DEL GRUPO ACTUALIZADO**\nConfigurado como: _${ctx}_\n\n💡 Uso esto para saber de que trata el grupo y responder de forma más relevante.` }, { quoted: msg });
             }
             const ai = await db.getModoAI(chatId);
-            return sock.sendMessage(chatId, { text: `**CONFIGURACION IA**\n\nEstado: ${ai.activado ? 'Activo' : 'Inactivo'}\nContexto: _${ai.contexto || 'Predeterminado'}_\n\nUso:\n- *!ia on/off*\n- *!ia set [instrucciones]*` }, { quoted: msg });
+            return sock.sendMessage(chatId, { text: `**CONFIGURACION IA**\n\nEstado: ${ai.activado ? 'Activo' : 'Inactivo'}\nContexto del grupo: _${ai.contexto || 'Predeterminado'}_\n\nUso:\n- *!ia on/off*\n- *!ia set [de que trata el grupo]*\n- *!ia perfil* (ver lo que la IA sabe de ti)` }, { quoted: msg });
         }
 
         if (start === '!reglas') {

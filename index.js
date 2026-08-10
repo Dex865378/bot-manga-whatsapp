@@ -390,7 +390,19 @@ const botState = {
     groupCache: new LRUCache(CONFIG.CACHE.GROUP_CONFIG.max, CONFIG.CACHE.GROUP_CONFIG.ttl),
     adminCache: new LRUCache(CONFIG.CACHE.ADMIN_CACHE.max, CONFIG.CACHE.ADMIN_CACHE.ttl),
     mangaMode: new Map(), // chatId → true/false para modo manga exclusivo
-    mangaSessions: new Map() // `${chatId}_${sender}` → { tempCode, titulo, genero, step, ts }
+    mangaSessions: new Map(), // `${chatId}_${sender}` → { tempCode, titulo, genero, step, ts }
+
+    // 🧠 MEMORIA DE CONVERSACION PARA LA IA (solo RAM, se pierde en reinicios
+    // a proposito — es contexto de corto plazo, no perfil de usuario).
+    // chatId -> array de { sender, pushName, texto, ts }, limitado a los
+    // ultimos N mensajes por grupo para no crecer sin control.
+    chatBuffers: new Map(),
+    CHAT_BUFFER_MAX: 30, // mensajes recientes que se recuerdan por grupo
+
+    // Contador de mensajes casuales por usuario desde la ultima actualizacion
+    // de su perfil de personalidad (evita llamar a la IA para "resumir
+    // personalidad" en cada mensaje; solo cada N interacciones reales con la IA).
+    PERFIL_IA_CADA_N_INTERACCIONES: 8
 };
 
 const TTL_CONFIG = 5 * 60 * 1000; // 5 minutos para caché de config
@@ -495,6 +507,59 @@ async function traducirConCache(texto, tipo = 'resumen') {
 
     // Ultimo recurso: texto original (en ingles) recortado
     return texto.substring(0, 200) + '...';
+}
+
+// ============================================================
+//         MEMORIA DE IA: BUFFER DE CHAT + PERFIL DE USUARIO
+// ============================================================
+// Registra cada mensaje casual (no comandos) en un buffer corto por grupo,
+// para que cuando la IA responda tenga contexto de "de que se hablaba".
+// Se limpia solo por tamaño (CHAT_BUFFER_MAX), nunca por tiempo, porque un
+// grupo puede estar horas sin hablar y aun asi querer recordar la ultima
+// conversacion. Vive solo en RAM: si Render reinicia, se pierde, y esta bien
+// porque es contexto de corto plazo, no el perfil de personalidad (ese si
+// esta en Turso).
+function registrarEnBufferChat(chatId, sender, pushName, texto) {
+    if (!texto || !texto.trim()) return;
+    if (!botState.chatBuffers.has(chatId)) botState.chatBuffers.set(chatId, []);
+    const buf = botState.chatBuffers.get(chatId);
+    buf.push({ sender: (sender || '').split('@')[0], pushName: pushName || '', texto: texto.slice(0, 300), ts: Date.now() });
+    while (buf.length > botState.CHAT_BUFFER_MAX) buf.shift();
+}
+
+function obtenerContextoChat(chatId, maxMensajes = 12) {
+    const buf = botState.chatBuffers.get(chatId);
+    if (!buf || buf.length === 0) return '';
+    const recientes = buf.slice(-maxMensajes);
+    return recientes.map(m => `${m.pushName || m.sender}: ${m.texto}`).join('\n');
+}
+
+// 🧠 Actualiza el perfil de personalidad de un usuario cada N interacciones
+// reales con la IA (no en cada mensaje, para no gastar llamadas de mas).
+// Usa una llamada barata y corta a la cascada de IA para destilar un resumen
+// de 2-3 lineas, que se guarda en Turso y sobrevive a reinicios de Render.
+async function actualizarPerfilSiToca(userId, pushName) {
+    try {
+        const interacciones = await db.incrementarInteraccionIA(userId);
+        if (interacciones === 0 || interacciones % botState.PERFIL_IA_CADA_N_INTERACCIONES !== 0) return;
+
+        const buf = botState.chatBuffers && Array.from(botState.chatBuffers.values()).flat()
+            .filter(m => m.sender === (userId || '').split('@')[0])
+            .slice(-15);
+        if (!buf || buf.length < 3) return; // no hay suficiente material aun
+
+        const perfilActual = await db.getPerfilIA(userId);
+        const textoReciente = buf.map(m => m.texto).join(' | ');
+
+        const prompt = `Analiza estos mensajes recientes de un usuario de WhatsApp y actualiza su perfil de personalidad en 2-3 lineas cortas (intereses, tono, temas que le gustan). Perfil anterior: "${perfilActual.resumen || 'ninguno aun'}". Mensajes recientes: "${textoReciente}". Responde SOLO con el nuevo resumen actualizado en español, sin preambulo, sin comillas.`;
+
+        const resumen = await aiService.chatWithAI(prompt, 'auto');
+        if (resumen && typeof resumen === 'string' && resumen.length < 500) {
+            await db.setPerfilIA(userId, resumen.trim());
+        }
+    } catch (e) {
+        console.error('[PERFIL IA] Error actualizando perfil:', e.message);
+    }
 }
 
 // 🔄 Wrapper del servicio de IA (migrado a services/aiService.js)
@@ -1096,6 +1161,15 @@ async function procesarMensaje(sock, msg) {
         const isCommand = cmd.startsWith('!');
         const juegoActivo = botState.juegos[chatId];
 
+        // 🧠 Registrar mensajes CASUALES (no comandos) en el buffer de contexto
+        // del grupo, para que cuando la IA responda tenga memoria de la
+        // conversacion reciente. Se hace SIEMPRE que sea texto de grupo, no
+        // solo cuando le hablan al bot, porque el contexto util es "de que
+        // se hablaba antes", no solo los mensajes dirigidos a Diky.
+        if (!isCommand && txt && txt.trim() && chatId.endsWith('@g.us')) {
+            registrarEnBufferChat(chatId, sender, pushName, txt);
+        }
+
         // --- REGISTRO INTELIGENTE DE NOMBRE (WhatsApp Nickname) ---
         if (pushName && isCommand) {
             db.obtenerUsuario(sender)
@@ -1505,9 +1579,37 @@ async function procesarMensaje(sock, msg) {
                     const cleanTxtIA = txt.replace(botMent, '').trim();
                     if (!cleanTxtIA && isMentionedByTag) return sock.sendMessage(chatId, { text: '¿En qué puedo ayudarte? 😺' });
 
-                    const resIA = await chatWithLiquidAI(cleanTxtIA || 'Hola', aiConfig.contexto);
+                    // 🧠 Construir el prompt enriquecido: contexto del grupo (lo que el
+                    // admin configuro con !ia contexto) + memoria de conversacion
+                    // reciente (buffer en RAM) + perfil de personalidad del usuario
+                    // (guardado en Turso, sobrevive a reinicios). Todo esto corre en
+                    // paralelo a lo que sea que el bot este haciendo en otros chats
+                    // (descargas de manga, musica, etc.) porque procesarMensaje ya
+                    // se ejecuta de forma concurrente por diseño, y esta llamada de
+                    // IA no pasa por esperarSlotHeavy ni por ninguna cola que puedan
+                    // ocupar esas tareas pesadas — asi el bot nunca se "queda mudo"
+                    // mientras manda muchos capitulos o una cancion.
+                    const historialChat = obtenerContextoChat(chatId, 12);
+                    const perfilUsuario = await db.getPerfilIA(sender).catch(() => null);
+
+                    let contextoCompleto = aiConfig.contexto || '';
+                    if (historialChat) {
+                        contextoCompleto += `\n\nConversacion reciente del grupo (para que tengas contexto de que se habla, no la repitas literal):\n${historialChat}`;
+                    }
+                    if (perfilUsuario && perfilUsuario.resumen) {
+                        contextoCompleto += `\n\nSobre la persona que te escribe ahora (${pushName || 'sin nombre'}): ${perfilUsuario.resumen}`;
+                    }
+
+                    const resIA = await chatWithLiquidAI(cleanTxtIA || 'Hola', contextoCompleto);
                     if (resIA) {
                         await db.updateLastAIReply(chatId);
+                        // Registrar la respuesta del bot tambien en el buffer, para que
+                        // el propio bot recuerde lo que acaba de decir en turnos futuros.
+                        registrarEnBufferChat(chatId, 'diky_bot', 'Diky', resIA);
+                        // Actualizar perfil de personalidad EN SEGUNDO PLANO (sin await
+                        // bloqueante): esto puede tardar por ser otra llamada a la IA,
+                        // pero el usuario ya recibio su respuesta, asi que no se nota.
+                        actualizarPerfilSiToca(sender, pushName).catch(() => {});
                         return sock.sendMessage(chatId, { text: resIA }, { quoted: msg });
                     }
                 }

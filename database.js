@@ -41,6 +41,16 @@ async function crearTablas() {
         `CREATE TABLE IF NOT EXISTS grupos_activados (chat_id TEXT PRIMARY KEY, activado_por TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
         `CREATE TABLE IF NOT EXISTS grupos_bienvenida (chat_id TEXT PRIMARY KEY, mensaje TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
         `CREATE TABLE IF NOT EXISTS grupos_ai (chat_id TEXT PRIMARY KEY, activado INTEGER DEFAULT 0, contexto TEXT, last_reply INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+        // 🧠 Perfil de personalidad por usuario, generado por la IA cada cierto
+        // numero de interacciones. Guarda un resumen COMPACTO (no la conversacion
+        // completa) de intereses/tono del usuario, para que las respuestas de la
+        // IA se sientan adaptadas sin gastar contexto ni RAM en historial largo.
+        `CREATE TABLE IF NOT EXISTS perfiles_ia (
+            user_id TEXT PRIMARY KEY,
+            resumen TEXT DEFAULT '',
+            interacciones INTEGER DEFAULT 0,
+            updated_at BIGINT DEFAULT 0
+        )`,
         `CREATE TABLE IF NOT EXISTS usuarios (
             user_id TEXT PRIMARY KEY, nombre TEXT, edad INTEGER, nacimiento TEXT, altura TEXT, descripcion TEXT, superpoder TEXT, 
             manga_fav TEXT, anime_fav TEXT, waifu_husbando TEXT, pareja TEXT, titulo TEXT, 
@@ -648,6 +658,53 @@ async function updateLastAIReply(chatId) {
     try { await dbClient.execute({ sql: 'UPDATE grupos_ai SET last_reply = ? WHERE chat_id = ?', args: [Date.now(), chatId] }); return true; } catch (e) { return false; }
 }
 
+// ========== PERFILES DE PERSONALIDAD (IA) ==========
+// Guarda un resumen compacto (2-3 lineas) de intereses/tono por usuario,
+// actualizado periodicamente por la IA en vez de en cada mensaje. NO guarda
+// la conversacion completa, solo el resumen destilado, para que no crezca
+// sin control y para que quepa comodo en el prompt de cada respuesta.
+
+const perfilIACache = new Map(); // userId -> { data, time } cache corto para no golpear Turso en cada respuesta de IA
+const TTL_PERFIL_IA = 5 * 60 * 1000; // 5 minutos
+
+async function getPerfilIA(userId) {
+    const cached = perfilIACache.get(userId);
+    if (cached && (Date.now() - cached.time < TTL_PERFIL_IA)) return cached.data;
+
+    if (!connected) return { resumen: '', interacciones: 0, updated_at: 0 };
+    try {
+        const rs = await dbClient.execute({ sql: 'SELECT resumen, interacciones, updated_at FROM perfiles_ia WHERE user_id = ?', args: [userId] });
+        const data = rs.rows[0] || { resumen: '', interacciones: 0, updated_at: 0 };
+        perfilIACache.set(userId, { data, time: Date.now() });
+        return data;
+    } catch (e) { return { resumen: '', interacciones: 0, updated_at: 0 }; }
+}
+
+async function incrementarInteraccionIA(userId) {
+    if (!connected) return 0;
+    try {
+        await dbClient.execute({
+            sql: 'INSERT INTO perfiles_ia (user_id, interacciones, updated_at) VALUES (?, 1, ?) ON CONFLICT(user_id) DO UPDATE SET interacciones = interacciones + 1',
+            args: [userId, Date.now()]
+        });
+        perfilIACache.delete(userId); // invalidar cache corto, el conteo cambio
+        const rs = await dbClient.execute({ sql: 'SELECT interacciones FROM perfiles_ia WHERE user_id = ?', args: [userId] });
+        return rs.rows[0]?.interacciones || 0;
+    } catch (e) { return 0; }
+}
+
+async function setPerfilIA(userId, resumen) {
+    if (!connected) return false;
+    try {
+        await dbClient.execute({
+            sql: 'INSERT INTO perfiles_ia (user_id, resumen, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET resumen = ?, updated_at = ?',
+            args: [userId, resumen, Date.now(), resumen, Date.now()]
+        });
+        perfilIACache.delete(userId);
+        return true;
+    } catch (e) { return false; }
+}
+
 async function obtenerTopMonedas(limit = 10) {
     if (!connected) await init();
     try { const rs = await dbClient.execute({ sql: `SELECT user_id, nombre, nombre_wa, monedas FROM usuarios ORDER BY monedas DESC LIMIT ?`, args: [limit] }); return rs.rows; } catch (e) { return []; }
@@ -922,6 +979,7 @@ module.exports = {
     estaGrupoActivo, activarGrupo, desactivarGrupo,
     tieneBienvenida, activarBienvenida, desactivarBienvenida, setMensajeBienvenida,
     setModoAI, getModoAI, updateLastAIReply,
+    getPerfilIA, incrementarInteraccionIA, setPerfilIA,
     obtenerUsuario, obtenerUsuariosBatch, actualizarUsuario, incrementarCampo, sumarMonedas, sumarXP, obtenerBalance, deducirMonedas,
     registrarVictoriaDuelo, registrarDerrotaDuelo, registrarComando, actualizarRacha,
     agregarItem, removerItem,
