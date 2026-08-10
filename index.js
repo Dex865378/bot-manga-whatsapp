@@ -888,6 +888,23 @@ async function startBot() {
         }
     });
 
+    // 🔒 Deduplicación de mensajes: WhatsApp/Baileys puede reenviar el mismo
+    // mensaje reciente en el evento messages.upsert tras una reconexion del
+    // socket (keepalive de WhatsApp, blips de red, etc.), incluso con el
+    // proceso Node corriendo 24/7 sin parar. Sin este filtro, el bot procesaba
+    // el mismo comando dos veces en paralelo, causando ejecuciones dobles y
+    // el tipico "mensaje + error de que no se pudo ejecutar" por choque de
+    // candados/sesiones entre ambas ejecuciones simultaneas.
+    const mensajesProcesadosIds = new Map(); // msg.key.id -> timestamp
+    const TTL_DEDUP_MS = 2 * 60 * 1000; // 2 minutos es de sobra para cualquier reenvio
+
+    setInterval(() => {
+        const ahora = Date.now();
+        for (const [id, ts] of mensajesProcesadosIds.entries()) {
+            if (ahora - ts > TTL_DEDUP_MS) mensajesProcesadosIds.delete(id);
+        }
+    }, 5 * 60 * 1000);
+
     // --- MENSAJES ---
     sock.ev.on('messages.upsert', async (upsert) => {
         // CRÍTICO: Solo procesar mensajes NUEVOS. 'append' es historial de WhatsApp y causa
@@ -925,6 +942,16 @@ async function startBot() {
 
             const chatId = msg.key.remoteJid;
             const fromMe = msg.key.fromMe;
+
+            // 🔒 Descartar si este mensaje (por su ID unico) ya fue procesado
+            // recientemente — evita doble ejecucion cuando WhatsApp reenvia el
+            // mismo mensaje tras una reconexion del socket.
+            const msgId = msg.key.id;
+            if (msgId) {
+                if (mensajesProcesadosIds.has(msgId)) continue;
+                mensajesProcesadosIds.set(msgId, Date.now());
+            }
+
             const tipo = getContentType(msg.message);
             let texto = '';
             if (tipo === 'conversation') texto = msg.message.conversation || '';
