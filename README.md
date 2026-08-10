@@ -4,15 +4,13 @@ emoji: 🐱
 colorFrom: purple
 colorTo: indigo
 sdk: docker
-app_port: 7860
 pinned: false
 ---
 
-# 😺 Diky Bot V2 - Hugging Face Edition
+# 😺 Diky Bot V2 
 
-Este bot de WhatsApp está optimizado para ejecutarse en Hugging Face Spaces con 16GB de RAM.
+Este bot de WhatsApp está optimizado para render
 
 ## 🚀 Despliegue
 - **SDK**: Docker
-- **Puerto**: 7860
 - **Base de Datos**: Turso Cloud
