@@ -1271,7 +1271,6 @@ async function procesarMensaje(sock, msg) {
                 '!subastar', '!subastas', '!ofertar',
                 '!waifus', '!mascotas', '!alimentar', '!casar', '!proponer', '!divorce', '!logros', '!tareas',
                 '!ver',
-                '!play', '!music', '!musica', '!ytmp3', '!play2', '!cancion', '!audio',
                 '!dinosaurios', '!aves', '!dragones', '!acuaticos', '!salvajes', '!miticos',
                 '!parque', '!principal', '!lucha', '!escudo',
                 '!aceptar_lucha', '!rechazar_lucha'
@@ -1339,7 +1338,7 @@ async function procesarMensaje(sock, msg) {
 
                 // Multimedia pesados: 8 seg para usuarios normales
                 if (!isAdmin) {
-                    const heavyCmds = ['!v', '!s', '!sticker', '!trace', '!top', '!waifu', '!kill', '!slap', '!punch', '!toimg', '!play', '!music', '!musica', '!ytmp3', '!play2', '!cancion', '!audio', '!mp3'];
+                    const heavyCmds = ['!v', '!s', '!sticker', '!trace', '!top', '!waifu', '!kill', '!slap', '!punch', '!toimg'];
                     if (heavyCmds.includes(start)) {
                         const wait = verificarCooldown(sender, start, 8000);
                         if (wait > 0) return sock.sendMessage(chatId, { text: `⏳ Espera ${wait}s para volver a usar *${start}*.` }, { quoted: msg });
@@ -1441,7 +1440,6 @@ async function procesarMensaje(sock, msg) {
                     case '!bj': case '!poker': emoji = '🃏'; break;
                     case '!minas': emoji = '💣'; break;
                     case '!quiz': case '!quizanime': case '!adivina': case '!bandera': emoji = '❓'; break;
-                    case '!play': case '!music': case '!musica': case '!ytmp3': case '!play2': emoji = '🎵'; break;
                     case '!robar': emoji = '🦹‍♂️'; break;
 
                     case '!pedir': emoji = '➕'; break;
@@ -1514,7 +1512,7 @@ async function procesarMensaje(sock, msg) {
                 // las reacciones sociales (usan FFmpeg para convertir GIF->MP4) y !waifus
                 // (descarga hasta 10 imagenes), que antes evadian este limite en Render.
                 const isHeavy = [
-                    '!v', '!s', '!sticker', '!trace', '!toimg', '!play', '!music', '!musica', '!ytmp3', '!play2', '!cancion', '!audio', '!mp3',
+                    '!v', '!s', '!sticker', '!trace', '!toimg',
                     '!pat', '!hug', '!kill', '!kiss', '!slap', '!punch', '!cry', '!dance', '!bite', '!highfive',
                     '!fumar', '!cafe', '!puchero', '!sonrojar', '!baka', '!dormir', '!comiendo', '!pensar',
                     '!patear', '!celebrar', '!aburrido', '!risa', '!smug', '!stare',
@@ -1624,19 +1622,6 @@ async function procesarMensaje(sock, msg) {
 //                     ¡ARRANCAR! 🚀
 // ============================================================
 console.log('😺 Iniciando Diky Bot V2...');
-
-// Log de versión de yt-dlp al arrancar (para diagnosticar sin necesitar Build Logs premium)
-try {
-    const { execFileSync } = require('child_process');
-    const ytdlpPathCheck = process.platform === 'win32'
-        ? path.join(__dirname, 'yt-dlp.exe')
-        : 'yt-dlp';
-    const ver = execFileSync(ytdlpPathCheck, ['--version'], { encoding: 'utf8', timeout: 5000 }).trim();
-    console.log(`🎵 [YT-DLP] Versión instalada: ${ver}`);
-} catch (e) {
-    console.warn('⚠️ [YT-DLP] No se pudo obtener la versión:', e.message);
-}
-
 startBot();
 
 // --- CIERRE LIMPIO (FLUSH DB) ---
