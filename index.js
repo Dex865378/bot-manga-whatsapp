@@ -31,6 +31,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const handler = require('./commandHandler');
 const { handleGameResponse } = require('./gameResponder');
 const { handleMangaSession } = require('./mangaResponder');
+const { handleNovelaSession } = require('./novelaResponder');
 const execFileAsync = promisify(execFile);
 
 // 🧰 Utils modularizados
@@ -391,6 +392,7 @@ const botState = {
     adminCache: new LRUCache(CONFIG.CACHE.ADMIN_CACHE.max, CONFIG.CACHE.ADMIN_CACHE.ttl),
     mangaMode: new Map(), // chatId → true/false para modo manga exclusivo
     mangaSessions: new Map(), // `${chatId}_${sender}` → { tempCode, titulo, genero, step, ts }
+    novelaSessions: new Map(), // `${chatId}_${sender}` → { titulo, generoEs, step, ts } - para !reconovela
 
     // 🧠 MEMORIA DE CONVERSACION PARA LA IA (solo RAM, se pierde en reinicios
     // a proposito — es contexto de corto plazo, no perfil de usuario).
@@ -1056,7 +1058,18 @@ async function startBot() {
                     }
                 }
             }
-            const participaEnJuego = tieneMangaSesionUpsert || (juegoActivo && (
+            let tieneNovelaSesionUpsert = false;
+            if (botState.novelaSessions) {
+                const TTL_NOVELA_UPSERT = 5 * 60 * 1000;
+                const nowUpsertN = Date.now();
+                for (const [k, s] of botState.novelaSessions.entries()) {
+                    if (k.startsWith(`${chatId}_`) && (nowUpsertN - s.ts <= TTL_NOVELA_UPSERT)) {
+                        tieneNovelaSesionUpsert = true;
+                        break;
+                    }
+                }
+            }
+            const participaEnJuego = tieneMangaSesionUpsert || tieneNovelaSesionUpsert || (juegoActivo && (
                 juegoActivo.tipo === 'ahorcado' ||
                 juegoActivo.responder === sender ||
                 juegoActivo.pareja === sender ||
@@ -1258,8 +1271,19 @@ async function procesarMensaje(sock, msg) {
                 }
             }
         }
+        let tieneNovelaSesion = false;
+        if (botState.novelaSessions) {
+            const TTL_NOVELA_SES = 5 * 60 * 1000;
+            const nowMsN = Date.now();
+            for (const [k, s] of botState.novelaSessions.entries()) {
+                if (k.startsWith(`${chatId}_`) && (nowMsN - s.ts <= TTL_NOVELA_SES)) {
+                    tieneNovelaSesion = true;
+                    break;
+                }
+            }
+        }
 
-        const participaEnJuego = tieneMangaSesion || (juegoActivo && (
+        const participaEnJuego = tieneMangaSesion || tieneNovelaSesion || (juegoActivo && (
             juegoActivo.responder === sender ||
             juegoActivo.pareja === sender ||
             juegoActivo.solicitante === sender ||
@@ -1309,6 +1333,15 @@ async function procesarMensaje(sock, msg) {
             };
             const wasMangaResponse = await handleMangaSession(sock, msg, context);
             if (wasMangaResponse) return;
+        }
+
+        if (tieneNovelaSesion) {
+            const context = {
+                chatId, sender, cmd, txt, msg, botState, db, isCommand, isGroup, isAdmin, isGlobalAdmin,
+                pushName, quotedMsgId, quotedParticipant, msgType
+            };
+            const wasNovelaResponse = await handleNovelaSession(sock, msg, context);
+            if (wasNovelaResponse) return;
         }
 
         if (isCommand) {

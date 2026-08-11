@@ -208,24 +208,20 @@ function buscarEpubGenerado(dirTrabajo) {
 }
 
 // ============================================================
-//                    COMANDO PRINCIPAL
+//                    COMANDO !NOVELA (busqueda directa)
 // ============================================================
-module.exports = {
-    name: '!reconovela',
-    isMultiple: true,
-    names: ['!reconovela', '!novela'],
-    description: 'Descarga capitulos de una novela ligera/web novel en EPUB',
+const novelaCommand = {
+    name: '!novela',
+    isMultiple: false,
 
     async execute(sock, chatId, msg, args, extras) {
-        const { start } = extras;
-
         if (args.length === 0) {
             return sock.sendMessage(chatId, {
-                text: `📖 *!reconovela <nombre> [cap_inicio] [cap_fin]*\n\n` +
+                text: `📖 *!novela <nombre> [cap_inicio] [cap_fin]*\n\n` +
                     `Ejemplos:\n` +
-                    `• *!reconovela Solo Leveling* (capitulos 1-15 por defecto)\n` +
-                    `• *!reconovela Solo Leveling 1 20*\n\n` +
-                    `⚠️ Maximo ${MAX_CAPITULOS_POR_PEDIDO} capitulos por pedido, se envia como archivo *.epub* (no PDF).`
+                    `• *!novela Solo Leveling* (capitulos 1-15 por defecto)\n` +
+                    `• *!novela Solo Leveling 1 20*\n\n` +
+                    `⚠️ Maximo ${MAX_CAPITULOS_POR_PEDIDO} capitulos por pedido, se envia como archivo *.epub* (no PDF).\n💡 ¿No sabes que leer? Prueba *!reconovela* para recibir una recomendacion.`
             }, { quoted: msg });
         }
 
@@ -249,14 +245,14 @@ module.exports = {
         const query = sanitizarQuery(queryOriginal);
 
         if (!query) {
-            return sock.sendMessage(chatId, { text: '❌ Especifica el nombre de la novela. Ejemplo: *!reconovela Solo Leveling*' }, { quoted: msg });
+            return sock.sendMessage(chatId, { text: '❌ Especifica el nombre de la novela. Ejemplo: *!novela Solo Leveling*' }, { quoted: msg });
         }
 
         // ── Guardrail: rango invalido o invertido ──
         if (capInicio < 1) capInicio = 1;
         if (capFin < capInicio) capFin = capInicio;
 
-        // ── Guardrail: maximo 30 capitulos por PDF/EPUB ──
+        // ── Guardrail: maximo 30 capitulos por EPUB ──
         if ((capFin - capInicio + 1) > MAX_CAPITULOS_POR_PEDIDO) {
             const antesFin = capFin;
             capFin = capInicio + MAX_CAPITULOS_POR_PEDIDO - 1;
@@ -281,10 +277,103 @@ module.exports = {
                 await procesarDescargaNovela(sock, chatId, msg, query, capInicio, capFin);
             });
         } catch (e) {
-            // Los errores especificos ya se notificaron dentro de procesarDescargaNovela;
-            // esto es solo una red de seguridad por si algo se escapa antes.
-            console.error('[RECONOVELA] Error no capturado en la cola:', e.message);
+            console.error('[NOVELA] Error no capturado en la cola:', e.message);
         }
+    }
+};
+
+// ============================================================
+//         COMANDO !RECONOVELA (descubrimiento, estilo !recomanga)
+// ============================================================
+const anilist = require('../services/anilist');
+
+let recoNovelaCounter = 0;
+
+const reconovelaCommand = {
+    name: '!reconovela',
+    isMultiple: false,
+
+    async execute(sock, chatId, msg, args, extras) {
+        const { sender, pushName, botState } = extras;
+        const genero = args.length > 0 ? args.join(' ').trim() : null;
+
+        const genListText = anilist.GENEROS_DISPLAY.map(g => `• *${g}*`).join('\n');
+
+        if (genero === 'generos' || genero === 'géneros' || genero === 'lista') {
+            return sock.sendMessage(chatId, {
+                text: `🏷️ *Géneros de Novela disponibles:*\n\n${genListText}\n\n💡 *Uso:* !reconovela <género>\n*Ejemplo:* !reconovela fantasy`
+            }, { quoted: msg });
+        }
+
+        await sock.sendMessage(chatId, { text: `🔍 Buscando novela${genero ? ` de *${genero}*` : ' popular'}...` }, { quoted: msg });
+
+        try {
+            const reco = await anilist.recomendarNovela(genero, []);
+
+            if (reco?.error === 'genero_no_encontrado') {
+                return sock.sendMessage(chatId, {
+                    text: `❌ El género "*${genero}*" no fue reconocido.\n\n🏷️ *Géneros válidos:*\n${genListText}\n\n💡 Ejemplo: *!reconovela fantasy*`
+                }, { quoted: msg });
+            }
+
+            if (!reco || !reco.novela) {
+                return sock.sendMessage(chatId, { text: `❌ No se encontraron novelas${genero ? ` de "${genero}"` : ''} en este momento.\n\n💡 Prueba *!reconovela generos* para ver la lista.` }, { quoted: msg });
+            }
+
+            const n = reco.novela;
+            recoNovelaCounter++;
+
+            const statusMap = { 'RELEASING': '📡 En publicación', 'FINISHED': '✅ Completada', 'HIATUS': '⏸️ En pausa', 'CANCELLED': '❌ Cancelada', 'NOT_YET_RELEASED': '🔜 Próximamente' };
+            const estadoTxt = statusMap[n.status] || n.status || '❓';
+            const tagsText = n.tags.length > 0 ? n.tags.join(', ') : 'Sin género';
+
+            // Registrar sesión interactiva para responder con números
+            if (botState.novelaSessions) {
+                const senderClean = (sender || '').split('@')[0].split(':')[0];
+                botState.novelaSessions.set(`${chatId}_${senderClean}`, {
+                    titulo: n.titulo,
+                    generoEs: genero,
+                    pushName,
+                    step: 'MAIN_MENU',
+                    ts: Date.now()
+                });
+            }
+
+            let caption = `📚 *Te recomiendo esta novela:*\n\n`;
+            caption += `📖 *${n.titulo}*\n`;
+            caption += `🏷️ *Géneros:* ${tagsText}\n`;
+            caption += `📅 *Año:* ${n.year || '?'}\n`;
+            caption += `📊 *Estado:* ${estadoTxt}\n\n`;
+            caption += `📝 *Sinopsis:*\n${n.descripcion || 'Sin descripción disponible.'}\n\n`;
+            caption += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+            caption += `🔢 *Responde con un número:*\n`;
+            caption += `1️⃣ Descargar (capítulos 1-${RANGO_DEFECTO_FIN})\n`;
+            caption += `2️⃣ Recomendar otra novela\n`;
+            caption += `❌ Escribe *0* o *cancelar* para salir\n\n`;
+            caption += `💡 ¿Quieres otro rango de capítulos? Usa *!novela ${n.titulo} <inicio> <fin>* directamente.`;
+
+            if (reco.coverUrl) {
+                return sock.sendMessage(chatId, { image: { url: reco.coverUrl }, caption }, { quoted: msg });
+            }
+            return sock.sendMessage(chatId, { text: caption }, { quoted: msg });
+        } catch (e) {
+            console.error('❌ [reconovela] Error:', e.message);
+            return sock.sendMessage(chatId, { text: '❌ Error al buscar recomendación. Intenta de nuevo.' }, { quoted: msg });
+        }
+    }
+};
+
+module.exports = {
+    isMultiple: true,
+    names: ['!novela', '!reconovela'],
+    commands: {
+        '!novela': novelaCommand,
+        '!reconovela': reconovelaCommand
+    },
+    async execute(sock, chatId, msg, args, extras) {
+        const { start } = extras;
+        if (start === '!reconovela') return reconovelaCommand.execute(sock, chatId, msg, args, extras);
+        return novelaCommand.execute(sock, chatId, msg, args, extras);
     }
 };
 
@@ -317,7 +406,7 @@ async function procesarDescargaNovela(sock, chatId, msg, query, capInicio, capFi
         const stats = fs.statSync(epubPath);
         if (stats.size > MAX_TAMANO_BYTES) {
             return sock.sendMessage(chatId, {
-                text: `⚠️ El EPUB generado pesa ${(stats.size / 1024 / 1024).toFixed(1)}MB, superando el limite de ${MAX_TAMANO_BYTES / 1024 / 1024}MB del servidor.\n💡 Pide un rango de capitulos mas chico, por ejemplo *!reconovela ${query} ${capInicio} ${Math.max(capInicio, Math.floor((capInicio + capFin) / 2))}*`
+                text: `⚠️ El EPUB generado pesa ${(stats.size / 1024 / 1024).toFixed(1)}MB, superando el limite de ${MAX_TAMANO_BYTES / 1024 / 1024}MB del servidor.\n💡 Pide un rango de capitulos mas chico, por ejemplo *!novela ${query} ${capInicio} ${Math.max(capInicio, Math.floor((capInicio + capFin) / 2))}*`
             }, { quoted: msg });
         }
         if (stats.size < 1024) {
@@ -343,7 +432,7 @@ async function procesarDescargaNovela(sock, chatId, msg, query, capInicio, capFi
                 text: `⏱️ La descarga de *${query}* tardo demasiado (mas de 2 minutos) y fue cancelada.\n💡 Prueba con menos capitulos o intenta de nuevo mas tarde.`
             }, { quoted: msg });
         } else {
-            console.error('[RECONOVELA] Error:', e.message);
+            console.error('[NOVELA] Error:', e.message);
             await sock.sendMessage(chatId, {
                 text: `❌ Ocurrio un error inesperado descargando *${query}*.\n💡 Verifica el nombre o intenta con otra novela.`
             }, { quoted: msg });
