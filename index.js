@@ -1626,11 +1626,19 @@ async function procesarMensaje(sock, msg) {
             const isMentionedByName = txt.toLowerCase().includes('diky');
 
             const isAIRelevant = isMentionedByTag || isReplyToBot || isMentionedByName;
-            const cachedGroupConfig = botState.groupCache.get(chatId);
-            if (!isAIRelevant && !cachedGroupConfig) return;
 
+            // 🔧 FIX: antes se cortaba aqui si no habia mencion Y el cache de
+            // config del grupo (botState.groupCache) estaba vacio - eso hacia
+            // que mensajes casuales NUNCA activaran la IA si ese cache
+            // especifico no se habia poblado a tiempo, aunque !ia on ya
+            // estuviera guardado en la base de datos. Ahora siempre se
+            // consulta la config real (getModoAI ya tiene su propio cache
+            // interno de 5 minutos, asi que no pega a Turso en cada mensaje).
+            const cachedGroupConfig = botState.groupCache.get(chatId);
             const groupConfig = cachedGroupConfig || await obtenerConfigGrupo(chatId);
             aiConfig = groupConfig.ai;
+
+            if (!isAIRelevant && !aiConfig.activado) return;
 
             if (aiConfig.activado) {
                 const ahora = Date.now();
