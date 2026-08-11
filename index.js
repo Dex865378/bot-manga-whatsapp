@@ -562,12 +562,29 @@ async function actualizarPerfilSiToca(userId, pushName) {
     }
 }
 
+// 🎭 PERSONALIDAD FIJA DE DIKY (no se adapta al usuario, lo contrarresta)
+// Idea: si el grupo es callado, Diky es el lado activo/curioso que rompe el
+// silencio - no un espejo pasivo de cada persona. Tono tipo Rick/Camarón/
+// Pocoyo: gracioso, curioso, un poco payaso, pero sin pasarse de la raya
+// (nada ofensivo, nada de burlarse feo de alguien). Mensajes cortos, hablados,
+// sin sonar a texto formal con comas perfectas - que se note que no es humano
+// tecleando con cuidado, sino alguien tirando la idea como sale.
+const DIKY_PERSONALIDAD = `Eres Diky, el bot de este grupo de WhatsApp. Tu personalidad es fija, no cambias segun quien te hable: eres curioso, gracioso, un poco payaso, con energia como Rick (sarcastico pero simpatico), Camaron (relajado, ocurrente) o Pocoyo (curioso, directo, sin filtro pero sin maldad). Si el grupo esta muy callado, tu eres el que mete ruido, hace preguntas random o suelta un comentario para que la gente reaccione - no te quedas pasivo solo porque ellos lo estan.
+
+Reglas de como hablas (importante, sigelas siempre):
+- Mensajes CORTOS. Nada de parrafos largos ni explicaciones de manual.
+- Evita comas y puntos en exceso, escribe como se habla, no como se redacta un ensayo.
+- Nunca seas ofensivo, cruel, ni te burles feo de alguien - el humor es ligero, no hiere.
+- No uses lenguaje formal ni de asistente corporativo, nada de "Estare encantado de ayudarte".
+- Puedes hacer preguntas random, opinar, molestar con carino, cambiar de tema si algo te da curiosidad.
+- No necesitas que te pregunten algo para tener personalidad, incluso un saludo simple lo respondes con onda, no en seco.`;
+
 // 🔄 Wrapper del servicio de IA (migrado a services/aiService.js)
 async function chatWithLiquidAI(texto, contexto = '') {
-    const prompt = contexto 
-        ? `Contexto: ${contexto}\n\nUsuario: ${texto}`
-        : texto;
-    
+    const prompt = contexto
+        ? `${DIKY_PERSONALIDAD}\n\nContexto adicional: ${contexto}\n\nMensaje del usuario: ${texto}`
+        : `${DIKY_PERSONALIDAD}\n\nMensaje del usuario: ${texto}`;
+
     const response = await aiService.chatWithAI(prompt, 'auto');
     
     // Limpiar tags de thinking si existen
@@ -1079,6 +1096,53 @@ async function startBot() {
     if (RENDER_URL) {
         setInterval(() => axios.get(RENDER_URL).catch(() => { }), 4 * 60 * 1000);
     }
+
+    // 🎭 ROMPE-HIELO: si un grupo con IA activa lleva rato en silencio, Diky
+    // suelta un mensaje por su cuenta en vez de esperar a que le hablen.
+    // Revisa cada 20 minutos; solo actua en grupos donde !ia esta activado Y
+    // que tengan algo de historial reciente en el buffer (para no hablar en
+    // el vacio total sin ningun contexto de que paso antes).
+    const SILENCIO_MIN_MS = 3 * 60 * 60 * 1000; // 3 horas de silencio disparan el rompe-hielo
+    const ultimoRompehielo = new Map(); // chatId -> timestamp del ultimo mensaje espontaneo
+
+    setInterval(async () => {
+        try {
+            for (const [chatId, buf] of botState.chatBuffers.entries()) {
+                if (!buf || buf.length === 0) continue;
+                if (!chatId.endsWith('@g.us')) continue;
+
+                const ultimoMensaje = buf[buf.length - 1];
+                const silencioDesde = Date.now() - ultimoMensaje.ts;
+                if (silencioDesde < SILENCIO_MIN_MS) continue;
+
+                // No molestar de madrugada: solo entre 8am y 11pm hora de Panama (UTC-5).
+                // Render corre en UTC por defecto, asi que se ajusta aqui manualmente en
+                // vez de depender de una variable TZ que el proyecto no tiene configurada.
+                const horaUTC = new Date().getUTCHours();
+                const horaPanama = (horaUTC - 5 + 24) % 24;
+                if (horaPanama < 8 || horaPanama >= 23) continue;
+
+                // No repetir el rompe-hielo mas de una vez por ventana de silencio
+                const ultimaVez = ultimoRompehielo.get(chatId) || 0;
+                if (Date.now() - ultimaVez < SILENCIO_MIN_MS) continue;
+
+                const aiConfig = await db.getModoAI(chatId).catch(() => null);
+                if (!aiConfig || !aiConfig.activado) continue;
+
+                const historial = obtenerContextoChat(chatId, 10);
+                const prompt = `El grupo lleva horas en silencio. Suelta un mensaje corto y espontaneo para romper el hielo - puede ser una pregunta random, un comentario sobre algo que se hablo antes, o simplemente algo curioso que se te ocurra. No saludes de forma generica, se natural, como si se te hubiera ocurrido algo de la nada.${historial ? `\n\nUltimo tema que se hablo:\n${historial}` : ''}`;
+
+                const mensaje = await chatWithLiquidAI(prompt, aiConfig.contexto || '');
+                if (mensaje && typeof mensaje === 'string') {
+                    await sock.sendMessage(chatId, { text: mensaje });
+                    registrarEnBufferChat(chatId, 'diky_bot', 'Diky', mensaje);
+                    ultimoRompehielo.set(chatId, Date.now());
+                }
+            }
+        } catch (e) {
+            console.error('[ROMPE-HIELO] Error:', e.message);
+        }
+    }, 20 * 60 * 1000); // revisa cada 20 minutos
 
     // --- MODO DIOS AUTOMÁTICO (Cada 5 horas recarga al Admin) ---
     setInterval(async () => {
