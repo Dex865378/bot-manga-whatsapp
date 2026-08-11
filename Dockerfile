@@ -5,11 +5,12 @@ FROM node:20-bullseye
 # que fueron eliminados: YouTube bloqueaba las descargas desde la IP de
 # datacenter de Render de forma persistente y ningun metodo probado lo
 # resolvio de forma estable. Se dejan curl y python3 porque otras partes
-# del bot pueden depender de ellos indirectamente; se quitan pip y unzip,
-# que solo se usaban para el plugin de PO Token ya eliminado.)
+# del bot pueden depender de ellos indirectamente; se agrega python3-pip
+# para instalar lightnovel-crawler, usado por !reconovela.)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     python3 \
+    python3-pip \
     curl \
     libwebp-dev \
     libcairo2-dev \
@@ -20,6 +21,15 @@ RUN apt-get update && apt-get install -y \
     imagemagick \
     graphicsmagick \
     && rm -rf /var/lib/apt/lists/*
+
+# 1.1 Instalar lightnovel-crawler (comando lncrawl) para !reconovela.
+# IMPORTANTE: no se instala Calibre. lncrawl genera EPUB, TXT y JSON de
+# forma nativa sin necesitarlo; formatos como PDF requieren Calibre, que
+# es una suite pesada (motor Qt, cientos de MB de RAM) inviable en este
+# plan gratuito de 512MB compartido con WhatsApp/Baileys. Por eso
+# !reconovela genera solo EPUB - ver comentario en commands/novel.js.
+RUN pip3 install --break-system-packages --no-cache-dir -U lightnovel-crawler \
+    && lncrawl -h > /dev/null 2>&1 || echo "lncrawl instalado (verificacion de -h omitida)"
 
 # 2. Configurar el directorio de trabajo
 WORKDIR /app

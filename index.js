@@ -1335,6 +1335,7 @@ async function procesarMensaje(sock, msg) {
                 '!subastar', '!subastas', '!ofertar',
                 '!waifus', '!mascotas', '!alimentar', '!casar', '!proponer', '!divorce', '!logros', '!tareas',
                 '!ver',
+                '!reconovela', '!novela',
                 '!dinosaurios', '!aves', '!dragones', '!acuaticos', '!salvajes', '!miticos',
                 '!parque', '!principal', '!lucha', '!escudo',
                 '!aceptar_lucha', '!rechazar_lucha'
