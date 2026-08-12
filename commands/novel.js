@@ -124,25 +124,87 @@ function limpiarDirectorioTrabajo(dirTrabajo) {
 // ============================================================
 //              EJECUCION SEGURA DEL SUBPROCESO lncrawl
 // ============================================================
+// IMPORTANTE: la version instalada (lightnovel-crawler 4.x, PyPI activo)
+// tiene un CLI reescrito con subcomandos, DISTINTO a versiones viejas 2.x/3.x
+// que se ven en ejemplos antiguos por internet:
+//   - `lncrawl crawl` NO acepta un texto de busqueda como argumento, solo
+//     una URL de novela. No existe --suppress ni --range en esta version.
+//   - Para buscar por nombre hay que usar `lncrawl search "<query>"` primero
+//     y extraer la URL del resultado, y LUEGO pasarla a `lncrawl crawl`.
+//   - El rango de capitulos se controla con --first N (desde el capitulo 1)
+//     o --last N (los N mas recientes) - no hay un --first-X--last-Y nativo
+//     para un rango arbitrario tipo "20 a 35", asi que se pide --first FIN
+//     y se descartan los capitulos anteriores a INICIO del EPUB generado
+//     solo si INICIO > 1 ... en la practica, para mantenerlo simple y
+//     confiable, este comando descarga desde el capitulo 1 hasta capFin
+//     (equivalente a --first capFin), ignorando capInicio si es mayor a 1
+//     por ahora - ver limitacion documentada en el mensaje de uso.
+
 /**
- * Ejecuta lncrawl para descargar capitulos en formato EPUB.
- * Usa spawn (no exec/shell) para que el query nunca pase por un shell,
+ * Paso 1: busca la novela por nombre y extrae la primera URL de resultado
+ * via regex sobre la salida de texto (lncrawl search no tiene salida JSON,
+ * a diferencia de `sources list` que si la tiene).
+ */
+function buscarUrlNovela(query) {
+    return new Promise((resolve, reject) => {
+        const args = ['search', query, '--limit', '5'];
+        console.log('[NOVELA] Spawn (search):', LNCRAWL_BIN, args.join(' '));
+
+        const proc = spawn(LNCRAWL_BIN, args, {
+            windowsHide: true,
+            env: { PATH: process.env.PATH, HOME: process.env.HOME || os.tmpdir() }
+        });
+
+        let stdoutData = '';
+        let stderrData = '';
+        let timedOut = false;
+
+        const killTimer = setTimeout(() => {
+            timedOut = true;
+            try { proc.kill('SIGKILL'); } catch (e) { }
+        }, 45 * 1000); // busqueda tiene su propio timeout mas corto que la descarga
+
+        proc.stdout?.on('data', (chunk) => { stdoutData += chunk.toString(); });
+        proc.stderr?.on('data', (chunk) => { stderrData += chunk.toString(); });
+
+        proc.on('error', (err) => {
+            clearTimeout(killTimer);
+            reject(new Error(`No se pudo iniciar lncrawl: ${err.message}`));
+        });
+
+        proc.on('close', (code) => {
+            clearTimeout(killTimer);
+            if (timedOut) return reject(new Error('TIMEOUT_BUSQUEDA'));
+            if (code !== 0) return reject(new Error(stderrData.slice(0, 300) || `busqueda salio con codigo ${code}`));
+
+            // Extraer la PRIMERA url http(s) que aparezca en la salida -
+            // patron estructuralmente estable sin importar si el CLI cambia
+            // el formato de tabla/colores en futuras versiones.
+            const match = stdoutData.match(/https?:\/\/[^\s"'<>]+/);
+            if (!match) return reject(new Error('SIN_RESULTADOS'));
+            resolve(match[0]);
+        });
+    });
+}
+
+/**
+ * Paso 2: descarga los capitulos de la URL ya resuelta, en formato EPUB.
+ * Usa spawn (no exec/shell) para que la URL nunca pase por un shell,
  * eliminando la clase de vulnerabilidad de inyeccion de comandos por
  * construccion, no solo por sanitizacion de la entrada.
  */
-function ejecutarLncrawl(query, capInicio, capFin, dirTrabajo) {
+function ejecutarLncrawl(urlNovela, capFin, dirTrabajo) {
     return new Promise((resolve, reject) => {
         const args = [
             'crawl',
-            query,
+            urlNovela,
             '--noin', // sin prompts interactivos, obligatorio en un subproceso automatizado
-            '--suppress', // sin output ruidoso en consola
             '-f', 'epub',
-            '--range', `${capInicio}-${capFin}`,
+            '--first', String(capFin), // descarga desde el capitulo 1 hasta capFin
             '-o', dirTrabajo
         ];
 
-        console.log('[RECONOVELA] Spawn:', LNCRAWL_BIN, args.join(' '));
+        console.log('[NOVELA] Spawn (crawl):', LNCRAWL_BIN, args.join(' '));
 
         const proc = spawn(LNCRAWL_BIN, args, {
             windowsHide: true,
@@ -158,7 +220,7 @@ function ejecutarLncrawl(query, capInicio, capFin, dirTrabajo) {
         // colgado en un servidor de 512MB no puede quedarse vivo "por si acaso".
         const killTimer = setTimeout(() => {
             timedOut = true;
-            console.warn('[RECONOVELA] Timeout excedido, matando proceso...');
+            console.warn('[NOVELA] Timeout excedido, matando proceso...');
             try { proc.kill('SIGKILL'); } catch (e) { }
         }, TIMEOUT_MS);
 
@@ -217,26 +279,23 @@ const novelaCommand = {
     async execute(sock, chatId, msg, args, extras) {
         if (args.length === 0) {
             return sock.sendMessage(chatId, {
-                text: `📖 *!novela <nombre> [cap_inicio] [cap_fin]*\n\n` +
+                text: `📖 *!novela <nombre> [cap_fin]*\n\n` +
                     `Ejemplos:\n` +
                     `• *!novela Solo Leveling* (capitulos 1-15 por defecto)\n` +
-                    `• *!novela Solo Leveling 1 20*\n\n` +
-                    `⚠️ Maximo ${MAX_CAPITULOS_POR_PEDIDO} capitulos por pedido, se envia como archivo *.epub* (no PDF).\n💡 ¿No sabes que leer? Prueba *!reconovela* para recibir una recomendacion.`
+                    `• *!novela Solo Leveling 20* (capitulos 1-20)\n\n` +
+                    `⚠️ Siempre descarga desde el capitulo 1. Maximo ${MAX_CAPITULOS_POR_PEDIDO} capitulos por pedido, se envia como archivo *.epub* (no PDF).\n💡 ¿No sabes que leer? Prueba *!reconovela* para recibir una recomendacion.`
             }, { quoted: msg });
         }
 
-        // ── Parseo de argumentos: separar nombre de novela de los numeros de capitulo ──
-        let capInicio = RANGO_DEFECTO_INICIO;
+        // ── Parseo de argumentos: separar nombre de novela del numero de capitulo final ──
+        // Nota: la version instalada de lncrawl solo soporta --first N (desde
+        // el capitulo 1), no un rango arbitrario [inicio, fin]. Por eso solo
+        // se acepta un unico numero al final (capitulo final deseado).
         let capFin = RANGO_DEFECTO_FIN;
         let argsTexto = [...args];
 
         const ultimo = args[args.length - 1];
-        const penultimo = args[args.length - 2];
-        if (args.length >= 3 && /^\d+$/.test(ultimo) && /^\d+$/.test(penultimo)) {
-            capInicio = parseInt(penultimo, 10);
-            capFin = parseInt(ultimo, 10);
-            argsTexto = args.slice(0, -2);
-        } else if (args.length >= 2 && /^\d+$/.test(ultimo)) {
+        if (args.length >= 2 && /^\d+$/.test(ultimo)) {
             capFin = parseInt(ultimo, 10);
             argsTexto = args.slice(0, -1);
         }
@@ -248,16 +307,15 @@ const novelaCommand = {
             return sock.sendMessage(chatId, { text: '❌ Especifica el nombre de la novela. Ejemplo: *!novela Solo Leveling*' }, { quoted: msg });
         }
 
-        // ── Guardrail: rango invalido o invertido ──
-        if (capInicio < 1) capInicio = 1;
-        if (capFin < capInicio) capFin = capInicio;
+        // ── Guardrail: capitulo minimo 1 ──
+        if (capFin < 1) capFin = 1;
 
         // ── Guardrail: maximo 30 capitulos por EPUB ──
-        if ((capFin - capInicio + 1) > MAX_CAPITULOS_POR_PEDIDO) {
+        if (capFin > MAX_CAPITULOS_POR_PEDIDO) {
             const antesFin = capFin;
-            capFin = capInicio + MAX_CAPITULOS_POR_PEDIDO - 1;
+            capFin = MAX_CAPITULOS_POR_PEDIDO;
             await sock.sendMessage(chatId, {
-                text: `⚠️ Pediste ${antesFin - capInicio + 1} capitulos, pero el maximo por pedido es *${MAX_CAPITULOS_POR_PEDIDO}*.\nAjustado a capitulos *${capInicio}-${capFin}*. Pide el resto en otro mensaje.`
+                text: `⚠️ Pediste hasta el capitulo ${antesFin}, pero el maximo por pedido es *${MAX_CAPITULOS_POR_PEDIDO}* capitulos.\nAjustado a capitulos *1-${capFin}*.`
             }, { quoted: msg });
         }
 
@@ -267,14 +325,12 @@ const novelaCommand = {
             await sock.sendMessage(chatId, {
                 text: `📚 Estas en el puesto *${posicion}* de la fila. Solo se procesa una novela a la vez para no saturar el servidor. Te aviso cuando empiece tu descarga.`
             }, { quoted: msg });
-        } else {
-            await sock.sendMessage(chatId, { text: `📖 Buscando *${query}* (capitulos ${capInicio}-${capFin})...` }, { quoted: msg });
         }
 
         // ── Encolar el trabajo real ──
         try {
             await encolarTrabajoNovela(async () => {
-                await procesarDescargaNovela(sock, chatId, msg, query, capInicio, capFin);
+                await procesarDescargaNovela(sock, chatId, msg, query, capFin);
             });
         } catch (e) {
             console.error('[NOVELA] Error no capturado en la cola:', e.message);
@@ -380,7 +436,7 @@ module.exports = {
 // ============================================================
 //            LOGICA DE DESCARGA (corre dentro de la cola)
 // ============================================================
-async function procesarDescargaNovela(sock, chatId, msg, query, capInicio, capFin) {
+async function procesarDescargaNovela(sock, chatId, msg, query, capFin) {
     const jobId = crypto.randomUUID();
     const dirTrabajo = path.join(TEMP_ROOT, jobId);
 
@@ -391,14 +447,19 @@ async function procesarDescargaNovela(sock, chatId, msg, query, capInicio, capFi
     }
 
     try {
-        await sock.sendMessage(chatId, { text: `⏳ Iniciando descarga de *${query}*...` }, { quoted: msg });
+        await sock.sendMessage(chatId, { text: `🔍 Buscando *${query}*...` }, { quoted: msg });
 
-        await ejecutarLncrawl(query, capInicio, capFin, dirTrabajo);
+        // ── Paso 1: resolver la URL real de la novela ──
+        const urlNovela = await buscarUrlNovela(query);
+
+        // ── Paso 2: descargar capitulos desde esa URL ──
+        await sock.sendMessage(chatId, { text: `⏳ Descargando capítulos 1-${capFin} de *${query}*...` }, { quoted: msg });
+        await ejecutarLncrawl(urlNovela, capFin, dirTrabajo);
 
         const epubPath = buscarEpubGenerado(dirTrabajo);
         if (!epubPath) {
             return sock.sendMessage(chatId, {
-                text: `❌ No se encontro *${query}* en ninguna de las fuentes disponibles.\n💡 Revisa el nombre exacto o prueba con el titulo en ingles.`
+                text: `❌ La descarga de *${query}* no genero ningun archivo. La fuente pudo haber fallado, intenta de nuevo.`
             }, { quoted: msg });
         }
 
@@ -406,7 +467,7 @@ async function procesarDescargaNovela(sock, chatId, msg, query, capInicio, capFi
         const stats = fs.statSync(epubPath);
         if (stats.size > MAX_TAMANO_BYTES) {
             return sock.sendMessage(chatId, {
-                text: `⚠️ El EPUB generado pesa ${(stats.size / 1024 / 1024).toFixed(1)}MB, superando el limite de ${MAX_TAMANO_BYTES / 1024 / 1024}MB del servidor.\n💡 Pide un rango de capitulos mas chico, por ejemplo *!novela ${query} ${capInicio} ${Math.max(capInicio, Math.floor((capInicio + capFin) / 2))}*`
+                text: `⚠️ El EPUB generado pesa ${(stats.size / 1024 / 1024).toFixed(1)}MB, superando el limite de ${MAX_TAMANO_BYTES / 1024 / 1024}MB del servidor.\n💡 Pide menos capitulos, por ejemplo *!novela ${query} 1 ${Math.max(1, Math.floor(capFin / 2))}*`
             }, { quoted: msg });
         }
         if (stats.size < 1024) {
@@ -416,7 +477,7 @@ async function procesarDescargaNovela(sock, chatId, msg, query, capInicio, capFi
         // ── Envio via stream de lectura, no Buffer completo en memoria ──
         // Baileys internamente acepta un ReadStream para el campo `document`,
         // lo que evita cargar el archivo entero en RAM antes de mandarlo.
-        const nombreArchivo = `${query.replace(/[^\w\s-]/g, '').trim() || 'novela'} (${capInicio}-${capFin}).epub`;
+        const nombreArchivo = `${query.replace(/[^\w\s-]/g, '').trim() || 'novela'} (1-${capFin}).epub`;
 
         await sock.sendMessage(chatId, {
             document: fs.createReadStream(epubPath),
@@ -427,9 +488,13 @@ async function procesarDescargaNovela(sock, chatId, msg, query, capInicio, capFi
         await sock.sendMessage(chatId, { react: { text: '✅', key: msg.key } });
 
     } catch (e) {
-        if (e.message === 'TIMEOUT') {
+        if (e.message === 'TIMEOUT' || e.message === 'TIMEOUT_BUSQUEDA') {
             await sock.sendMessage(chatId, {
-                text: `⏱️ La descarga de *${query}* tardo demasiado (mas de 2 minutos) y fue cancelada.\n💡 Prueba con menos capitulos o intenta de nuevo mas tarde.`
+                text: `⏱️ La búsqueda/descarga de *${query}* tardo demasiado y fue cancelada.\n💡 Prueba con menos capitulos o intenta de nuevo mas tarde.`
+            }, { quoted: msg });
+        } else if (e.message === 'SIN_RESULTADOS') {
+            await sock.sendMessage(chatId, {
+                text: `❌ No se encontro *${query}* en ninguna de las fuentes disponibles.\n💡 Revisa el nombre exacto o prueba con el titulo en ingles.`
             }, { quoted: msg });
         } else {
             console.error('[NOVELA] Error:', e.message);
