@@ -183,16 +183,33 @@ function buscarUrlNovela(query) {
         proc.on('close', (code) => {
             clearTimeout(killTimer);
             if (timedOut) return reject(new Error('TIMEOUT_BUSQUEDA'));
-            if (code !== 0) return reject(new Error(stderrData.slice(0, 300) || `busqueda salio con codigo ${code}`));
+            if (code !== 0) return reject(new Error(stderrData.slice(0, 800) || `busqueda salio con codigo ${code}`));
 
-            // Extraer URLs http(s) de la salida, DESCARTANDO las que son
-            // paginas de busqueda intermedias de un sitio (ej: wto.to/search?
-            // word=...) en vez de la pagina real de una novela especifica -
-            // esas confundian al bot haciendole creer que tenia un resultado
-            // valido cuando en realidad era solo el link de "buscar esto en
-            // este sitio", que lncrawl crawl no sabe procesar.
-            const candidatos = stdoutData.match(/https?:\/\/[^\s"'<>]+/g) || [];
-            const urlValida = candidatos.find(u => !/[?&](word|q|query|search)=/i.test(u) && !/\/search\/?(\?|$)/i.test(u));
+            // Extraer URLs http(s) de la salida. El regex excluye caracteres
+            // de puntuacion de cierre comunes al final (: ; , .) que a veces
+            // quedan pegados a la URL por el formato de tabla/lista de la
+            // salida de lncrawl, y que rompian el crawl si se pasaban tal cual.
+            const candidatos = (stdoutData.match(/https?:\/\/[^\s"'<>]+/g) || [])
+                .map(u => u.replace(/[:;,.]+$/, ''));
+
+            // DESCARTAR paginas de busqueda intermedias de un sitio (el link
+            // de "buscar esto en este sitio", no la pagina real de la novela).
+            // Cubre los patrones de query-string de busqueda mas comunes en
+            // sitios de novelas/manga: WordPress (?s=), y variantes genericas
+            // (word=, q=, query=, search=), ademas de rutas /search o /?s=.
+            const esUrlDeBusqueda = (u) => {
+                try {
+                    const parsed = new URL(u);
+                    const params = parsed.searchParams;
+                    if (params.has('s') || params.has('word') || params.has('q') || params.has('query') || params.has('search')) return true;
+                    if (/\/search\/?$/i.test(parsed.pathname)) return true;
+                    return false;
+                } catch (e) {
+                    return true; // URL malformada, mejor descartarla
+                }
+            };
+
+            const urlValida = candidatos.find(u => !esUrlDeBusqueda(u));
             if (!urlValida) {
                 // Log de diagnostico temporal: imprime la salida cruda de
                 // lncrawl search cuando el filtro de URL no encuentra nada
@@ -263,7 +280,7 @@ function ejecutarBloqueLncrawl(urlNovela, hastaCapitulo, dirTrabajo, timeoutBloq
                 return reject(new Error('TIMEOUT'));
             }
             if (code !== 0) {
-                return reject(new Error(stderrData.slice(0, 300) || `lncrawl salio con codigo ${code}`));
+                return reject(new Error(stderrData.slice(0, 800) || `lncrawl salio con codigo ${code}`));
             }
             resolve();
         });
