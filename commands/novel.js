@@ -185,12 +185,16 @@ function buscarUrlNovela(query) {
             if (timedOut) return reject(new Error('TIMEOUT_BUSQUEDA'));
             if (code !== 0) return reject(new Error(stderrData.slice(0, 300) || `busqueda salio con codigo ${code}`));
 
-            // Extraer la PRIMERA url http(s) que aparezca en la salida -
-            // patron estructuralmente estable sin importar si el CLI cambia
-            // el formato de tabla/colores en futuras versiones.
-            const match = stdoutData.match(/https?:\/\/[^\s"'<>]+/);
-            if (!match) return reject(new Error('SIN_RESULTADOS'));
-            resolve(match[0]);
+            // Extraer URLs http(s) de la salida, DESCARTANDO las que son
+            // paginas de busqueda intermedias de un sitio (ej: wto.to/search?
+            // word=...) en vez de la pagina real de una novela especifica -
+            // esas confundian al bot haciendole creer que tenia un resultado
+            // valido cuando en realidad era solo el link de "buscar esto en
+            // este sitio", que lncrawl crawl no sabe procesar.
+            const candidatos = stdoutData.match(/https?:\/\/[^\s"'<>]+/g) || [];
+            const urlValida = candidatos.find(u => !/[?&](word|q|query|search)=/i.test(u) && !/\/search\/?(\?|$)/i.test(u));
+            if (!urlValida) return reject(new Error('SIN_RESULTADOS'));
+            resolve(urlValida);
         });
     });
 }
@@ -203,22 +207,29 @@ function buscarUrlNovela(query) {
  */
 function ejecutarBloqueLncrawl(urlNovela, hastaCapitulo, dirTrabajo, timeoutBloqueMs) {
     return new Promise((resolve, reject) => {
+        // IMPORTANTE: `crawl` NO tiene flag de directorio de salida (-o no
+        // existe en esta version). lncrawl 4.x siempre guarda en
+        // "$HOME/.lncrawl/novels", confirmado por el propio equipo del
+        // proyecto. Por eso se fija HOME=dirTrabajo para este subproceso:
+        // cada job de descarga queda aislado en su propia carpeta temporal
+        // sin pisarse con otros jobs concurrentes, sin necesitar un flag
+        // que simplemente no existe.
         const args = [
             'crawl',
             urlNovela,
             '--noin', // sin prompts interactivos, obligatorio en un subproceso automatizado
             '-f', 'epub',
-            '--first', String(hastaCapitulo), // acumulativo: siempre desde el capitulo 1
-            '-o', dirTrabajo
+            '--first', String(hastaCapitulo) // acumulativo: siempre desde el capitulo 1
         ];
 
         console.log('[NOVELA] Spawn (crawl bloque hasta cap', hastaCapitulo, '):', LNCRAWL_BIN, args.join(' '));
 
         const proc = spawn(LNCRAWL_BIN, args, {
             windowsHide: true,
-            // Aislar el subproceso de variables de entorno sensibles del bot
-            // (tokens de Turso, Gemini, etc.) que no necesita para nada.
-            env: { PATH: process.env.PATH, HOME: process.env.HOME || os.tmpdir() }
+            // HOME apunta al directorio de trabajo del job: asi lncrawl
+            // escribe en "<dirTrabajo>/.lncrawl/novels" en vez de un HOME
+            // global compartido entre jobs concurrentes.
+            env: { PATH: process.env.PATH, HOME: dirTrabajo }
         });
 
         let stderrData = '';
