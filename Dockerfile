@@ -38,8 +38,13 @@ RUN apt-get update && apt-get install -y \
 # binario, y se verifica con `which` (sin ||, para que el build FALLE
 # ruidosamente si lncrawl no quedo accesible, en vez de fallar en
 # silencio y descubrirlo recien en produccion).
+# FIX 2: --break-system-packages no es reconocido por la version de pip3
+# que trae node:20-bullseye (ese flag se agrego en versiones de pip mas
+# nuevas que Debian Bullseye no incluye). Como el contenedor corre como
+# root sin restriccion "externally-managed-environment", no hace falta
+# ese flag aqui - se quita.
 ENV PATH="/usr/local/bin:/root/.local/bin:${PATH}"
-RUN pip3 install --break-system-packages --no-cache-dir -U lightnovel-crawler \
+RUN pip3 install --no-cache-dir -U lightnovel-crawler \
     && which lncrawl \
     && lncrawl --help > /dev/null 2>&1 \
     && echo "lncrawl instalado correctamente en: $(which lncrawl)"
