@@ -568,12 +568,15 @@ async function procesarDescargaNovela(sock, chatId, msg, query, capFin) {
         }
 
         // ── Envio via stream de lectura, no Buffer completo en memoria ──
-        // Baileys internamente acepta un ReadStream para el campo `document`,
-        // lo que evita cargar el archivo entero en RAM antes de mandarlo.
+        // La sintaxis correcta de Baileys para pasar un stream es
+        // { document: { stream: miStream } }, NO { document: miStream }
+        // directo - pasarlo directo causaba un TypeError interno en Baileys
+        // (Cannot read properties of undefined, reading 'toString') porque
+        // no reconocia el ReadStream como forma valida de WAMediaUpload.
         const nombreArchivo = `${query.replace(/[^\w\s-]/g, '').trim() || 'novela'} (1-${capFin}).epub`;
 
         await sock.sendMessage(chatId, {
-            document: fs.createReadStream(epubPath),
+            document: { stream: fs.createReadStream(epubPath) },
             mimetype: 'application/epub+zip',
             fileName: nombreArchivo
         }, { quoted: msg });
