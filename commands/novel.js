@@ -36,9 +36,11 @@ const { spawn } = require('child_process');
 //                    CONFIGURACION / GUARDRAILS
 // ============================================================
 const RANGO_DEFECTO_INICIO = 1;
-const RANGO_DEFECTO_FIN = 15;
+const RANGO_DEFECTO_FIN = 10;
 const MAX_CAPITULOS_POR_PEDIDO = 30;
-const TIMEOUT_MS = 120 * 1000; // 2 minutos, SIGKILL si se excede
+const TIMEOUT_MS = 240 * 1000; // 4 minutos, SIGKILL si se excede. lncrawl visita
+// cada capitulo como pagina web individual, asi que 15+ capitulos en un sitio
+// lento puede tardar mas de los 2 minutos originales sin estar realmente colgado.
 const MAX_TAMANO_BYTES = 30 * 1024 * 1024; // 30MB
 const LNCRAWL_BIN = process.platform === 'win32' ? 'lncrawl.exe' : 'lncrawl';
 
@@ -188,23 +190,23 @@ function buscarUrlNovela(query) {
 }
 
 /**
- * Paso 2: descarga los capitulos de la URL ya resuelta, en formato EPUB.
- * Usa spawn (no exec/shell) para que la URL nunca pase por un shell,
- * eliminando la clase de vulnerabilidad de inyeccion de comandos por
- * construccion, no solo por sanitizacion de la entrada.
+ * Ejecuta UN bloque de descarga (hasta el capitulo `hastaCapitulo`) sobre
+ * una URL ya resuelta, en formato EPUB. Usa spawn (no exec/shell) para que
+ * la URL nunca pase por un shell, eliminando la clase de vulnerabilidad de
+ * inyeccion de comandos por construccion, no solo por sanitizacion.
  */
-function ejecutarLncrawl(urlNovela, capFin, dirTrabajo) {
+function ejecutarBloqueLncrawl(urlNovela, hastaCapitulo, dirTrabajo, timeoutBloqueMs) {
     return new Promise((resolve, reject) => {
         const args = [
             'crawl',
             urlNovela,
             '--noin', // sin prompts interactivos, obligatorio en un subproceso automatizado
             '-f', 'epub',
-            '--first', String(capFin), // descarga desde el capitulo 1 hasta capFin
+            '--first', String(hastaCapitulo), // acumulativo: siempre desde el capitulo 1
             '-o', dirTrabajo
         ];
 
-        console.log('[NOVELA] Spawn (crawl):', LNCRAWL_BIN, args.join(' '));
+        console.log('[NOVELA] Spawn (crawl bloque hasta cap', hastaCapitulo, '):', LNCRAWL_BIN, args.join(' '));
 
         const proc = spawn(LNCRAWL_BIN, args, {
             windowsHide: true,
@@ -216,13 +218,11 @@ function ejecutarLncrawl(urlNovela, capFin, dirTrabajo) {
         let stderrData = '';
         let timedOut = false;
 
-        // Timeout estricto: SIGKILL a los 120s, sin excepciones. Un proceso
-        // colgado en un servidor de 512MB no puede quedarse vivo "por si acaso".
         const killTimer = setTimeout(() => {
             timedOut = true;
-            console.warn('[NOVELA] Timeout excedido, matando proceso...');
+            console.warn('[NOVELA] Timeout de bloque excedido, matando proceso...');
             try { proc.kill('SIGKILL'); } catch (e) { }
-        }, TIMEOUT_MS);
+        }, timeoutBloqueMs);
 
         proc.stderr?.on('data', (chunk) => {
             stderrData += chunk.toString();
@@ -244,6 +244,29 @@ function ejecutarLncrawl(urlNovela, capFin, dirTrabajo) {
             resolve();
         });
     });
+}
+
+/**
+ * Orquesta la descarga en BLOQUES DE 5 capitulos, en vez de pedir todo de
+ * una sola pasada. lncrawl guarda internamente que capitulos ya bajo para
+ * esa novela, asi que cada pasada con --first creciente (5, 10, 15...)
+ * SOLO descarga los capitulos nuevos del bloque, reusando lo anterior -
+ * confirmado por el propio proyecto: "--resume" descarga unicamente lo
+ * pendiente. Esto reduce drasticamente el riesgo de timeout: en vez de un
+ * unico proceso de 10-15+ capitulos que puede tardar minutos sin dar
+ * ninguna senal de vida, se hacen 2-3 pasadas cortas, cada una con su
+ * propio timeout y notificando progreso real al usuario entre bloques.
+ */
+const TAMANO_BLOQUE = 5;
+const TIMEOUT_POR_BLOQUE_MS = 90 * 1000; // 90s por bloque de 5 capitulos
+
+async function ejecutarLncrawlPorBloques(urlNovela, capFin, dirTrabajo, onProgreso) {
+    let capituloActual = 0;
+    while (capituloActual < capFin) {
+        capituloActual = Math.min(capituloActual + TAMANO_BLOQUE, capFin);
+        if (onProgreso) await onProgreso(capituloActual, capFin);
+        await ejecutarBloqueLncrawl(urlNovela, capituloActual, dirTrabajo, TIMEOUT_POR_BLOQUE_MS);
+    }
 }
 
 /**
@@ -345,12 +368,31 @@ const anilist = require('../services/anilist');
 
 let recoNovelaCounter = 0;
 
+// Deteccion simple de texto en ingles, igual que la usada en commands/media.js
+// para !recomanga - se duplica aqui (en vez de importar de media.js) para
+// mantener commands/novel.js autonomo, sin acoplarlo a la estructura interna
+// de otro archivo de comandos.
+function esTextoIngles(text) {
+    if (!text || text.length < 10) return false;
+    const lower = ' ' + text.toLowerCase() + ' ';
+    const enIndicators = [
+        ' the ', ' and ', ' of ', ' to ', ' in ', ' is ', ' was ', ' with ', ' for ',
+        ' that ', ' this ', ' from ', ' has ', ' have ', ' who ', ' which ', ' his ',
+        ' her ', ' their ', ' but ', ' not ', ' will ', ' can ', ' been ', ' were ',
+        ' when ', ' after ', ' before ', ' story ', ' however ', ' becomes ', ' one day '
+    ];
+    for (const w of enIndicators) {
+        if (lower.includes(w)) return true;
+    }
+    return false;
+}
+
 const reconovelaCommand = {
     name: '!reconovela',
     isMultiple: false,
 
     async execute(sock, chatId, msg, args, extras) {
-        const { sender, pushName, botState } = extras;
+        const { sender, pushName, botState, traducirConCache } = extras;
         const genero = args.length > 0 ? args.join(' ').trim() : null;
 
         const genListText = anilist.GENEROS_DISPLAY.map(g => `• *${g}*`).join('\n');
@@ -383,6 +425,15 @@ const reconovelaCommand = {
             const estadoTxt = statusMap[n.status] || n.status || '❓';
             const tagsText = n.tags.length > 0 ? n.tags.join(', ') : 'Sin género';
 
+            // Traducir sinopsis al español si viene en ingles (AniList casi
+            // siempre la devuelve en ingles) - mismo mecanismo que !recomanga.
+            let descText = n.descripcion || 'Sin descripción disponible.';
+            if (n.descripcion && esTextoIngles(n.descripcion) && typeof traducirConCache === 'function') {
+                try {
+                    descText = await traducirConCache(n.descripcion, `reconovela_${n.id}`);
+                } catch (_) { /* si falla la traduccion, usar el original */ }
+            }
+
             // Registrar sesión interactiva para responder con números
             if (botState.novelaSessions) {
                 const senderClean = (sender || '').split('@')[0].split(':')[0];
@@ -400,13 +451,13 @@ const reconovelaCommand = {
             caption += `🏷️ *Géneros:* ${tagsText}\n`;
             caption += `📅 *Año:* ${n.year || '?'}\n`;
             caption += `📊 *Estado:* ${estadoTxt}\n\n`;
-            caption += `📝 *Sinopsis:*\n${n.descripcion || 'Sin descripción disponible.'}\n\n`;
+            caption += `📝 *Sinopsis:*\n${descText}\n\n`;
             caption += `━━━━━━━━━━━━━━━━━━━━━━\n`;
             caption += `🔢 *Responde con un número:*\n`;
             caption += `1️⃣ Descargar (capítulos 1-${RANGO_DEFECTO_FIN})\n`;
             caption += `2️⃣ Recomendar otra novela\n`;
             caption += `❌ Escribe *0* o *cancelar* para salir\n\n`;
-            caption += `💡 ¿Quieres otro rango de capítulos? Usa *!novela ${n.titulo} <inicio> <fin>* directamente.`;
+            caption += `💡 ¿Quieres más o menos capítulos? Usa *!novela ${n.titulo} <número>* directamente.`;
 
             if (reco.coverUrl) {
                 return sock.sendMessage(chatId, { image: { url: reco.coverUrl }, caption }, { quoted: msg });
@@ -452,9 +503,10 @@ async function procesarDescargaNovela(sock, chatId, msg, query, capFin) {
         // ── Paso 1: resolver la URL real de la novela ──
         const urlNovela = await buscarUrlNovela(query);
 
-        // ── Paso 2: descargar capitulos desde esa URL ──
-        await sock.sendMessage(chatId, { text: `⏳ Descargando capítulos 1-${capFin} de *${query}*...` }, { quoted: msg });
-        await ejecutarLncrawl(urlNovela, capFin, dirTrabajo);
+        // ── Paso 2: descargar en bloques de 5 capitulos, notificando progreso ──
+        await ejecutarLncrawlPorBloques(urlNovela, capFin, dirTrabajo, async (hasta, total) => {
+            await sock.sendMessage(chatId, { text: `⏳ Descargando capítulos 1-${hasta} de ${total} de *${query}*...` }, { quoted: msg });
+        });
 
         const epubPath = buscarEpubGenerado(dirTrabajo);
         if (!epubPath) {
