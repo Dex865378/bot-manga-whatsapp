@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     curl \
+    ca-certificates \
     libwebp-dev \
     libcairo2-dev \
     libjpeg-dev \
@@ -20,6 +21,7 @@ RUN apt-get update && apt-get install -y \
     librsvg2-dev \
     imagemagick \
     graphicsmagick \
+    && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # 1.1 Instalar lightnovel-crawler (comando lncrawl) para !reconovela.
@@ -44,7 +46,19 @@ RUN apt-get update && apt-get install -y \
 # root sin restriccion "externally-managed-environment", no hace falta
 # ese flag aqui - se quita.
 ENV PATH="/usr/local/bin:/root/.local/bin:${PATH}"
-RUN pip3 install --no-cache-dir -U lightnovel-crawler \
+# Variables explicitas de bundle de certificados: algunas librerias Python
+# (requests, httpx, etc.) no siempre confian en el almacen del sistema por
+# defecto y necesitan que se les apunte directamente. Esto solucionaba
+# errores CertificateVerifyError vistos en produccion al hacer scraping.
+ENV SSL_CERT_FILE="/etc/ssl/certs/ca-certificates.crt"
+ENV REQUESTS_CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
+# --force-reinstall + --no-deps primero desinstala/limpia cualquier rastro
+# de instalaciones previas corruptas (se vio en produccion un ImportError
+# circular de "TextCleaner" en lncrawl.core.cleaner, tipico de un paquete
+# parcialmente instalado o con archivos mezclados de distintas versiones
+# tras varios redeploys reinstalando encima de si mismo).
+RUN pip3 uninstall -y lightnovel-crawler 2>/dev/null; \
+    pip3 install --no-cache-dir --force-reinstall -U certifi lightnovel-crawler \
     && which lncrawl \
     && lncrawl --help > /dev/null 2>&1 \
     && echo "lncrawl instalado correctamente en: $(which lncrawl)"
