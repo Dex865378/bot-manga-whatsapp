@@ -193,7 +193,14 @@ function buscarUrlNovela(query) {
             // este sitio", que lncrawl crawl no sabe procesar.
             const candidatos = stdoutData.match(/https?:\/\/[^\s"'<>]+/g) || [];
             const urlValida = candidatos.find(u => !/[?&](word|q|query|search)=/i.test(u) && !/\/search\/?(\?|$)/i.test(u));
-            if (!urlValida) return reject(new Error('SIN_RESULTADOS'));
+            if (!urlValida) {
+                // Log de diagnostico temporal: imprime la salida cruda de
+                // lncrawl search cuando el filtro de URL no encuentra nada
+                // valido, para poder ver el formato real sin adivinar mas.
+                console.warn('[NOVELA][DEBUG] Sin URL valida. Candidatos encontrados:', candidatos.length, JSON.stringify(candidatos.slice(0, 10)));
+                console.warn('[NOVELA][DEBUG] stdout crudo (primeros 1500 chars):', stdoutData.slice(0, 1500));
+                return reject(new Error('SIN_RESULTADOS'));
+            }
             resolve(urlValida);
         });
     });
