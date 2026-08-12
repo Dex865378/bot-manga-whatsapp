@@ -149,7 +149,10 @@ function limpiarDirectorioTrabajo(dirTrabajo) {
  */
 function buscarUrlNovela(query) {
     return new Promise((resolve, reject) => {
-        const args = ['search', query, '--limit', '5'];
+        // --concurrency mas alto para revisar mas fuentes en paralelo (por
+        // defecto lncrawl usa un valor conservador que puede volver la
+        // busqueda mas lenta de lo necesario en un servidor con red normal).
+        const args = ['search', query, '--limit', '5', '--concurrency', '20'];
         console.log('[NOVELA] Spawn (search):', LNCRAWL_BIN, args.join(' '));
 
         const proc = spawn(LNCRAWL_BIN, args, {
@@ -161,10 +164,13 @@ function buscarUrlNovela(query) {
         let stderrData = '';
         let timedOut = false;
 
+        // Subido de 45s a 90s: con 361 fuentes disponibles, algunas
+        // responden lento y el timeout corto cortaba la busqueda antes de
+        // que terminara, aunque no estuviera realmente colgada.
         const killTimer = setTimeout(() => {
             timedOut = true;
             try { proc.kill('SIGKILL'); } catch (e) { }
-        }, 45 * 1000); // busqueda tiene su propio timeout mas corto que la descarga
+        }, 90 * 1000);
 
         proc.stdout?.on('data', (chunk) => { stdoutData += chunk.toString(); });
         proc.stderr?.on('data', (chunk) => { stderrData += chunk.toString(); });
