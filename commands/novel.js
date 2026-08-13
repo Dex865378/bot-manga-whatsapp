@@ -36,7 +36,7 @@ const { spawn } = require('child_process');
 //                    CONFIGURACION / GUARDRAILS
 // ============================================================
 const RANGO_DEFECTO_INICIO = 1;
-const RANGO_DEFECTO_FIN = 10;
+const RANGO_DEFECTO_FIN = 5; // 1 solo bloque por defecto: respuesta mas rapida
 const MAX_CAPITULOS_POR_PEDIDO = 30;
 const TIMEOUT_MS = 240 * 1000; // 4 minutos, SIGKILL si se excede. lncrawl visita
 // cada capitulo como pagina web individual, asi que 15+ capitulos en un sitio
@@ -571,6 +571,52 @@ module.exports = {
 // ============================================================
 //            LOGICA DE DESCARGA (corre dentro de la cola)
 // ============================================================
+
+/**
+ * Valida el tamaño del EPUB y lo manda por WhatsApp via stream. Se usa
+ * tanto para el envio de adelanto (primer bloque) como para el envio
+ * final (EPUB acumulativo completo), evitando duplicar la logica de
+ * validacion/envio en dos lugares.
+ * @param {boolean} silencioso - si true, no notifica errores de tamaño al
+ *   usuario (usado en el envio de adelanto: si falla, simplemente no se
+ *   manda el adelanto y se sigue esperando el envio final normal).
+ * @returns {boolean} true si se envio correctamente
+ */
+async function intentarEnviarEpub(sock, chatId, msg, epubPath, query, capInicio, capFin, silencioso) {
+    const stats = fs.statSync(epubPath);
+
+    if (stats.size > MAX_TAMANO_BYTES) {
+        if (!silencioso) {
+            await sock.sendMessage(chatId, {
+                text: `⚠️ El EPUB generado pesa ${(stats.size / 1024 / 1024).toFixed(1)}MB, superando el limite de ${MAX_TAMANO_BYTES / 1024 / 1024}MB del servidor.\n💡 Pide menos capitulos, por ejemplo *!novela ${query} ${Math.max(1, Math.floor(capFin / 2))}*`
+            }, { quoted: msg });
+        }
+        return false;
+    }
+    if (stats.size < 1024) {
+        if (!silencioso) {
+            await sock.sendMessage(chatId, { text: `❌ La descarga genero un archivo vacio o corrupto para *${query}*. Puede que la fuente haya fallado, intenta de nuevo.` }, { quoted: msg });
+        }
+        return false;
+    }
+
+    // ── Envio via stream de lectura, no Buffer completo en memoria ──
+    // La sintaxis correcta de Baileys para pasar un stream es
+    // { document: { stream: miStream } }, NO { document: miStream }
+    // directo - pasarlo directo causaba un TypeError interno en Baileys
+    // (Cannot read properties of undefined, reading 'toString') porque
+    // no reconocia el ReadStream como forma valida de WAMediaUpload.
+    const nombreArchivo = `${query.replace(/[^\w\s-]/g, '').trim() || 'novela'} (${capInicio}-${capFin}).epub`;
+
+    await sock.sendMessage(chatId, {
+        document: { stream: fs.createReadStream(epubPath) },
+        mimetype: 'application/epub+zip',
+        fileName: nombreArchivo
+    }, { quoted: msg });
+
+    return true;
+}
+
 async function procesarDescargaNovela(sock, chatId, msg, query, capFin) {
     const jobId = crypto.randomUUID();
     const dirTrabajo = path.join(TEMP_ROOT, jobId);
@@ -587,61 +633,66 @@ async function procesarDescargaNovela(sock, chatId, msg, query, capFin) {
         // ── Paso 1: resolver la URL real de la novela ──
         const urlNovela = await buscarUrlNovela(query);
 
-        // ── Paso 2: descargar en bloques de 5 (sin mensajes de progreso, solo
-        // aviso inicial + resultado final, igual que !recomanga). El unico
-        // uso del callback ahora es detectar idioma tras el PRIMER bloque
-        // (no en cada uno) y avisar UNA sola vez si el contenido esta en
-        // ingles, para que el usuario lo sepa antes de esperar el resto. ──
+        // ── Paso 2: descargar en bloques de 5. Si se piden MAS de un bloque,
+        // el primero se manda de inmediato como adelanto en cuanto esta
+        // listo (en vez de esperar en silencio hasta tener TODO), y el
+        // resto llega en un segundo EPUB acumulativo al terminar. Esto le
+        // da al usuario una respuesta rapida sin cambiar el ritmo real de
+        // descarga de lncrawl (que es deliberadamente conservador para no
+        // hacer que las fuentes bloqueen al crawler - ver nota en
+        // ejecutarLncrawlPorBloques).
         let avisoIdiomaEnviado = false;
+        let primerBloqueEnviado = false;
+        const esperaMultiplesBloques = capFin > TAMANO_BLOQUE;
+
         await ejecutarLncrawlPorBloques(urlNovela, capFin, dirTrabajo, async (hasta, total) => {
-            if (avisoIdiomaEnviado) return; // solo se chequea una vez, tras el primer bloque
-            avisoIdiomaEnviado = true;
-            try {
+            // Deteccion de idioma: solo una vez, tras el primer bloque
+            if (!avisoIdiomaEnviado) {
+                avisoIdiomaEnviado = true;
+                try {
+                    const epubParcial = buscarEpubGenerado(dirTrabajo);
+                    if (epubParcial) {
+                        const muestra = await extraerMuestraTextoEpub(epubParcial);
+                        if (muestra && esTextoIngles(muestra)) {
+                            await sock.sendMessage(chatId, { text: `ℹ️ *${query}* está disponible en inglés (no hay traducción del contenido completo, solo de la sinopsis). Continúo con la descarga...` }, { quoted: msg });
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[NOVELA] No se pudo detectar idioma:', e.message);
+                }
+            }
+
+            // Adelanto: mandar el primer bloque de inmediato si se pidieron mas capitulos
+            if (!primerBloqueEnviado && esperaMultiplesBloques && hasta < total) {
+                primerBloqueEnviado = true;
                 const epubParcial = buscarEpubGenerado(dirTrabajo);
                 if (epubParcial) {
-                    const muestra = await extraerMuestraTextoEpub(epubParcial);
-                    if (muestra && esTextoIngles(muestra)) {
-                        await sock.sendMessage(chatId, { text: `ℹ️ *${query}* está disponible en inglés (no hay traducción del contenido completo, solo de la sinopsis). Continúo con la descarga...` }, { quoted: msg });
+                    const enviado = await intentarEnviarEpub(sock, chatId, msg, epubParcial, query, 1, hasta, true);
+                    if (enviado) {
+                        await sock.sendMessage(chatId, { text: `📬 Van los primeros ${hasta} capítulos. Sigo con el resto (hasta el ${total})...` }, { quoted: msg });
                     }
                 }
-            } catch (e) {
-                console.warn('[NOVELA] No se pudo detectar idioma:', e.message);
             }
         });
 
-        const epubPath = buscarEpubGenerado(dirTrabajo);
-        if (!epubPath) {
+        // ── Envio final: EPUB acumulativo completo (1 a capFin) ──
+        const epubFinal = buscarEpubGenerado(dirTrabajo);
+        if (!epubFinal) {
             return sock.sendMessage(chatId, {
                 text: `❌ La descarga de *${query}* no genero ningun archivo. La fuente pudo haber fallado, intenta de nuevo.`
             }, { quoted: msg });
         }
 
-        // ── Guardrail de tamaño: descartar sin intentar procesar si es muy pesado ──
-        const stats = fs.statSync(epubPath);
-        if (stats.size > MAX_TAMANO_BYTES) {
-            return sock.sendMessage(chatId, {
-                text: `⚠️ El EPUB generado pesa ${(stats.size / 1024 / 1024).toFixed(1)}MB, superando el limite de ${MAX_TAMANO_BYTES / 1024 / 1024}MB del servidor.\n💡 Pide menos capitulos, por ejemplo *!novela ${query} 1 ${Math.max(1, Math.floor(capFin / 2))}*`
-            }, { quoted: msg });
-        }
-        if (stats.size < 1024) {
-            return sock.sendMessage(chatId, { text: `❌ La descarga genero un archivo vacio o corrupto para *${query}*. Puede que la fuente haya fallado, intenta de nuevo.` }, { quoted: msg });
+        // Si hubo adelanto, avisar que este es el EPUB COMPLETO acumulado
+        // (no capitulos nuevos aparte) para que no parezca una repeticion rara.
+        if (primerBloqueEnviado) {
+            await sock.sendMessage(chatId, { text: `📚 Y aquí el archivo completo con todos los capítulos (1-${capFin}):` }, { quoted: msg });
         }
 
-        // ── Envio via stream de lectura, no Buffer completo en memoria ──
-        // La sintaxis correcta de Baileys para pasar un stream es
-        // { document: { stream: miStream } }, NO { document: miStream }
-        // directo - pasarlo directo causaba un TypeError interno en Baileys
-        // (Cannot read properties of undefined, reading 'toString') porque
-        // no reconocia el ReadStream como forma valida de WAMediaUpload.
-        const nombreArchivo = `${query.replace(/[^\w\s-]/g, '').trim() || 'novela'} (1-${capFin}).epub`;
-
-        await sock.sendMessage(chatId, {
-            document: { stream: fs.createReadStream(epubPath) },
-            mimetype: 'application/epub+zip',
-            fileName: nombreArchivo
-        }, { quoted: msg });
-
-        await sock.sendMessage(chatId, { react: { text: '✅', key: msg.key } });
+        const enviadoFinal = await intentarEnviarEpub(sock, chatId, msg, epubFinal, query, 1, capFin, false);
+        if (enviadoFinal) {
+            await sock.sendMessage(chatId, { react: { text: '✅', key: msg.key } });
+        }
 
     } catch (e) {
         if (e.message === 'TIMEOUT' || e.message === 'TIMEOUT_BUSQUEDA') {
