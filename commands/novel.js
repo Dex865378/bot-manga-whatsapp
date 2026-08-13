@@ -211,11 +211,18 @@ function buscarUrlNovela(query) {
 
             const urlValida = candidatos.find(u => !esUrlDeBusqueda(u));
             if (!urlValida) {
-                // Log de diagnostico temporal: imprime la salida cruda de
-                // lncrawl search cuando el filtro de URL no encuentra nada
-                // valido, para poder ver el formato real sin adivinar mas.
                 console.warn('[NOVELA][DEBUG] Sin URL valida. Candidatos encontrados:', candidatos.length, JSON.stringify(candidatos.slice(0, 10)));
                 console.warn('[NOVELA][DEBUG] stdout crudo (primeros 1500 chars):', stdoutData.slice(0, 1500));
+
+                // Distinguir "de verdad no existe" de "las fuentes estan
+                // bloqueando el scraping" (Cloudflare/WAF), que son causas
+                // MUY distintas y merecen mensajes distintos al usuario -
+                // la segunda no se soluciona reintentando ni cambiando el
+                // nombre, es un bloqueo de infraestructura de las fuentes.
+                const patronesBloqueo = /CertificateVerifyError|Managed JavaScript challenge|Super Bot Fight Mode|scored as automated|challenge served|upstream error \(HTTP 5\d\d\)/i;
+                if (patronesBloqueo.test(stdoutData)) {
+                    return reject(new Error('FUENTES_BLOQUEADAS'));
+                }
                 return reject(new Error('SIN_RESULTADOS'));
             }
             resolve(urlValida);
@@ -702,6 +709,10 @@ async function procesarDescargaNovela(sock, chatId, msg, query, capFin) {
         } else if (e.message === 'SIN_RESULTADOS') {
             await sock.sendMessage(chatId, {
                 text: `❌ No se encontro *${query}* en ninguna de las fuentes disponibles.\n💡 Revisa el nombre exacto o prueba con el titulo en ingles.`
+            }, { quoted: msg });
+        } else if (e.message === 'FUENTES_BLOQUEADAS') {
+            await sock.sendMessage(chatId, {
+                text: `🚫 Las fuentes que tienen *${query}* están bloqueando las descargas automáticas en este momento (protección anti-bot de esos sitios, no es un problema con el bot).\n💡 Prueba de nuevo más tarde, o intenta con otra novela - algunos títulos tienen más fuentes disponibles que otros.`
             }, { quoted: msg });
         } else {
             console.error('[NOVELA] Error:', e.message);
