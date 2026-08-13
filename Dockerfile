@@ -53,13 +53,24 @@ ENV PATH="/usr/local/bin:/root/.local/bin:${PATH}"
 # errores CertificateVerifyError vistos en produccion al hacer scraping.
 ENV SSL_CERT_FILE="/etc/ssl/certs/ca-certificates.crt"
 ENV REQUESTS_CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
+# FIX 3 (CertificateVerifyError persistente): lo anterior (ca-certificates +
+# SSL_CERT_FILE/REQUESTS_CA_BUNDLE) NO basta porque httpx -que lncrawl usa
+# por debajo, no requests- ignora esas variables de entorno: httpx usa el
+# bundle interno del paquete Python "certifi" por defecto, no el almacen
+# de certificados del sistema operativo. Ademas, versiones recientes de
+# certifi (2025.4.16+) tuvieron un bug confirmado que rompe la verificacion
+# especificamente contra sitios detras de Cloudflare (exactamente el patron
+# de error visto: L9 Managed JavaScript challenge, CertificateVerifyError).
+# Se fija certifi a una version anterior estable, conocida sin ese bug.
+RUN pip3 install --no-cache-dir --force-reinstall "certifi==2024.8.30"
 # --force-reinstall + --no-deps primero desinstala/limpia cualquier rastro
 # de instalaciones previas corruptas (se vio en produccion un ImportError
 # circular de "TextCleaner" en lncrawl.core.cleaner, tipico de un paquete
 # parcialmente instalado o con archivos mezclados de distintas versiones
 # tras varios redeploys reinstalando encima de si mismo).
 RUN pip3 uninstall -y lightnovel-crawler 2>/dev/null; \
-    pip3 install --no-cache-dir --force-reinstall -U certifi lightnovel-crawler \
+    pip3 install --no-cache-dir --force-reinstall -U lightnovel-crawler \
+    && pip3 install --no-cache-dir --force-reinstall "certifi==2024.8.30" \
     && which lncrawl \
     && lncrawl --help > /dev/null 2>&1 \
     && echo "lncrawl instalado correctamente en: $(which lncrawl)"
