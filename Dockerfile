@@ -68,8 +68,16 @@ RUN pip3 install --no-cache-dir --force-reinstall "certifi==2024.8.30"
 # circular de "TextCleaner" en lncrawl.core.cleaner, tipico de un paquete
 # parcialmente instalado o con archivos mezclados de distintas versiones
 # tras varios redeploys reinstalando encima de si mismo).
+# FIX 4 (ImportError circular de TextCleaner persistente incluso con
+# --force-reinstall en multiples redeploys distintos): esto descarta que
+# sea una instalacion corrupta puntual, apunta a un bug real en versiones
+# recientes del paquete (la 4.14.0 actual en PyPI es un release grande con
+# arquitectura de servidor multi-usuario, mucho mas compleja que versiones
+# anteriores). Se fija a 4.10.0, una version anterior con margen de
+# antiguedad, evitando bugs de importacion introducidos en releases mas
+# nuevos y recientes.
 RUN pip3 uninstall -y lightnovel-crawler 2>/dev/null; \
-    pip3 install --no-cache-dir --force-reinstall -U lightnovel-crawler \
+    pip3 install --no-cache-dir --force-reinstall "lightnovel-crawler==4.10.0" \
     && pip3 install --no-cache-dir --force-reinstall "certifi==2024.8.30" \
     && which lncrawl \
     && lncrawl --help > /dev/null 2>&1 \
