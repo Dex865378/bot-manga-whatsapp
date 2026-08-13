@@ -301,12 +301,15 @@ function ejecutarBloqueLncrawl(urlNovela, hastaCapitulo, dirTrabajo, timeoutBloq
 const TAMANO_BLOQUE = 5;
 const TIMEOUT_POR_BLOQUE_MS = 90 * 1000; // 90s por bloque de 5 capitulos
 
-async function ejecutarLncrawlPorBloques(urlNovela, capFin, dirTrabajo, onProgreso) {
+async function ejecutarLncrawlPorBloques(urlNovela, capFin, dirTrabajo, onBloqueCompletado) {
     let capituloActual = 0;
     while (capituloActual < capFin) {
         capituloActual = Math.min(capituloActual + TAMANO_BLOQUE, capFin);
-        if (onProgreso) await onProgreso(capituloActual, capFin);
         await ejecutarBloqueLncrawl(urlNovela, capituloActual, dirTrabajo, TIMEOUT_POR_BLOQUE_MS);
+        // Callback DESPUES de completar el bloque, no antes: asi ya existe
+        // un EPUB parcial en disco que se puede inspeccionar (ej. para
+        // detectar el idioma del contenido tras el primer bloque).
+        if (onBloqueCompletado) await onBloqueCompletado(capituloActual, capFin);
     }
 }
 
@@ -331,6 +334,46 @@ function buscarEpubGenerado(dirTrabajo) {
     }
     recorrer(dirTrabajo);
     return encontrados[0] || null;
+}
+
+/**
+ * Extrae una muestra de texto plano de un EPUB para detectar su idioma.
+ * Un EPUB es un .zip con capitulos en XHTML/HTML adentro (confirmado: la
+ * estructura interna es HTML+CSS empaquetado). Se usa el comando `unzip`
+ * del sistema (ligero, ya instalado) en vez de agregar una libreria de
+ * Node para parsear EPUB, evitando una dependencia nueva para algo tan
+ * puntual como leer un poco de texto de muestra.
+ */
+function extraerMuestraTextoEpub(epubPath) {
+    return new Promise((resolve) => {
+        // -l lista los archivos dentro del zip, para encontrar un .xhtml/.html
+        const listProc = spawn('unzip', ['-Z1', epubPath], { windowsHide: true });
+        let listado = '';
+        listProc.stdout?.on('data', (c) => { listado += c.toString(); });
+        listProc.on('error', () => resolve(null));
+        listProc.on('close', (code) => {
+            if (code !== 0) return resolve(null);
+            const archivos = listado.split('\n').map(l => l.trim()).filter(Boolean);
+            // Preferir capitulos reales (suelen tener "chapter" o numeros en
+            // el nombre) sobre portada/indice/metadata
+            const candidato = archivos.find(f => /chapter|cap[ií]tulo|\d+\.x?html?$/i.test(f))
+                || archivos.find(f => /\.x?html?$/i.test(f));
+            if (!candidato) return resolve(null);
+
+            // -p extrae al stdout sin escribir a disco (mas liviano)
+            const extractProc = spawn('unzip', ['-p', epubPath, candidato], { windowsHide: true });
+            let contenido = '';
+            extractProc.stdout?.on('data', (c) => { contenido += c.toString(); if (contenido.length > 3000) extractProc.kill('SIGKILL'); });
+            extractProc.on('error', () => resolve(null));
+            extractProc.on('close', () => {
+                const textoPlano = contenido
+                    .replace(/<[^>]+>/g, ' ') // quitar tags HTML
+                    .replace(/\s+/g, ' ')
+                    .trim();
+                resolve(textoPlano.slice(0, 1500) || null);
+            });
+        });
+    });
 }
 
 // ============================================================
@@ -544,9 +587,26 @@ async function procesarDescargaNovela(sock, chatId, msg, query, capFin) {
         // ── Paso 1: resolver la URL real de la novela ──
         const urlNovela = await buscarUrlNovela(query);
 
-        // ── Paso 2: descargar en bloques de 5 capitulos, notificando progreso ──
+        // ── Paso 2: descargar en bloques de 5 (sin mensajes de progreso, solo
+        // aviso inicial + resultado final, igual que !recomanga). El unico
+        // uso del callback ahora es detectar idioma tras el PRIMER bloque
+        // (no en cada uno) y avisar UNA sola vez si el contenido esta en
+        // ingles, para que el usuario lo sepa antes de esperar el resto. ──
+        let avisoIdiomaEnviado = false;
         await ejecutarLncrawlPorBloques(urlNovela, capFin, dirTrabajo, async (hasta, total) => {
-            await sock.sendMessage(chatId, { text: `⏳ Descargando capítulos 1-${hasta} de ${total} de *${query}*...` }, { quoted: msg });
+            if (avisoIdiomaEnviado) return; // solo se chequea una vez, tras el primer bloque
+            avisoIdiomaEnviado = true;
+            try {
+                const epubParcial = buscarEpubGenerado(dirTrabajo);
+                if (epubParcial) {
+                    const muestra = await extraerMuestraTextoEpub(epubParcial);
+                    if (muestra && esTextoIngles(muestra)) {
+                        await sock.sendMessage(chatId, { text: `ℹ️ *${query}* está disponible en inglés (no hay traducción del contenido completo, solo de la sinopsis). Continúo con la descarga...` }, { quoted: msg });
+                    }
+                }
+            } catch (e) {
+                console.warn('[NOVELA] No se pudo detectar idioma:', e.message);
+            }
         });
 
         const epubPath = buscarEpubGenerado(dirTrabajo);
