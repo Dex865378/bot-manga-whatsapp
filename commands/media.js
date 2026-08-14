@@ -234,9 +234,20 @@ module.exports = {
         // !waifu (envía por URL directa, sin descargar buffer a RAM)
         if (start === '!waifu') {
             try {
-                const res = await axios.get('https://api.waifu.pics/sfw/waifu', { timeout: 7000 });
+                let res;
+                try {
+                    res = await fetchWithRetry('https://api.waifu.pics/sfw/waifu', { timeout: 7000 }, 2, 800);
+                } catch (e1) {
+                    // Fallback a otra categoría si "waifu" falla puntualmente (rate-limit, timeout, etc.)
+                    console.error('❌ [waifu] Falló categoría "waifu", probando fallback "neko":', e1.message);
+                    res = await fetchWithRetry('https://api.waifu.pics/sfw/neko', { timeout: 7000 }, 2, 800);
+                }
+                if (!res?.data?.url) throw new Error('La API no devolvió una URL válida');
                 return sock.sendMessage(chatId, { image: { url: res.data.url }, caption: '🍱 Aquí tienes tu waifu' }, { quoted: msg });
-            } catch (e) { return sock.sendMessage(chatId, { text: '❌ Error al obtener waifu.' }); }
+            } catch (e) {
+                console.error('❌ [waifu] Error al obtener waifu:', e.message);
+                return sock.sendMessage(chatId, { text: '❌ Error al obtener waifu. Intenta de nuevo en unos segundos.' }, { quoted: msg });
+            }
         }
 
         // !decir
@@ -785,7 +796,7 @@ module.exports = {
                 const sinopsisCorta = sinopsis.length > 300 ? sinopsis.substring(0, 300) + '...' : sinopsis;
                 
                 const generos = a.genres?.map(g => g.name).join(', ') || 'Desconocido';
-                const caption = `💡 *Te recomiendo:* ${a.title}\n\n⭐ *Calificación:* ${a.score || 'N/A'}/10\n🎭 *Géneros:* ${generos}\n� *Episodios:* ${a.episodes || '?'}\n\n�📖 *Sinopsis:*\n${sinopsisCorta}`;
+                const caption = `💡 *Te recomiendo:* ${a.title}\n\n⭐ *Calificación:* ${a.score || 'N/A'}/10\n🎭 *Géneros:* ${generos}\n📺 *Episodios:* ${a.episodes || '?'}\n\n📖 *Sinopsis:*\n${sinopsisCorta}`;
 
                 if (a.images?.jpg?.image_url) {
                     return sock.sendMessage(chatId, { image: { url: a.images.jpg.image_url }, caption }, { quoted: msg });
