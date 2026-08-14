@@ -232,11 +232,38 @@ module.exports = {
         }
 
         // !waifu (envía por URL directa, sin descargar buffer a RAM)
+        // Usa 2 proveedores en DOMINIOS DISTINTOS: si api.waifu.pics falla por
+        // DNS/red (ENOTFOUND, timeout) reintentar el mismo host no sirve de nada,
+        // asi que el fallback real es nekos.best (dominio totalmente distinto,
+        // ya usado y probado en social_reactions.js).
         if (start === '!waifu') {
             try {
-                const res = await axios.get('https://api.waifu.pics/sfw/waifu', { timeout: 7000 });
-                return sock.sendMessage(chatId, { image: { url: res.data.url }, caption: '🍱 Aquí tienes tu waifu' }, { quoted: msg });
-            } catch (e) { return sock.sendMessage(chatId, { text: '❌ Error al obtener waifu.' }); }
+                let imageUrl = null;
+
+                // Proveedor 1: waifu.pics
+                try {
+                    const res = await fetchWithRetry('https://api.waifu.pics/sfw/waifu', { timeout: 6000 }, 2, 600);
+                    if (res?.data?.url) imageUrl = res.data.url;
+                } catch (e1) {
+                    console.error('❌ [waifu] Falló waifu.pics:', e1.message);
+                }
+
+                // Proveedor 2 (fallback, dominio distinto): nekos.best
+                if (!imageUrl) {
+                    try {
+                        const res2 = await fetchWithRetry('https://nekos.best/api/v2/waifu', { timeout: 6000 }, 2, 600);
+                        imageUrl = res2?.data?.results?.[0]?.url || null;
+                    } catch (e2) {
+                        console.error('❌ [waifu] Falló también nekos.best:', e2.message);
+                    }
+                }
+
+                if (!imageUrl) throw new Error('Ningún proveedor de waifu respondió (posible fallo de red/DNS en el servidor)');
+                return sock.sendMessage(chatId, { image: { url: imageUrl }, caption: '🍱 Aquí tienes tu waifu' }, { quoted: msg });
+            } catch (e) {
+                console.error('❌ [waifu] Error al obtener waifu:', e.message);
+                return sock.sendMessage(chatId, { text: '❌ Error al obtener waifu. Intenta de nuevo en unos segundos.' }, { quoted: msg });
+            }
         }
 
         // !decir
