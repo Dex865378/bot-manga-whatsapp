@@ -232,10 +232,11 @@ module.exports = {
         }
 
         // !waifu (envía por URL directa, sin descargar buffer a RAM)
-        // Usa 2 proveedores en DOMINIOS DISTINTOS: si api.waifu.pics falla por
+        // Usa 3 proveedores en DOMINIOS DISTINTOS: si api.waifu.pics falla por
         // DNS/red (ENOTFOUND, timeout) reintentar el mismo host no sirve de nada,
-        // asi que el fallback real es nekos.best (dominio totalmente distinto,
-        // ya usado y probado en social_reactions.js).
+        // asi que los fallbacks reales son nekos.best y api.waifu.im (dominios
+        // totalmente distintos), para tener margen incluso si dos de los tres
+        // fallan a la vez (visto en produccion: DNS caido + 403 simultaneos).
         if (start === '!waifu') {
             try {
                 let imageUrl = null;
@@ -255,6 +256,16 @@ module.exports = {
                         imageUrl = res2?.data?.results?.[0]?.url || null;
                     } catch (e2) {
                         console.error('❌ [waifu] Falló también nekos.best:', e2.message);
+                    }
+                }
+
+                // Proveedor 3 (fallback, dominio distinto): waifu.im
+                if (!imageUrl) {
+                    try {
+                        const res3 = await fetchWithRetry('https://api.waifu.im/search', { timeout: 6000 }, 2, 600);
+                        imageUrl = res3?.data?.images?.[0]?.url || null;
+                    } catch (e3) {
+                        console.error('❌ [waifu] Falló también waifu.im:', e3.message);
                     }
                 }
 
