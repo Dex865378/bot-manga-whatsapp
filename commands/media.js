@@ -812,7 +812,7 @@ module.exports = {
                 const sinopsisCorta = sinopsis.length > 300 ? sinopsis.substring(0, 300) + '...' : sinopsis;
                 
                 const generos = a.genres?.map(g => g.name).join(', ') || 'Desconocido';
-                const caption = `💡 *Te recomiendo:* ${a.title}\n\n⭐ *Calificación:* ${a.score || 'N/A'}/10\n🎭 *Géneros:* ${generos}\n� *Episodios:* ${a.episodes || '?'}\n\n�📖 *Sinopsis:*\n${sinopsisCorta}`;
+                const caption = `💡 *Te recomiendo:* ${a.title}\n\n⭐ *Calificación:* ${a.score || 'N/A'}/10\n🎭 *Géneros:* ${generos}\n📺 *Episodios:* ${a.episodes || '?'}\n\n📖 *Sinopsis:*\n${sinopsisCorta}`;
 
                 if (a.images?.jpg?.image_url) {
                     return sock.sendMessage(chatId, { image: { url: a.images.jpg.image_url }, caption }, { quoted: msg });
