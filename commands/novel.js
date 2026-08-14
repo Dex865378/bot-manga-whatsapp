@@ -44,6 +44,18 @@ const TIMEOUT_MS = 240 * 1000; // 4 minutos, SIGKILL si se excede. lncrawl visit
 const MAX_TAMANO_BYTES = 30 * 1024 * 1024; // 30MB
 const LNCRAWL_BIN = process.platform === 'win32' ? 'lncrawl.exe' : 'lncrawl';
 
+/**
+ * Extrae las ultimas lineas utiles de un traceback de Python para usar
+ * como mensaje de error corto. La excepcion real (tipo + mensaje) SIEMPRE
+ * esta al final de un traceback, no al principio - usar .slice(0, N) sobre
+ * texto largo cortaba justo antes de llegar a la parte que importa.
+ */
+function ultimasLineasUtiles(texto, maxChars = 500) {
+    if (!texto) return '';
+    const limpio = texto.trim();
+    return limpio.length > maxChars ? limpio.slice(-maxChars) : limpio;
+}
+
 // Directorio temporal aislado por trabajo (UUID), fuera de la carpeta del
 // proyecto para no interferir con git ni con otros temporales del bot.
 const TEMP_ROOT = path.join(os.tmpdir(), 'diky-reconovela');
@@ -183,7 +195,14 @@ function buscarUrlNovela(query) {
         proc.on('close', (code) => {
             clearTimeout(killTimer);
             if (timedOut) return reject(new Error('TIMEOUT_BUSQUEDA'));
-            if (code !== 0) return reject(new Error(stderrData.slice(0, 800) || `busqueda salio con codigo ${code}`));
+            if (code !== 0) {
+                // Log completo SIN truncar en consola: la excepcion real de
+                // Python siempre esta al FINAL de un traceback, no al
+                // principio - truncar con slice(0, N) cortaba justo antes
+                // de llegar a la linea que dice el error real.
+                console.error('[NOVELA][DEBUG] search fallo (codigo', code, '), stderr completo:', stderrData);
+                return reject(new Error(ultimasLineasUtiles(stderrData) || `busqueda salio con codigo ${code}`));
+            }
 
             // Extraer URLs http(s) de la salida. El regex excluye caracteres
             // de puntuacion de cierre comunes al final (: ; , .) que a veces
@@ -287,7 +306,8 @@ function ejecutarBloqueLncrawl(urlNovela, hastaCapitulo, dirTrabajo, timeoutBloq
                 return reject(new Error('TIMEOUT'));
             }
             if (code !== 0) {
-                return reject(new Error(stderrData.slice(0, 800) || `lncrawl salio con codigo ${code}`));
+                console.error('[NOVELA][DEBUG] crawl fallo (codigo', code, '), stderr completo:', stderrData);
+                return reject(new Error(ultimasLineasUtiles(stderrData) || `lncrawl salio con codigo ${code}`));
             }
             resolve();
         });
