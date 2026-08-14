@@ -54,11 +54,21 @@ async function fetchWithRetry(url, options = {}, retries = 3, backoff = 1000) {
         try { return new URL(url).hostname; } catch (_) { return 'default'; }
     })();
     const circuitBreaker = getCircuitBreaker(domain);
-    const { body, data, method = 'GET', ...axiosOptions } = options;
+    const { body, data, method = 'GET', headers: callerHeaders, ...axiosOptions } = options;
     const requestConfig = {
         url,
         method: method.toUpperCase(),
         timeout: 10000,
+        // User-Agent de navegador por defecto: axios manda "axios/1.x.x" si
+        // no se especifica, lo cual muchas APIs publicas gratuitas rechazan
+        // automaticamente con 403 por parecer trafico de bot/script en vez
+        // de un navegador real. callerHeaders (si la llamada especifica trae
+        // headers propios) se aplica DESPUES, para poder sobreescribir el
+        // User-Agent si hace falta sin perder el default en el caso comun.
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            ...(callerHeaders || {})
+        },
         ...axiosOptions
     };
 
