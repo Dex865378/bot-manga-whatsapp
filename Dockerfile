@@ -1,16 +1,9 @@
 FROM node:20-bullseye
 
 # 1. Instalar dependencias del sistema
-# (python3/pip/unzip/curl ya no son necesarios para yt-dlp/PO Token provider,
-# que fueron eliminados: YouTube bloqueaba las descargas desde la IP de
-# datacenter de Render de forma persistente y ningun metodo probado lo
-# resolvio de forma estable. Se dejan curl y python3 porque otras partes
-# del bot pueden depender de ellos indirectamente; se agrega python3-pip
-# para instalar lightnovel-crawler, usado por !reconovela.)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     python3 \
-    python3-pip \
     curl \
     ca-certificates \
     unzip \
@@ -25,63 +18,14 @@ RUN apt-get update && apt-get install -y \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# 1.1 Instalar lightnovel-crawler (comando lncrawl) para !reconovela.
-# IMPORTANTE: no se instala Calibre. lncrawl genera EPUB, TXT y JSON de
-# forma nativa sin necesitarlo; formatos como PDF requieren Calibre, que
-# es una suite pesada (motor Qt, cientos de MB de RAM) inviable en este
-# plan gratuito de 512MB compartido con WhatsApp/Baileys. Por eso
-# !reconovela genera solo EPUB - ver comentario en commands/novel.js.
-#
-# FIX: pip3 con --break-system-packages en Debian a veces instala los
-# scripts de consola (el binario `lncrawl`) en una ruta de usuario que NO
-# esta en el PATH que usa child_process.spawn() (que no es un shell
-# interactivo con login, no carga .bashrc/.profile). Esto causaba
-# "spawn lncrawl ENOENT" en produccion aunque el paquete si se instalara
-# bien. Se agrega PATH explicito con las rutas donde pip puede dejar el
-# binario, y se verifica con `which` (sin ||, para que el build FALLE
-# ruidosamente si lncrawl no quedo accesible, en vez de fallar en
-# silencio y descubrirlo recien en produccion).
-# FIX 2: --break-system-packages no es reconocido por la version de pip3
-# que trae node:20-bullseye (ese flag se agrego en versiones de pip mas
-# nuevas que Debian Bullseye no incluye). Como el contenedor corre como
-# root sin restriccion "externally-managed-environment", no hace falta
-# ese flag aqui - se quita.
-ENV PATH="/usr/local/bin:/root/.local/bin:${PATH}"
-# Variables explicitas de bundle de certificados: algunas librerias Python
-# (requests, httpx, etc.) no siempre confian en el almacen del sistema por
-# defecto y necesitan que se les apunte directamente. Esto solucionaba
-# errores CertificateVerifyError vistos en produccion al hacer scraping.
-ENV SSL_CERT_FILE="/etc/ssl/certs/ca-certificates.crt"
-ENV REQUESTS_CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
-# FIX 3 (CertificateVerifyError persistente): lo anterior (ca-certificates +
-# SSL_CERT_FILE/REQUESTS_CA_BUNDLE) NO basta porque httpx -que lncrawl usa
-# por debajo, no requests- ignora esas variables de entorno: httpx usa el
-# bundle interno del paquete Python "certifi" por defecto, no el almacen
-# de certificados del sistema operativo. Ademas, versiones recientes de
-# certifi (2025.4.16+) tuvieron un bug confirmado que rompe la verificacion
-# especificamente contra sitios detras de Cloudflare (exactamente el patron
-# de error visto: L9 Managed JavaScript challenge, CertificateVerifyError).
-# Se fija certifi a una version anterior estable, conocida sin ese bug.
-RUN pip3 install --no-cache-dir --force-reinstall "certifi==2024.8.30"
-# --force-reinstall + --no-deps primero desinstala/limpia cualquier rastro
-# de instalaciones previas corruptas (se vio en produccion un ImportError
-# circular de "TextCleaner" en lncrawl.core.cleaner, tipico de un paquete
-# parcialmente instalado o con archivos mezclados de distintas versiones
-# tras varios redeploys reinstalando encima de si mismo).
-# FIX 4 (ImportError circular de TextCleaner persistente incluso con
-# --force-reinstall en multiples redeploys distintos): esto descarta que
-# sea una instalacion corrupta puntual, apunta a un bug real en versiones
-# recientes del paquete (la 4.14.0 actual en PyPI es un release grande con
-# arquitectura de servidor multi-usuario, mucho mas compleja que versiones
-# anteriores). Se fija a 4.10.0, una version anterior con margen de
-# antiguedad, evitando bugs de importacion introducidos en releases mas
-# nuevos y recientes.
-RUN pip3 uninstall -y lightnovel-crawler 2>/dev/null; \
-    pip3 install --no-cache-dir --force-reinstall "lightnovel-crawler==4.10.0" \
-    && pip3 install --no-cache-dir --force-reinstall "certifi==2024.8.30" \
-    && which lncrawl \
-    && lncrawl --help > /dev/null 2>&1 \
-    && echo "lncrawl instalado correctamente en: $(which lncrawl)"
+# 1.1 lightnovel-crawler (!novela / !reconovela) esta PAUSADO por ahora
+# (ver comments/novel.js) - el paquete Python sufrio una reescritura
+# arquitectonica grande y su cadena de dependencias resulto inestable de
+# instalar de forma reproducible aqui (varios ImportError en cadena al
+# fijar distintas versiones: TextCleaner, luego AbortedException). Se
+# quita la instalacion del Dockerfile mientras tanto para no pagar el
+# costo de build mas largo ni el riesgo de que ese paso rompa el deploy
+# entero. Si se retoma en el futuro, reinstalar aqui con pip3.
 
 # 2. Configurar el directorio de trabajo
 WORKDIR /app

@@ -581,6 +581,21 @@ const reconovelaCommand = {
     }
 };
 
+// ⏸️ FUNCION EN PAUSA (13 ago 2026): lightnovel-crawler (el paquete Python
+// que hace la descarga real) sufrio una reescritura arquitectonica grande
+// -paso de ser un CLI simple a una plataforma con base de datos, Alembic,
+// FastAPI, sistema de usuarios- y su cadena de dependencias resulto ser
+// inestable de instalar de forma reproducible en este entorno (varios
+// ImportError distintos en cadena: TextCleaner, luego AbortedException,
+// cada uno al fijar una version distinta). Se pausa por decision del
+// usuario tras invertir bastante tiempo sin resolucion clara, en vez de
+// seguir adivinando versiones a ciegas. TODO el resto del codigo (busqueda,
+// filtros de URL, deteccion de idioma, envio por stream, cola FIFO) sigue
+// intacto abajo y listo para retomar - solo hay que resolver la instalacion
+// de lncrawl en el Dockerfile antes de reactivar esto.
+const NOVELA_PAUSADA = true;
+const MSG_NOVELA_PAUSADA = '📖 La descarga de novelas está temporalmente pausada mientras se resuelve un problema técnico con la herramienta de descarga. Vuelve a intentarlo más adelante.';
+
 module.exports = {
     isMultiple: true,
     names: ['!novela', '!reconovela'],
@@ -589,6 +604,9 @@ module.exports = {
         '!reconovela': reconovelaCommand
     },
     async execute(sock, chatId, msg, args, extras) {
+        if (NOVELA_PAUSADA) {
+            return sock.sendMessage(chatId, { text: MSG_NOVELA_PAUSADA }, { quoted: msg });
+        }
         const { start } = extras;
         if (start === '!reconovela') return reconovelaCommand.execute(sock, chatId, msg, args, extras);
         return novelaCommand.execute(sock, chatId, msg, args, extras);
