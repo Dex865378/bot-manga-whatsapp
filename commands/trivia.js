@@ -36,7 +36,44 @@ module.exports = {
                 { q: '¿Cuál es el idioma más hablado del mundo?', a: 'chino mandarin' },
                 { q: '¿Cuántos jugadores tiene un equipo de fútbol en cancha?', a: '11' },
                 { q: '¿Cuál es el desierto más grande del mundo?', a: 'sahara' },
-                { q: '¿Quién compuso la Novena Sinfonía?', a: 'beethoven' }
+                { q: '¿Quién compuso la Novena Sinfonía?', a: 'beethoven' },
+                { q: '¿Cuál es el país con más habitantes del mundo?', a: 'india' },
+                { q: '¿En qué año llegó el hombre a la luna?', a: '1969' },
+                { q: '¿Cuál es la capital de Francia?', a: 'paris' },
+                { q: '¿Cuál es la capital de Italia?', a: 'roma' },
+                { q: '¿Cuál es la capital de España?', a: 'madrid' },
+                { q: '¿Cuál es la capital de Alemania?', a: 'berlin' },
+                { q: '¿Cuál es la capital de Brasil?', a: 'brasilia' },
+                { q: '¿Cuál es la capital de Canadá?', a: 'ottawa' },
+                { q: '¿Cuál es la capital de Australia?', a: 'canberra' },
+                { q: '¿Cuántos continentes hay en el mundo?', a: '6' },
+                { q: '¿Cuál es el hueso más largo del cuerpo humano?', a: 'femur' },
+                { q: '¿Cuál es el órgano más grande del cuerpo humano?', a: 'piel' },
+                { q: '¿Cuál es el metal líquido a temperatura ambiente?', a: 'mercurio' },
+                { q: '¿Cuántos colores tiene el arcoíris?', a: '7' },
+                { q: '¿Cuál es el país más pequeño del mundo?', a: 'ciudad del vaticano' },
+                { q: '¿Quién descubrió América?', a: 'cristobal colon' },
+                { q: '¿En qué año cayó el Muro de Berlín?', a: '1989' },
+                { q: '¿Cuál es el símbolo químico del oro?', a: 'au' },
+                { q: '¿Cuál es el símbolo químico del hierro?', a: 'fe' },
+                { q: '¿Cuál es la velocidad de la luz aproximada en km/s?', a: '300000' },
+                { q: '¿Quién escribió "Cien años de soledad"?', a: 'gabriel garcia marquez' },
+                { q: '¿Quién pintó "La noche estrellada"?', a: 'van gogh' },
+                { q: '¿Cuál es el instrumento musical con 88 teclas?', a: 'piano' },
+                { q: '¿Cuál es el país conocido como "tierra del sol naciente"?', a: 'japon' },
+                { q: '¿Cuál es el ave que no puede volar más grande del mundo?', a: 'avestruz' },
+                { q: '¿Cuántas patas tiene una araña?', a: '8' },
+                { q: '¿Cuál es el planeta más grande del sistema solar?', a: 'jupiter' },
+                { q: '¿Cuál es el planeta conocido como el planeta rojo?', a: 'marte' },
+                { q: '¿Cuántos minutos tiene una hora?', a: '60' },
+                { q: '¿Cuántos días tiene un año bisiesto?', a: '366' },
+                { q: '¿Cuál es la capital de Rusia?', a: 'moscu' },
+                { q: '¿Cuál es la capital de China?', a: 'pekin' },
+                { q: '¿Cuál es la capital de Egipto?', a: 'el cairo' },
+                { q: '¿Quién fue el primer presidente de Estados Unidos?', a: 'george washington' },
+                { q: '¿Cuál es el mamífero más grande del mundo?', a: 'ballena azul' },
+                { q: '¿Qué instrumento se usa para medir la temperatura?', a: 'termometro' },
+                { q: '¿Cuántos huesos tiene la mano humana?', a: '27' }
             ];
             const quiz = quizes[Math.floor(Math.random() * quizes.length)];
             botState.juegos[chatId] = { tipo: 'quiz', respuesta: quiz.a, vidas: 2, msgId: msg.key.id, responder: sender };
@@ -64,7 +101,43 @@ module.exports = {
                 { q: '¿En qué anime aparece un shinigami llamado Ryuk?', a: 'death note' },
                 { q: '¿Cómo se llama la hermana menor de Ichigo en Bleach?', a: 'yuzu' },
                 { q: '¿Qué anime trata sobre un chico que se convierte en alquimista?', a: 'fullmetal alchemist' },
-                { q: '¿Cómo se llama el pirata rival principal de Luffy?', a: 'shanks' }
+                { q: '¿Cómo se llama el pirata rival principal de Luffy?', a: 'shanks' },
+                { q: '¿Cómo se llama el protagonista de Chainsaw Man?', a: 'denji' },
+                { q: '¿Cómo se llama el protagonista de Jujutsu Kaisen?', a: 'yuji itadori' },
+                { q: '¿Cómo se llama la maldición más poderosa que posee Yuji?', a: 'sukuna' },
+                { q: '¿Cómo se llama el protagonista de Demon Slayer?', a: 'tanjiro' },
+                { q: '¿Cómo se llama la hermana de Tanjiro en Demon Slayer?', a: 'nezuko' },
+                { q: '¿Cómo se llama el protagonista de Bleach?', a: 'ichigo' },
+                { q: '¿Cómo se llama el capitán del Sunny en One Piece?', a: 'luffy' },
+                { q: '¿Cómo se llama el reno médico de la tripulación de Luffy?', a: 'chopper' },
+                { q: '¿Cómo se llama el cocinero de la tripulación de Luffy?', a: 'sanji' },
+                { q: '¿Cuál es el sueño de Luffy en One Piece?', a: 'ser el rey de los piratas' },
+                { q: '¿Cómo se llama la aldea de Naruto?', a: 'konoha' },
+                { q: '¿Cómo se llama el sensei de Naruto en el equipo 7?', a: 'kakashi' },
+                { q: '¿Qué animal es sellado dentro de Naruto?', a: 'kurama' },
+                { q: '¿Cómo se llama la novia/esposa de Naruto?', a: 'hinata' },
+                { q: '¿Cómo se llama el androide número 18 en Dragon Ball?', a: 'lazuli' },
+                { q: '¿Cómo se llama el planeta natal de Goku?', a: 'vegeta' },
+                { q: '¿Cómo se llama el hijo mayor de Goku?', a: 'gohan' },
+                { q: '¿Cómo se llama el villano principal de la saga Cell?', a: 'cell' },
+                { q: '¿Qué anime trata sobre un joven que caza titanes tras perder su hogar?', a: 'attack on titan' },
+                { q: '¿Cómo se llama el mejor amigo de Eren en Attack on Titan?', a: 'armin' },
+                { q: '¿Cómo se llama la chica que se convierte en titán acorazado?', a: 'annie' },
+                { q: '¿Cómo se llama el protagonista de Spy x Family?', a: 'loid forger' },
+                { q: '¿Cómo se llama la hija adoptiva en Spy x Family?', a: 'anya' },
+                { q: '¿Cómo se llama el protagonista de Hunter x Hunter?', a: 'gon' },
+                { q: '¿Cómo se llama el mejor amigo de Gon en Hunter x Hunter?', a: 'killua' },
+                { q: '¿Cómo se llama el protagonista de Fairy Tail?', a: 'natsu' },
+                { q: '¿Cómo se llama el gremio principal en Fairy Tail?', a: 'fairy tail' },
+                { q: '¿Cómo se llama el protagonista de Blue Lock?', a: 'isagi' },
+                { q: '¿Qué anime trata sobre un equipo de vóleibol en preparatoria?', a: 'haikyuu' },
+                { q: '¿Cómo se llama el protagonista de Haikyuu!!?', a: 'hinata shoyo' },
+                { q: '¿Cómo se llama el protagonista de Solo Leveling?', a: 'sung jinwoo' },
+                { q: '¿Qué anime trata sobre un chico que se convierte en el cazador más fuerte tras una mazmorra?', a: 'solo leveling' },
+                { q: '¿Cómo se llama el pueblo natal de Ash Ketchum en Pokémon?', a: 'pueblo paleta' },
+                { q: '¿Cómo se llama el compañero Pokémon inicial de Ash?', a: 'pikachu' },
+                { q: '¿Cómo se llama el protagonista de Dragon Ball al inicio de la serie?', a: 'goku' },
+                { q: '¿Cómo se llama la técnica insignia de Goku para atacar?', a: 'kamehameha' }
             ];
             const quiz = quizes[Math.floor(Math.random() * quizes.length)];
             botState.juegos[chatId] = { tipo: 'quizanime', respuesta: quiz.a, vidas: 2, msgId: msg.key.id, responder: sender };
@@ -73,7 +146,15 @@ module.exports = {
 
         // !adivina
         if (start === '!adivina') {
-            const palabras = ['computadora', 'whatsapp', 'teclado', 'anime', 'manga', 'naruto', 'one piece', 'videojuego', 'internet', 'celular', 'aventura', 'universo', 'chocolate', 'guitarra', 'biblioteca', 'aeropuerto', 'elefante', 'mariposa', 'terremoto', 'diccionario', 'refrigerador', 'motocicleta'];
+            const palabras = [
+                'computadora', 'whatsapp', 'teclado', 'anime', 'manga', 'naruto', 'one piece', 'videojuego', 'internet', 'celular',
+                'aventura', 'universo', 'chocolate', 'guitarra', 'biblioteca', 'aeropuerto', 'elefante', 'mariposa', 'terremoto', 'diccionario',
+                'refrigerador', 'motocicleta', 'astronauta', 'dinosaurio', 'fotografia', 'matematicas', 'geografia', 'historia', 'ciencia', 'planeta',
+                'estrella', 'oceano', 'montaña', 'desierto', 'volcan', 'cascada', 'bosque', 'jardin', 'edificio', 'restaurante',
+                'hospital', 'escuela', 'universidad', 'medicina', 'tecnologia', 'robot', 'satelite', 'telescopio', 'microscopio', 'laboratorio',
+                'orquesta', 'sinfonia', 'pelicula', 'television', 'radio', 'periodico', 'revista', 'escritor', 'pintura', 'escultura',
+                'arquitectura', 'ingenieria', 'programador', 'desarrollador', 'inteligencia', 'algoritmo', 'servidor', 'navegador', 'aplicacion', 'plataforma'
+            ];
             const p = palabras[Math.floor(Math.random() * palabras.length)];
             const des = p.split('').sort(() => 0.5 - Math.random()).join('');
             botState.juegos[chatId] = { tipo: 'adivina', palabra: p, vidas: 2, msgId: msg.key.id, responder: sender };
@@ -199,7 +280,15 @@ module.exports = {
 
         // !ahorcado
         if (start === '!ahorcado') {
-            const palabras = ['programacion', 'javascript', 'whatsapp', 'bot', 'manga', 'anime', 'teclado', 'monitor', 'hardware', 'software', 'internet', 'servidor', 'algoritmo', 'variable', 'funcion', 'proyecto', 'usuario', 'sistema', 'archivo', 'contraseña', 'aplicacion', 'inteligencia', 'tecnologia', 'desarrollador'];
+            const palabras = [
+                'programacion', 'javascript', 'whatsapp', 'bot', 'manga', 'anime', 'teclado', 'monitor', 'hardware', 'software',
+                'internet', 'servidor', 'algoritmo', 'variable', 'funcion', 'proyecto', 'usuario', 'sistema', 'archivo', 'contraseña',
+                'aplicacion', 'inteligencia', 'tecnologia', 'desarrollador', 'computadora', 'navegador', 'plataforma', 'base de datos', 'framework', 'libreria',
+                'compilador', 'interprete', 'protocolo', 'seguridad', 'encriptacion', 'red social', 'streaming', 'multimedia', 'procesador', 'memoria',
+                'almacenamiento', 'nube', 'inteligencia artificial', 'aprendizaje', 'automatizacion', 'robotica', 'ciberseguridad', 'programador', 'debugging', 'repositorio',
+                'version', 'actualizacion', 'instalacion', 'configuracion', 'notificacion', 'aplicativo', 'terminal', 'consola', 'depuracion', 'interfaz',
+                'experiencia', 'usabilidad', 'accesibilidad', 'documentacion', 'implementacion'
+            ];
             const p = palabras[Math.floor(Math.random() * palabras.length)];
             const oculto = '_'.repeat(p.length);
             botState.juegos[chatId] = { tipo: 'ahorcado', palabra: p, oculto, vidas: 4, msgId: msg.key.id, responder: sender };
