@@ -21,7 +21,22 @@ module.exports = {
                 { q: '¿Cuál es el elemento químico con el símbolo O?', a: 'oxigeno' },
                 { q: '¿Cuál es el río más largo del mundo?', a: 'amazonas' },
                 { q: '¿Quién escribió "Don Quijote de la Mancha"?', a: 'cervantes' },
-                { q: '¿Cuál es el océano más grande?', a: 'pacifico' }
+                { q: '¿Cuál es el océano más grande?', a: 'pacifico' },
+                { q: '¿Cuál es el planeta más cercano al sol?', a: 'mercurio' },
+                { q: '¿Cuántos huesos tiene el cuerpo humano adulto?', a: '206' },
+                { q: '¿Cuál es el animal terrestre más rápido?', a: 'guepardo' },
+                { q: '¿En qué continente está Egipto?', a: 'africa' },
+                { q: '¿Cuál es la moneda oficial de Japón?', a: 'yen' },
+                { q: '¿Quién fue el primer hombre en pisar la luna?', a: 'neil armstrong' },
+                { q: '¿Cuál es el metal más abundante en la corteza terrestre?', a: 'aluminio' },
+                { q: '¿Cuántos lados tiene un hexágono?', a: '6' },
+                { q: '¿Cuál es la montaña más alta del mundo?', a: 'everest' },
+                { q: '¿Qué gas respiramos principalmente del aire?', a: 'nitrogeno' },
+                { q: '¿En qué país se originó el sushi?', a: 'japon' },
+                { q: '¿Cuál es el idioma más hablado del mundo?', a: 'chino mandarin' },
+                { q: '¿Cuántos jugadores tiene un equipo de fútbol en cancha?', a: '11' },
+                { q: '¿Cuál es el desierto más grande del mundo?', a: 'sahara' },
+                { q: '¿Quién compuso la Novena Sinfonía?', a: 'beethoven' }
             ];
             const quiz = quizes[Math.floor(Math.random() * quizes.length)];
             botState.juegos[chatId] = { tipo: 'quiz', respuesta: quiz.a, vidas: 2, msgId: msg.key.id, responder: sender };
@@ -36,7 +51,20 @@ module.exports = {
                 { q: '¿Cómo se llama el rival de Naruto?', a: 'sasuke' },
                 { q: '¿Qué anime trata sobre un cuaderno de la muerte?', a: 'death note' },
                 { q: '¿Cuál es el nombre del protagonista de Shingeki no Kyojin?', a: 'eren' },
-                { q: '¿Cómo se llama la gata cósmica de Sailor Moon?', a: 'luna' }
+                { q: '¿Cómo se llama la gata cósmica de Sailor Moon?', a: 'luna' },
+                { q: '¿Cómo se llama el protagonista de Death Note?', a: 'light' },
+                { q: '¿Qué anime tiene como protagonista a Izuku Midoriya?', a: 'my hero academia' },
+                { q: '¿Cómo se llama el espadachín de One Piece?', a: 'zoro' },
+                { q: '¿Cuál es el apellido del protagonista de Fullmetal Alchemist?', a: 'elric' },
+                { q: '¿Cómo se llama el demonio de la espada en Chainsaw Man?', a: 'pochita' },
+                { q: '¿Qué anime trata sobre cazadores que matan titanes?', a: 'attack on titan' },
+                { q: '¿Cómo se llama la organización criminal en Naruto?', a: 'akatsuki' },
+                { q: '¿Quién es el maestro de Goku al inicio de Dragon Ball?', a: 'muten roshi' },
+                { q: '¿Cómo se llama el protagonista de Tokyo Ghoul?', a: 'kaneki' },
+                { q: '¿En qué anime aparece un shinigami llamado Ryuk?', a: 'death note' },
+                { q: '¿Cómo se llama la hermana menor de Ichigo en Bleach?', a: 'yuzu' },
+                { q: '¿Qué anime trata sobre un chico que se convierte en alquimista?', a: 'fullmetal alchemist' },
+                { q: '¿Cómo se llama el pirata rival principal de Luffy?', a: 'shanks' }
             ];
             const quiz = quizes[Math.floor(Math.random() * quizes.length)];
             botState.juegos[chatId] = { tipo: 'quizanime', respuesta: quiz.a, vidas: 2, msgId: msg.key.id, responder: sender };
@@ -45,7 +73,7 @@ module.exports = {
 
         // !adivina
         if (start === '!adivina') {
-            const palabras = ['computadora', 'whatsapp', 'teclado', 'anime', 'manga', 'naruto', 'one piece', 'videojuego', 'internet', 'celular'];
+            const palabras = ['computadora', 'whatsapp', 'teclado', 'anime', 'manga', 'naruto', 'one piece', 'videojuego', 'internet', 'celular', 'aventura', 'universo', 'chocolate', 'guitarra', 'biblioteca', 'aeropuerto', 'elefante', 'mariposa', 'terremoto', 'diccionario', 'refrigerador', 'motocicleta'];
             const p = palabras[Math.floor(Math.random() * palabras.length)];
             const des = p.split('').sort(() => 0.5 - Math.random()).join('');
             botState.juegos[chatId] = { tipo: 'adivina', palabra: p, vidas: 2, msgId: msg.key.id, responder: sender };
@@ -171,7 +199,7 @@ module.exports = {
 
         // !ahorcado
         if (start === '!ahorcado') {
-            const palabras = ['programacion', 'javascript', 'whatsapp', 'bot', 'manga', 'anime', 'teclado', 'monitor', 'hardware', 'software'];
+            const palabras = ['programacion', 'javascript', 'whatsapp', 'bot', 'manga', 'anime', 'teclado', 'monitor', 'hardware', 'software', 'internet', 'servidor', 'algoritmo', 'variable', 'funcion', 'proyecto', 'usuario', 'sistema', 'archivo', 'contraseña', 'aplicacion', 'inteligencia', 'tecnologia', 'desarrollador'];
             const p = palabras[Math.floor(Math.random() * palabras.length)];
             const oculto = '_'.repeat(p.length);
             botState.juegos[chatId] = { tipo: 'ahorcado', palabra: p, oculto, vidas: 4, msgId: msg.key.id, responder: sender };
