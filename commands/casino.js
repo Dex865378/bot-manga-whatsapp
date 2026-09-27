@@ -473,10 +473,12 @@ module.exports = {
             };
 
             let hp1 = 120, hp2 = 120;
-            let fightLog = `⚔️ *¡DUELO!* ⚔️\n${intros[Math.floor(Math.random() * intros.length)]}\n━━━━━━━━━━━━━━\n`;
-            fightLog += `🤺 *${n1}* [120HP]  🆚  🤺 *${n2}* [120HP]\n💰 Apuesta: *${apuesta.toLocaleString()}* diky\n━━━━━━━━━━━━━━\n`;
+            let fightLog = `⚔️ *¡DUELO!* ⚔️\n${intros[Math.floor(Math.random() * intros.length)]}\n\n`;
+            fightLog += `• *${n1}* 🆚 *${n2}*\n└ 💰 Apuesta: *${apuesta.toLocaleString()}* diky | ❤️ 120HP cada uno\n`;
 
             let turno = 1, atk = Math.random() < 0.5 ? 1 : 2;
+            const primero = atk === 1 ? n1 : n2;
+            fightLog += `\n• *Ataca primero: ${primero}*\n`;
             while (hp1 > 0 && hp2 > 0 && turno <= 15) {
                 const atacante = atk === 1 ? n1 : n2;
                 const defensor = atk === 1 ? n2 : n1;
@@ -487,7 +489,8 @@ module.exports = {
                 if (atk === 1) hp2 -= dmg; else hp1 -= dmg;
                 if (hp1 < 0) hp1 = 0; if (hp2 < 0) hp2 = 0;
                 const tech = tecs[Math.floor(Math.random() * tecs.length)];
-                fightLog += `🔹 *R${turno}:* ${atacante} ${tech}${crit ? ' [🔥 CRIT!]' : ''} → -${dmg}HP 👉 ${defensor} (${atk===1?hp2:hp1}HP)\n`;
+                const hpQueda = atk === 1 ? hp2 : hp1;
+                fightLog += `\n• *Round ${turno} — ataca ${atacante}*\n└ ${tech}${crit ? ' 🔥 ¡CRÍTICO!' : ''}\n└ 💥 ${defensor} perdió ${dmg}HP | ❤️ le quedan ${hpQueda}HP\n`;
                 if (hp1 <= 0 || hp2 <= 0) break;
                 atk = atk === 1 ? 2 : 1;
                 turno++;
@@ -506,7 +509,7 @@ module.exports = {
             await db.sumarXP(ganador, 300);
             await db.sumarXP(perdedor, 50);
 
-            fightLog += `\n━━━━━━━━━━━━━━\n📊 HP Final → *${n1}*: ${hp1} | *${n2}*: ${hp2}\n\n🏆 *GANADOR: ${gName}*\n   💰 +${apuesta.toLocaleString()} diky | ✨ +300 XP\n🗡️ *${pName}* → -${apuesta.toLocaleString()} diky | +50 XP`;
+            fightLog += `\n• *🏆 GANADOR: ${gName}*\n└ 💰 +${apuesta.toLocaleString()} diky | ✨ +300 XP\n\n• *🗡️ PERDEDOR: ${pName}*\n└ 💸 -${apuesta.toLocaleString()} diky | ✨ +50 XP`;
 
             return sock.sendMessage(chatId, { text: fightLog, mentions: [ganador, perdedor] }, { quoted: msg });
         }
@@ -551,10 +554,12 @@ module.exports = {
             };
 
             let hp1 = 120, hp2 = 120;
-            let fightLog = `⚔️ *¡DUELO REAL!* ⚔️\n${intros[Math.floor(Math.random() * intros.length)]}\n━━━━━━━━━━━━━━\n`;
-            fightLog += `🤺 *${n1}* [120 HP]  🆚  🤺 *${n2}* [120 HP]\n💰 Apuesta: *${apuesta}* diky\n━━━━━━━━━━━━━━\n`;
+            let fightLog = `⚔️ *¡DUELO REAL!* ⚔️\n${intros[Math.floor(Math.random() * intros.length)]}\n\n`;
+            fightLog += `• *${n1}* 🆚 *${n2}*\n└ 💰 Apuesta: *${apuesta}* diky | ❤️ 120HP cada uno\n`;
 
             let turno = 1, atk = Math.random() < 0.5 ? 1 : 2;
+            const primero = atk === 1 ? n1 : n2;
+            fightLog += `\n• *Ataca primero: ${primero}*\n`;
             while (hp1 > 0 && hp2 > 0 && turno <= 15) {
                 const atacante = atk === 1 ? n1 : n2;
                 const defensor = atk === 1 ? n2 : n1;
@@ -565,7 +570,8 @@ module.exports = {
                 if (atk === 1) hp2 -= dmg; else hp1 -= dmg;
                 if (hp1 < 0) hp1 = 0; if (hp2 < 0) hp2 = 0;
                 const tech = tecs[Math.floor(Math.random() * tecs.length)];
-                fightLog += `🔹 *R${turno}:* ${atacante} ${tech}${crit ? ' [🔥 CRIT!]' : ''} → -${dmg} HP 👉 ${defensor} (${atk===1?hp2:hp1}HP)\n`;
+                const hpQueda = atk === 1 ? hp2 : hp1;
+                fightLog += `\n• *Round ${turno} — ataca ${atacante}*\n└ ${tech}${crit ? ' 🔥 ¡CRÍTICO!' : ''}\n└ 💥 ${defensor} perdió ${dmg}HP | ❤️ le quedan ${hpQueda}HP\n`;
                 if (hp1 <= 0 || hp2 <= 0) break;
                 atk = atk === 1 ? 2 : 1;
                 turno++;
@@ -584,7 +590,7 @@ module.exports = {
             await db.sumarXP(ganador, 300);
             await db.sumarXP(perdedor, 50);
 
-            fightLog += `\n━━━━━━━━━━━━━━\n📊 HP Final: *${n1}*: ${hp1} | *${n2}*: ${hp2}\n\n🏆 *GANADOR: ${gName}*\n   💰 +${apuesta} diky | ✨ +300 XP\n🗡️ *${pName}* → -${apuesta} diky | +50 XP de consolación`;
+            fightLog += `\n• *🏆 GANADOR: ${gName}*\n└ 💰 +${apuesta} diky | ✨ +300 XP\n\n• *🗡️ PERDEDOR: ${pName}*\n└ 💸 -${apuesta} diky | ✨ +50 XP de consolación`;
 
             return sock.sendMessage(chatId, { text: fightLog, mentions: [ganador, perdedor] }, { quoted: msg });
         }
