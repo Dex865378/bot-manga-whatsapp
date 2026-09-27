@@ -682,6 +682,20 @@ function onceInterval(key, fn, ms) {
     global.__botTimers[key] = setInterval(fn, ms);
     return global.__botTimers[key];
 }
+// Guard anti-sockets-duplicados (causa del 440 conflict): si startBot se
+// re-ejecuta mientras el socket anterior sigue vivo, se cierra el viejo antes
+// de crear el nuevo; y los reintentos de reconexión se programan una sola vez.
+let activeSock = null;
+let reconnectTimer = null;
+function scheduleReconnect(ms, motivo) {
+    botState.status = motivo;
+    if (reconnectTimer) {
+        if (VERBOSE_LOGS) console.log(`⏳ Reconnect ya programado, se ignora (${motivo})`);
+        return;
+    }
+    console.log(`🔄 Reconectando en ${Math.round(ms / 1000)}s... (${motivo})`);
+    reconnectTimer = setTimeout(() => { reconnectTimer = null; startBot(); }, ms);
+}
 // ============================================================
 async function startBot() {
     botState.status = 'Cargando motor...';
@@ -715,6 +729,13 @@ async function startBot() {
         waVersion = undefined;
     }
 
+    // Cerrar socket anterior si sigue vivo (evita 2 sockets con la misma
+    // sesión = error 440 conflict que deja al bot sordo).
+    if (activeSock) {
+        try { activeSock.end(undefined); } catch (e) { }
+        activeSock = null;
+    }
+
     // Crear socket con versión dinámica + tolerancia para Render
     const sock = makeWASocket({
         auth: authState,
@@ -730,6 +751,7 @@ async function startBot() {
         generateHighQualityLinkPreview: false, // Ahorra CPU y RAM
         getMessage: async () => undefined // No retener mensajes viejos en RAM
     });
+    activeSock = sock;
 
     const needsPairingCode = PAIRING_METHOD === 'code' && !sock.authState.creds.registered && BOT_NUMBER;
     let pairingRequested = false;
@@ -880,6 +902,9 @@ async function startBot() {
             botState.lastDisconnectCode = code || null;
             botState.lastDisconnectReason = (error?.message || 'Sin mensaje').slice(0, 180);
             console.log(`🔌 Conexión cerrada. Código: ${code} | Razón: ${error?.message || 'Sin mensaje'}`);
+            if (code === 440) {
+                console.log('⚠️ 440 conflict: otra instancia tiene esta misma sesión abierta (2 deploys solapados u otro proceso con la misma cuenta). Esa otra copia debe apagarse o se seguirán pateando.');
+            }
 
             if (code === DisconnectReason.loggedOut || code === 401) {
                 // Punto de mejora: No borrar la sesión al primer fallo 401 si nunca se conectó.
@@ -894,15 +919,14 @@ async function startBot() {
                     botState.seConectoAlgunaVez = false;
                     await resetAuthSession('logout/401');
                     console.log('🔄 Reiniciando en 10s con sesión limpia...');
-                    setTimeout(startBot, 10000);
+                    scheduleReconnect(10000, 'Reiniciando con sesión limpia...');
                     return;
                 }
 
                 // Reconectar con espera gradual más larga para proteger la base de datos
                 const waitTime = Math.min(errores401 * 20000, 60000); // Max 1 minuto
-                console.log(`🔄 Reintentando conexión en ${waitTime / 1000}s...`);
                 botState.status = `Error 401 (${errores401}/5). Reintentando...`;
-                setTimeout(startBot, waitTime);
+                scheduleReconnect(waitTime, `Error 401 (${errores401}/5). Reintentando...`);
                 return;
             }
 
@@ -915,15 +939,14 @@ async function startBot() {
                 botState.status = `Código: ${botState.pairingCode} - ¡Ingresalo ya!`;
                 const waitMs = Math.max(PAIRING_CODE_TTL_MS - (Date.now() - botState.pairingCodeAt), 30000);
                 botState.nextPairingRequestAt = Date.now() + waitMs;
-                setTimeout(startBot, waitMs);
+                scheduleReconnect(waitMs, `Código: ${botState.pairingCode} - ¡Ingresalo ya!`);
                 return;
             }
 
             // Reconexión normal para cualquier otro error
             const reason = code || 'Desconocido';
-            console.log(`🔄 Reconectando en 8s... (Motivo: ${reason})`);
             botState.status = `Reconectando... (Error: ${reason})`;
-            setTimeout(startBot, 8000);
+            scheduleReconnect(code === 440 ? 15000 : 8000, `Reconectando... (Error: ${reason})`);
         }
     });
 
