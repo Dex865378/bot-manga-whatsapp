@@ -14,7 +14,7 @@ async function refreshGroupCache(db, botState, chatId) {
 module.exports = {
     name: 'settings',
     isMultiple: true,
-    names: ['!bienvenida', '!setbienvenida', '!adm', '!bot', '!reglas', '!tag', '!antispam', '!mododios', '!sincronizar', '!modomanga', '!manga'],
+    names: ['!bienvenida', '!setbienvenida', '!despedida', '!setdespedida', '!adm', '!bot', '!reglas', '!tag', '!antispam', '!mododios', '!sincronizar', '!modomanga', '!manga'],
     async execute(sock, chatId, msg, args, extras) {
         const { start, isGroup, isAdmin, isGlobalAdmin, db, botState, sender } = extras;
         if (!isGroup && !isGlobalAdmin) return sock.sendMessage(chatId, { text: 'Este comando solo funciona en grupos.' }, { quoted: msg });
@@ -111,6 +111,48 @@ module.exports = {
                 return sock.sendMessage(chatId, { text: 'Mensaje de bienvenida actualizado en este grupo.\n_(Las bienvenidas han sido activadas)_' }, { quoted: msg });
             }
             console.error(`❌ [!setbienvenida] No se pudo guardar en ${chatId}:`, result?.error || 'desconocido');
+            return sock.sendMessage(chatId, { text: `Error al guardar el mensaje: ${result?.error || 'falla de base de datos'}` }, { quoted: msg });
+        }
+
+        if (start === '!despedida') {
+            if (!isAdmin) return sock.sendMessage(chatId, { text: 'Solo admins.' }, { quoted: msg });
+            const mode = (args[0] || '').toLowerCase();
+            if (mode === 'on') {
+                await db.activarDespedida(chatId);
+                return sock.sendMessage(chatId, { text: 'Despedidas *activadas*.\n_El bot no necesita ser admin para despedir._' }, { quoted: msg });
+            } else if (mode === 'off') {
+                await db.desactivarDespedida(chatId);
+                return sock.sendMessage(chatId, { text: 'Despedidas *desactivadas*.' }, { quoted: msg });
+            } else if (mode === 'ver') {
+                const conf = await db.tieneDespedida(chatId);
+                if (!conf.activa) return sock.sendMessage(chatId, { text: 'Despedidas *desactivadas* en este grupo.\nUso: *!despedida on*' }, { quoted: msg });
+                return sock.sendMessage(chatId, { text: `👋 *Mensaje actual:*\n\n${conf.mensaje || '_(por defecto)_'}` }, { quoted: msg });
+            } else if (mode === 'test') {
+                const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+                const targets = mentioned.length > 0 ? mentioned : [sender];
+                const conf = await db.tieneDespedida(chatId);
+                if (!conf.activa) return sock.sendMessage(chatId, { text: 'Despedidas *desactivadas* en este grupo.\nUso: *!despedida on*' }, { quoted: msg });
+                for (const t of targets) {
+                    const nombre = (t || '').split('@')[0];
+                    let preview = conf.mensaje || `Adiós @${nombre} 👋\nSe salió del grupo.`;
+                    preview = preview.replace(/{usuario}/gi, `@${nombre}`).replace(/{user}/gi, `@${nombre}`);
+                    await sock.sendMessage(chatId, { text: `🧪 *Prueba de despedida:*\n\n${preview}`, mentions: [t] });
+                }
+                return;
+            }
+            return sock.sendMessage(chatId, { text: 'Uso: *!despedida on/off/ver/test*' }, { quoted: msg });
+        }
+
+        if (start === '!setdespedida') {
+            if (!isAdmin) return sock.sendMessage(chatId, { text: 'Solo admins.' }, { quoted: msg });
+            const message = args.join(' ');
+            if (!message) return sock.sendMessage(chatId, { text: 'Especifica un mensaje. Usa `{usuario}` para mencionar al que se fue.\nEjemplo: *!setdespedida Adiós {usuario}, se lo va a extrañar.*' }, { quoted: msg });
+            const result = await db.setMensajeDespedida(chatId, message);
+            if (result && result.ok) {
+                await db.activarDespedida(chatId);
+                return sock.sendMessage(chatId, { text: 'Mensaje de despedida actualizado en este grupo.\n_(Las despedidas han sido activadas)_' }, { quoted: msg });
+            }
+            console.error(`❌ [!setdespedida] No se pudo guardar en ${chatId}:`, result?.error || 'desconocido');
             return sock.sendMessage(chatId, { text: `Error al guardar el mensaje: ${result?.error || 'falla de base de datos'}` }, { quoted: msg });
         }
 

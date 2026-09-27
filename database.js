@@ -40,6 +40,8 @@ async function crearTablas() {
         `CREATE TABLE IF NOT EXISTS mangas (codigo TEXT PRIMARY KEY, titulo TEXT, carpeta TEXT, descripcion TEXT, generos TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
         `CREATE TABLE IF NOT EXISTS grupos_activados (chat_id TEXT PRIMARY KEY, activado_por TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
         `CREATE TABLE IF NOT EXISTS grupos_bienvenida (chat_id TEXT PRIMARY KEY, mensaje TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+        `CREATE TABLE IF NOT EXISTS grupos_despedida (chat_id TEXT PRIMARY KEY, mensaje TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+        `CREATE TABLE IF NOT EXISTS portadas (clave TEXT PRIMARY KEY, imagen BLOB, mime TEXT DEFAULT 'image/jpeg', updated_at BIGINT)`,
         `CREATE TABLE IF NOT EXISTS usuarios (
             user_id TEXT PRIMARY KEY, nombre TEXT, edad INTEGER, nacimiento TEXT, altura TEXT, descripcion TEXT, superpoder TEXT, 
             manga_fav TEXT, anime_fav TEXT, waifu_husbando TEXT, pareja TEXT, titulo TEXT, 
@@ -644,6 +646,81 @@ async function setMensajeBienvenida(chatId, mensaje) {
     }
 }
 
+async function tieneDespedida(chatId) {
+    if (!connected) await init();
+    try {
+        const rs = await dbClient.execute({ sql: 'SELECT mensaje FROM grupos_despedida WHERE chat_id = ?', args: [chatId] });
+        if (rs.rows.length > 0) return { activa: true, mensaje: rs.rows[0].mensaje };
+        return { activa: false };
+    } catch (e) { return { activa: false }; }
+}
+
+async function activarDespedida(chatId) {
+    if (!connected) await init();
+    try { await dbClient.execute({ sql: 'INSERT INTO grupos_despedida (chat_id) VALUES (?) ON CONFLICT(chat_id) DO NOTHING', args: [chatId] }); return true; } catch (e) { return false; }
+}
+
+async function desactivarDespedida(chatId) {
+    if (!connected) await init();
+    try { await dbClient.execute({ sql: 'DELETE FROM grupos_despedida WHERE chat_id = ?', args: [chatId] }); return true; } catch (e) { return false; }
+}
+
+async function setMensajeDespedida(chatId, mensaje) {
+    if (!connected) await init();
+    try {
+        await dbClient.execute({
+            sql: 'INSERT INTO grupos_despedida (chat_id, mensaje) VALUES (?, ?) ON CONFLICT(chat_id) DO UPDATE SET mensaje = ?',
+            args: [chatId, mensaje, mensaje]
+        });
+        return { ok: true };
+    } catch (e) {
+        console.error('❌ [DB] Error setMensajeDespedida:', e.message);
+        return { ok: false, error: e.message };
+    }
+}
+
+// --- Portadas (imágenes de !menu / bienvenida / despedida) ---
+// Caché RAM: la imagen se lee de Turso 1 sola vez y luego vive en memoria
+// (envío super rápido, sin I/O por mensaje). Se invalida al cambiarla.
+const portadaCache = new Map(); // clave -> Buffer|null (null = no hay, no reintentar en este boot)
+const PORTADAS_VALIDAS = ['menu', 'bienvenida', 'despedida'];
+
+async function getPortada(clave) {
+    if (!PORTADAS_VALIDAS.includes(clave)) return null;
+    if (portadaCache.has(clave)) return portadaCache.get(clave);
+    let buf = null;
+    try {
+        if (!connected) await init();
+        const rs = await dbClient.execute({ sql: 'SELECT imagen FROM portadas WHERE clave = ?', args: [clave] });
+        if (rs.rows.length > 0 && rs.rows[0].imagen) buf = Buffer.from(rs.rows[0].imagen);
+    } catch (e) { buf = null; }
+    portadaCache.set(clave, buf);
+    return buf;
+}
+
+async function setPortada(clave, buffer) {
+    if (!PORTADAS_VALIDAS.includes(clave)) return { ok: false, error: 'clave invalida' };
+    if (!Buffer.isBuffer(buffer) || buffer.length === 0) return { ok: false, error: 'imagen vacia' };
+    if (buffer.length > 2 * 1024 * 1024) return { ok: false, error: 'imagen muy pesada (>2MB)' };
+    portadaCache.set(clave, buffer);
+    try {
+        if (!connected) await init();
+        await dbClient.execute({
+            sql: 'INSERT INTO portadas (clave, imagen, mime, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(clave) DO UPDATE SET imagen = ?, mime = ?, updated_at = ?',
+            args: [clave, buffer, 'image/jpeg', Date.now(), buffer, 'image/jpeg', Date.now()]
+        });
+        return { ok: true, bytes: buffer.length };
+    } catch (e) {
+        console.error('❌ [DB] Error setPortada:', e.message);
+        return { ok: false, error: e.message };
+    }
+}
+
+function limpiarCachePortada(clave) {
+    if (clave) portadaCache.delete(clave);
+    else portadaCache.clear();
+}
+
 async function obtenerTopMonedas(limit = 10) {
     if (!connected) await init();
     try { const rs = await dbClient.execute({ sql: `SELECT user_id, nombre, nombre_wa, monedas FROM usuarios ORDER BY monedas DESC LIMIT ?`, args: [limit] }); return rs.rows; } catch (e) { return []; }
@@ -917,6 +994,8 @@ module.exports = {
     guardarManga, obtenerMangas, buscarMangas,
     estaGrupoActivo, activarGrupo, desactivarGrupo,
     tieneBienvenida, activarBienvenida, desactivarBienvenida, setMensajeBienvenida,
+    tieneDespedida, activarDespedida, desactivarDespedida, setMensajeDespedida,
+    getPortada, setPortada, limpiarCachePortada, PORTADAS_VALIDAS,
     obtenerUsuario, obtenerUsuariosBatch, actualizarUsuario, incrementarCampo, sumarMonedas, sumarXP, obtenerBalance, deducirMonedas,
     registrarVictoriaDuelo, registrarDerrotaDuelo, registrarComando, actualizarRacha,
     agregarItem, removerItem,

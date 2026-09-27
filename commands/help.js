@@ -273,6 +273,20 @@ const helpData = {
         args: 'Estado o mensaje (opcional)',
         cooldown: 'Ninguno (solo admins)'
     },
+    '!despedida': {
+        desc: 'Mensaje cuando alguien sale del grupo (el bot no necesita ser admin).',
+        usage: '!despedida [on|off|ver|test]\n!setdespedida <mensaje>',
+        ejemplo: '!despedida on\n!setdespedida Adiós {usuario}!\n!despedida test',
+        args: 'Estado o mensaje (opcional)',
+        cooldown: 'Ninguno (solo admins)'
+    },
+    '!setportada': {
+        desc: 'Cambia la imagen del !menu, bienvenida o despedida (solo admins). Manda el comando con foto o respondiendo a una foto.',
+        usage: '!setportada <menu|bienvenida|despedida|ver>',
+        ejemplo: '!setportada menu\n!setportada ver',
+        args: 'Destino + foto',
+        cooldown: 'Ninguno (solo admins)'
+    },
     '!tag': {
         desc: 'Menciona a todos los miembros del grupo.',
         usage: '!tag [mensaje]',

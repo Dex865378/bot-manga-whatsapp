@@ -2,6 +2,31 @@
  * 🏠 MÓDULO PRINCIPAL
  */
 const { helpData } = require('./help');
+const fs = require('fs');
+const path = require('path');
+
+// Portada del menú: configurada con !setportada menu (cacheada en RAM por
+// db.getPortada) o la imagen por defecto del bot. Así el menú sale como UN
+// solo mensaje: imagen pegada al texto (caption), como hacen los bots.
+let _menuDefaultImg = null;
+function getMenuDefaultImg() {
+    if (_menuDefaultImg) return _menuDefaultImg;
+    try {
+        const f = path.join(__dirname, '..', 'imagen_bienvenida.png');
+        if (fs.existsSync(f)) _menuDefaultImg = fs.readFileSync(f);
+    } catch (_) { }
+    return _menuDefaultImg;
+}
+
+async function enviarMenuConPortada(sock, chatId, msg, db, texto) {
+    let img = null;
+    try { img = await db.getPortada('menu'); } catch (_) { }
+    if (!img) img = getMenuDefaultImg();
+    if (img) {
+        return sock.sendMessage(chatId, { image: img, caption: texto }, { quoted: msg });
+    }
+    return sock.sendMessage(chatId, { text: texto }, { quoted: msg });
+}
 
 module.exports = {
     name: 'main',
@@ -96,7 +121,7 @@ module.exports = {
                 mt += `> _Modo manga activo. Solo comandos de manga._\n`;
                 mt += `> _Usa *!manga off* para volver al modo normal._`;
 
-                return sock.sendMessage(chatId, { text: mt }, { quoted: msg });
+                return enviarMenuConPortada(sock, chatId, msg, db, mt);
             }
 
             // ── MENÚ COMPLETO (modo normal) ──
@@ -137,6 +162,12 @@ module.exports = {
             mText += `└ _Configurar el mensaje de bienvenida._\n`;
             mText += `• *!setbienvenida <mensaje>*\n`;
             mText += `└ _Guardar mensaje personalizado ({usuario})._\n`;
+            mText += `• *!despedida <on/off/ver/test>*\n`;
+            mText += `└ _Mensaje cuando alguien sale del grupo._\n`;
+            mText += `• *!setdespedida <mensaje>*\n`;
+            mText += `└ _Guardar despedida personalizada ({usuario})._\n`;
+            mText += `• *!setportada <menu|bienvenida|despedida>*\n`;
+            mText += `└ _Cambiar imagen con foto adjunta o respondida._\n`;
             mText += `• *!reglas*\n`;
             mText += `└ _Ver o configurar reglas del grupo._\n`;
             mText += `• *!sorteo*\n`;
@@ -327,7 +358,7 @@ module.exports = {
             mText += `> _Escribe un comando para empezar._\n`;
             mText += `> _Diky Bot V3 - El bot más completo._`;
 
-            return sock.sendMessage(chatId, { text: mText }, { quoted: msg });
+            return enviarMenuConPortada(sock, chatId, msg, db, mText);
         }
 
         // !sticker / !s

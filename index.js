@@ -354,8 +354,12 @@ async function enviarBienvenida(sock, groupId, participantJid) {
             customMsg = `¡Hola @${nombre}!\n\n` + customMsg;
         }
         
-        // Enviar imagen de bienvenida (cacheada en RAM)
-        const { img: bienvenidaImg, stk: bienvenidaStk } = getBienvenidaAssets();
+        // Enviar imagen de bienvenida: portada configurada con !setportada
+        // (cacheada en RAM) o la imagen por defecto. Imagen + texto en UN mensaje.
+        let bienvenidaImg = null;
+        try { bienvenidaImg = await db.getPortada('bienvenida'); } catch (_) { }
+        if (!bienvenidaImg) bienvenidaImg = getBienvenidaAssets().img;
+        const { stk: bienvenidaStk } = getBienvenidaAssets();
         if (bienvenidaImg) {
             try {
                 const captionFinal = `╔══════════════════════╗\n║    😺 *¡BIENVENID@!* 😺    ║\n╚══════════════════════╝\n\n${customMsg}`;
@@ -384,6 +388,49 @@ async function enviarBienvenida(sock, groupId, participantJid) {
         }
     } catch (e) {
         console.error('❌ Error en enviarBienvenida:', e.message);
+    }
+}
+
+// Deduplicador de despedidas (igual que bienvenidas, mapa propio).
+const farewellDedup = new Map();
+function yaDespedido(groupId, user) {
+    const key = `${groupId}:${(user || '').split('@')[0]}`;
+    const ahora = Date.now();
+    const ts = farewellDedup.get(key);
+    if (ts && (ahora - ts < 10 * 60 * 1000)) return true;
+    farewellDedup.set(key, ahora);
+    if (farewellDedup.size > 500) farewellDedup.delete(farewellDedup.keys().next().value);
+    return false;
+}
+
+// Despedida al salir alguien (con portada + texto en UN mensaje).
+async function enviarDespedida(sock, groupId, participantJid) {
+    try {
+        const conf = await db.tieneDespedida(groupId);
+        if (!conf.activa) {
+            if (VERBOSE_LOGS) console.log(`[DESPEDIDA] omitida: desactivada (usa !despedida on)`);
+            return;
+        }
+        const nombre = (participantJid || '').split('@')[0];
+        let customMsg = conf.mensaje || `Adiós @${nombre} 👋\nSe salió del grupo.`;
+        customMsg = customMsg.replace(/{usuario}/gi, `@${nombre}`).replace(/{user}/gi, `@${nombre}`);
+        if (!customMsg.includes(`@${nombre}`)) customMsg = `Adiós @${nombre} 👋\n\n` + customMsg;
+
+        let img = null;
+        try { img = await db.getPortada('despedida'); } catch (_) { }
+        if (!img) img = getBienvenidaAssets().img;
+        if (img) {
+            try {
+                await sock.sendMessage(groupId, { image: img, caption: customMsg, mentions: [participantJid] });
+                console.log(`👋 Despedida enviada a ${nombre}`);
+                return;
+            } catch (eImg) {
+                console.error(`❌ Error imagen despedida:`, eImg.message);
+            }
+        }
+        await sock.sendMessage(groupId, { text: customMsg, mentions: [participantJid] });
+    } catch (e) {
+        console.error('❌ Error en enviarDespedida:', e.message);
     }
 }
 
@@ -1038,6 +1085,18 @@ async function startBot() {
                 if (!msg.message) continue;
             }
 
+            // Salidas del grupo por stub (28=REMOVE, 32=LEAVE).
+            if (remoteJidStub?.endsWith('@g.us') && [28, 32].includes(msg.messageStubType)) {
+                const partes = (msg.messageStubParameters || []).map(normWelcomeJid).filter(Boolean);
+                if (partes.length > 0) {
+                    console.log(`👋 [STUB] Salida de ${partes.length} usuario(s) de ${remoteJidStub}`);
+                    for (const p of partes) {
+                        if (!yaDespedido(remoteJidStub, p)) await enviarDespedida(sock, remoteJidStub, p);
+                    }
+                }
+                if (!msg.message) continue;
+            }
+
             // Detectar mensajes de sistema de unión al grupo (alternativa sin ser admin)
             const isGroupMsg = msg.key.remoteJid?.endsWith('@g.us');
             if (isGroupMsg) {
@@ -1129,14 +1188,23 @@ async function startBot() {
     // pero WhatsApp no siempre lo entrega: el stub en upsert es el respaldo) ---
     sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
         console.log(`👥 [ADMIN] Evento grupo: ${action} en ${id} para ${participants.length} usuarios`);
-        if (action !== 'add') return;
-
-        for (const raw of participants) {
-            const p = normWelcomeJid(raw);
-            if (!p || yaSaludado(id, p)) continue;
-            await enviarBienvenida(sock, id, p);
-            // Pausa entre usuarios si hay varios
-            if (participants.length > 1) await delay(2000);
+        if (action === 'add') {
+            for (const raw of participants) {
+                const p = normWelcomeJid(raw);
+                if (!p || yaSaludado(id, p)) continue;
+                await enviarBienvenida(sock, id, p);
+                // Pausa entre usuarios si hay varios
+                if (participants.length > 1) await delay(2000);
+            }
+            return;
+        }
+        if (action === 'remove' || action === 'leave') {
+            for (const raw of participants) {
+                const p = normWelcomeJid(raw);
+                if (!p || yaDespedido(id, p)) continue;
+                await enviarDespedida(sock, id, p);
+                if (participants.length > 1) await delay(2000);
+            }
         }
     });
 
@@ -1349,7 +1417,7 @@ async function procesarMensaje(sock, msg) {
                 '!pat', '!hug', '!kiss', '!slap', '!punch', '!cry', '!dance', '!bite', '!highfive',
                 '!fumar', '!cafe', '!puchero', '!sonrojar', '!baka', '!dormir', '!comiendo', '!pensar',
                 '!patear', '!celebrar', '!aburrido', '!risa', '!smug', '!stare',
-                '!tag', '!reglas', '!kick', '!adm', '!promover', '!bot', '!bienvenida', '!setbienvenida', '!news', '!broadcast', '!anuncio', '!sorteo', '!rifa',
+                '!tag', '!reglas', '!kick', '!adm', '!promover', '!bot', '!bienvenida', '!setbienvenida', '!despedida', '!setdespedida', '!setportada', '!news', '!broadcast', '!anuncio', '!sorteo', '!rifa',
                 '!tienda', '!comprar', '!vender', '!inventario', '!mejor', '!bounty', '!regalar', '!regalaritem', '!dar',
                 '!antispam', '!mododios',
                 '!prestigio', '!loteria', '!clase', '!pedir', '!plantarse', '!pl', '!trivia', '!daily', '!w', '!slut', '!robar', '!canjear',
