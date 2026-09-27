@@ -132,7 +132,10 @@ async function crearTablas() {
             'ALTER TABLE grupos_activados ADD COLUMN flash_enabled INTEGER DEFAULT 0',
             'ALTER TABLE grupos_activados ADD COLUMN antispam INTEGER DEFAULT 1',
             'ALTER TABLE grupos_activados ADD COLUMN modo_admin INTEGER DEFAULT 0',
-            'ALTER TABLE grupos_activados ADD COLUMN modo_manga INTEGER DEFAULT 0'
+            'ALTER TABLE grupos_activados ADD COLUMN modo_manga INTEGER DEFAULT 0',
+            // Tablas creadas en versiones viejas sin esta columna (el CREATE TABLE
+            // IF NOT EXISTS no la agrega a tablas ya existentes en Turso).
+            'ALTER TABLE grupos_bienvenida ADD COLUMN mensaje TEXT'
         ];
         for (const sql of allCols) {
             try { await dbClient.execute(sql); } catch (e) { }
