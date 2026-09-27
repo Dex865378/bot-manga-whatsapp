@@ -113,7 +113,7 @@ module.exports = {
             const up = Math.floor((Date.now() - botState.startTime) / 1000);
             const h = Math.floor(up / 3600), m = Math.floor((up % 3600) / 60);
 
-            let mText = `✨ *DIKY BOT V2 - PANEL MAESTRO* ✨\n`;
+            let mText = `✨ *DIKY BOT V3 - PANEL MAESTRO* ✨\n`;
             mText += `📜 _"${pick(mottos)}"_\n`;
             mText += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 

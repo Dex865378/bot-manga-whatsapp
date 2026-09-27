@@ -1,4 +1,4 @@
-# 📋 DOCUMENTO MAESTRO DE VARIABLES - DIKY BOT V2
+# 📋 DOCUMENTO MAESTRO DE VARIABLES - DIKY BOT V3
 
 > [!CAUTION]
 > **ESTE DOCUMENTO ES CRÍTICO.** No debe borrarse, moverse ni editarse bajo ninguna circunstancia. Contiene las credenciales vitales para el funcionamiento del bot.

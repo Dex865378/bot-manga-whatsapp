@@ -1,5 +1,5 @@
 /**
- * 🤖 DIKY BOT V2 - RENDER + TURSO EDITION
+ * 🤖 DIKY BOT V3 - RENDER + TURSO EDITION
  * Motor: Baileys v7 | DB: Turso Cloud | Deploy: Render
  */
 console.log('🚀 [CORE] El servidor Node.js ha arrancado correctamente.');
@@ -581,7 +581,7 @@ function dashboardHandler(req, res) {
     .st p{padding:5px 0;border-bottom:1px solid #334155}
     .st b{color:#e2e8f0}
     </style></head><body><div class="c">
-    <h1>😺 Diky Bot V2</h1>
+    <h1>😺 Diky Bot V3</h1>
     <div class="sb">${statusHtml}${qrHtml}</div>
     <div class="st">
         <p>⏱️ <b>Uptime:</b> ${h}h ${m}m ${s}s</p>
@@ -702,7 +702,7 @@ function scheduleReconnect(ms, motivo) {
 // ============================================================
 async function startBot() {
     botState.status = 'Cargando motor...';
-    console.log('🚀 Iniciando Diky Bot V2...');
+    console.log('🚀 Iniciando Diky Bot V3...');
 
     await db.init();
     handler.loadCommands(); // Punto 1: Carga dinámica de módulos
@@ -1641,7 +1641,7 @@ async function procesarMensaje(sock, msg) {
 // ============================================================
 //                     ¡ARRANCAR! 🚀
 // ============================================================
-console.log('😺 Iniciando Diky Bot V2...');
+console.log('😺 Iniciando Diky Bot V3...');
 startBot();
 
 // --- CIERRE LIMPIO (FLUSH DB) ---

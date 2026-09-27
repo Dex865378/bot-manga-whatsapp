@@ -1,4 +1,4 @@
-# 😺 MEMORIA DE DIKY BOT V2 - [Actualizado: 2026-02-27 21:15]
+# 😺 MEMORIA DE DIKY BOT V3 - [Actualizado: 2026-02-27 21:15]
 
 Este documento es la BIBLIA del proyecto. TODO asistente DEBE leerlo PRIMERO antes de tocar cualquier archivo.
 
@@ -29,7 +29,7 @@ Este documento es la BIBLIA del proyecto. TODO asistente DEBE leerlo PRIMERO ant
 ---
 
 ## 🚀 ESTADO GENERAL
-- **Nombre:** Diky Bot V2
+- **Nombre:** Diky Bot V3
 - **Motor:** Baileys v7.0.0-rc.9
 - **Hosting:** Render (Cloud) - Plan Free (512MB RAM)
 - **Base de Datos:** Turso Cloud

@@ -1,5 +1,5 @@
 ---
-title: Diky Bot V2
+title: Diky Bot V3
 emoji: 🐱
 colorFrom: purple
 colorTo: indigo
@@ -7,7 +7,7 @@ sdk: docker
 pinned: false
 ---
 
-# 😺 Diky Bot V2 
+# 😺 Diky Bot V3 
 
 Este bot de WhatsApp está optimizado para render
 
