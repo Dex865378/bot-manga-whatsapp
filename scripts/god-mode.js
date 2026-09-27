@@ -1,5 +1,5 @@
-const db = require('./database');
-require('dotenv').config();
+const db = require('../database');
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
 async function setGodMode() {
     console.log('🌟 Iniciando actualización de modo DIOS...');

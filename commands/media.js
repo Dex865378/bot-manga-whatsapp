@@ -354,8 +354,15 @@ module.exports = {
             return sock.sendMessage(chatId, { text: lista });
         }
 
-        // !manga [código o nombre]
+        // !manga [código o nombre] — si es on/off delegar a settings (!modomanga)
         if (start === '!manga') {
+            const sub = (args[0] || '').toLowerCase();
+            if (sub === 'on' || sub === 'off') {
+                try {
+                    const settingsModule = require('./settings');
+                    return settingsModule.execute(sock, chatId, msg, args, extras);
+                } catch (e) { /* fallback abajo */ }
+            }
             const q = args.join(' ');
             if (!q) return sock.sendMessage(chatId, { text: '📖 Uso: !manga <código o nombre>' });
 
@@ -479,8 +486,11 @@ module.exports = {
                         if (!info || info.disponibles === 0) {
                             return sock.sendMessage(chatId, { text: `❌ No hay capítulos disponibles para descargar.` });
                         }
-                        capsToDownload = info.caps.map(c => c.num);
-                        await sock.sendMessage(chatId, { text: `🚀 Comenzando descarga de *${capsToDownload.length}* capítulos de *${titulo}*.\n⚠️ Esto tomará tiempo. Los capítulos llegarán uno por uno con pausas para no saturar el servidor.` });
+                        // Tope anti-OOM en 512MB: una cola ilimitada (50 pedidos = horas
+                        // de PDFs en RAM) tumba el proceso. 15 caps por tanda es seguro.
+                        const MAX_CAPS_ALL = 15;
+                        capsToDownload = info.caps.map(c => c.num).slice(0, MAX_CAPS_ALL);
+                        await sock.sendMessage(chatId, { text: `🚀 Descargando *${capsToDownload.length}* capítulos de *${titulo}*${info.caps.length > MAX_CAPS_ALL ? ` (de ${info.caps.length} disponibles — pide otra tanda con *!leer ${codigo} all* al terminar)` : ''}.\n⚠️ Llegarán uno por uno con pausas para no saturar el servidor.` });
                     } else {
                         capsToDownload = [numCap];
                         await sock.sendMessage(chatId,
@@ -525,7 +535,10 @@ module.exports = {
                                         await new Promise(r => setTimeout(r, 800));
                                     }
                                 }
+                                resultado.imagenes.length = 0;
                             }
+                            // Liberar referencia al PDF enviado antes de la pausa (pico RAM)
+                            if (resultado.pdf) resultado.pdf = null;
 
                             if (isAll) {
                                 // Pausa generosa entre capítulos para no agotar la RAM ni sufrir ban de WhatsApp/MangaDex

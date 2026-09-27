@@ -1,8 +1,8 @@
-const db = require('./database');
+const db = require('../database');
 const fs = require('fs');
 const path = require('path');
 
-const AUTH_DIR = path.join(__dirname, '.bot_session');
+const AUTH_DIR = path.join(__dirname, '..', '.bot_session');
 
 (async () => {
     console.log('☢️ INICIANDO RESETEO DE EMERGENCIA ☢️');

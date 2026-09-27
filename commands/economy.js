@@ -211,33 +211,6 @@ module.exports = {
             const u = await db.obtenerUsuario(sender);
             const num = parseInt(args[0]);
             const pType = args[0]?.toLowerCase();
-            const petTypes = {
-                // Perro — múltiples alias
-                'comun': { e: '🐶', n: 'Perro', p: 5000 },
-                'perro': { e: '🐶', n: 'Perro', p: 5000 },
-                'dog': { e: '🐶', n: 'Perro', p: 5000 },
-                // Gato
-                'gato': { e: '🐱', n: 'Gato', p: 5000 },
-                'cat': { e: '🐱', n: 'Gato', p: 5000 },
-                // Lobo
-                'lobo': { e: '🐺', n: 'Lobo Hunter', p: 15000 },
-                'wolf': { e: '🐺', n: 'Lobo Hunter', p: 15000 },
-                // Zorro
-                'zorro': { e: '🦊', n: 'Zorro Astuto', p: 12000 },
-                'fox': { e: '🦊', n: 'Zorro Astuto', p: 12000 },
-                // Dragón
-                'dragon': { e: '🐲', n: 'Dragón Imperial', p: 100000 },
-                'dragón': { e: '🐲', n: 'Dragón Imperial', p: 100000 },
-                // Fénix
-                'fenix': { e: '🔥', n: 'Fénix Renacido', p: 80000 },
-                'fénix': { e: '🔥', n: 'Fénix Renacido', p: 80000 },
-                'phoenix': { e: '🔥', n: 'Fénix Renacido', p: 80000 },
-                // Pikachu
-                'pikachu': { e: '⚡', n: 'Pikachu', p: 50000 },
-                'pika': { e: '⚡', n: 'Pikachu', p: 50000 },
-                // Mewtwo
-                'mewtwo': { e: '👾', n: 'Mewtwo', p: 250000 }
-            };
 
             const balance = await db.obtenerBalance(sender);
 
@@ -900,81 +873,5 @@ module.exports = {
             }, { quoted: msg });
         }
 
-        // !mascotas y !alimentar ahora los maneja commands/mascotas.js
-        if (start === '!mascotas' || start === '!alimentar') { return; }
-        if (false) {
-            const u = await db.obtenerUsuario(sender);
-            const lista = [
-                { e: '🐶', n: 'Perro',             tipo: 'comun',    p: 5000,   desc: 'Leal y común' },
-                { e: '🐱', n: 'Gato',              tipo: 'gato',     p: 5000,   desc: 'Independiente y curioso' },
-                { e: '🐺', n: 'Lobo Hunter',       tipo: 'lobo',     p: 15000,  desc: 'Feroz y leal' },
-                { e: '🦊', n: 'Zorro Astuto',      tipo: 'zorro',    p: 12000,  desc: 'Inteligente y pícaro' },
-                { e: '🐲', n: 'Dragón Imperial',   tipo: 'dragon',   p: 100000, desc: 'Majestuoso y poderoso' },
-                { e: '🔥', n: 'Fénix Renacido',    tipo: 'fenix',    p: 80000,  desc: 'Inmortal y ardiente' },
-                { e: '⚡', n: 'Pikachu',            tipo: 'pikachu',  p: 50000,  desc: 'Eléctrico y entrañable' },
-                { e: '👾', n: 'Mewtwo',             tipo: 'mewtwo',   p: 250000, desc: 'Legendario y terrorífico' },
-            ];
-
-            let m = `🐾 *TIENDA DE MASCOTAS* 🐾\n━━━━━━━━━━━━━━\n`;
-            lista.forEach(pet => {
-                m += `${pet.e} *${pet.n}* — ${pet.p.toLocaleString()} diky\n   _${pet.desc}_\n   👉 !comprar ${pet.tipo}\n\n`;
-            });
-            m += `━━━━━━━━━━━━━━\n`;
-
-            if (u.mascota_tipo) {
-                m += `🐾 Tu mascota actual: *${u.mascota_nombre}* ${u.mascota_tipo} (❤️ ${u.mascota_hambre}% hambre)\n`;
-                m += `🍖 Aliméntala con *!alimentar*`;
-            } else {
-                m += `💡 No tienes mascota. ¡Adopta una!`;
-            }
-
-            return sock.sendMessage(chatId, { text: m }, { quoted: msg });
-        }
-
-        // !alimentar — Alimentar a tu mascota
-        if (start === '!alimentar') {
-            const u = await db.obtenerUsuario(sender);
-
-            if (!u.mascota_tipo) {
-                return sock.sendMessage(chatId, {
-                    text: `🐾 No tienes ninguna mascota.\n💡 Compra una en *!mascotas*`
-                }, { quoted: msg });
-            }
-
-            // Revisar si tiene comida en inventario
-            let inv = {};
-            try { inv = JSON.parse(u.inventario || '{}'); } catch (e) { }
-
-            if (!inv.comida || inv.comida <= 0) {
-                return sock.sendMessage(chatId, {
-                    text: `🍖 No tienes comida para *${u.mascota_nombre}* ${u.mascota_tipo}.\n\n💡 Compra comida en la *!tienda* (item #15) — 500 diky.`
-                }, { quoted: msg });
-            }
-
-            // Consumir 1 comida
-            inv.comida -= 1;
-            const hambreActual = u.mascota_hambre || 0;
-            const nuevoHambre = Math.min(100, hambreActual + 40);
-            const bonusXP = 30;
-
-            await db.actualizarUsuario(sender, {
-                inventario: JSON.stringify(inv),
-                mascota_hambre: nuevoHambre
-            });
-            await db.sumarXP(sender, bonusXP);
-
-            const mensajes = [
-                `😋 *${u.mascota_nombre}* ${u.mascota_tipo} devoró la comida con entusiasmo.`,
-                `🍗 *${u.mascota_nombre}* ${u.mascota_tipo} meneó la cola de felicidad al comer.`,
-                `✨ *${u.mascota_nombre}* ${u.mascota_tipo} ronroneó/ladró con satisfacción.`,
-                `💖 *${u.mascota_nombre}* ${u.mascota_tipo} te miró con amor después de comer.`
-            ];
-            const msg_pet = mensajes[Math.floor(Math.random() * mensajes.length)];
-
-            const comidaRestante = inv.comida || 0;
-            return sock.sendMessage(chatId, {
-                text: `🍖 *¡MASCOTA ALIMENTADA!* 🐾\n━━━━━━━━━━━━━━\n${msg_pet}\n\n❤️ Hambre: *${hambreActual}%* → *${nuevoHambre}%*\n✨ +${bonusXP} XP por cuidar a tu mascota\n🍗 Comidas restantes: *${comidaRestante}*\n━━━━━━━━━━━━━━`
-            }, { quoted: msg });
-        }
     }
 };

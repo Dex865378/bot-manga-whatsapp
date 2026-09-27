@@ -29,13 +29,15 @@ const logger = pino({
     transport: undefined  // Usar output JSON estándar
 });
 
-// Wrapper con contexto para módulos específicos
+// Wrapper con contexto para módulos específicos.
+// Solo propaga args[0] si es un objeto plano; antes un string creaba {0,1..} gigante.
 function createLogger(moduleName) {
+    const meta = (args) => (args[0] && typeof args[0] === 'object' && !Array.isArray(args[0]) ? args[0] : {});
     return {
-        error: (msg, ...args) => logger.error({ module: moduleName, ...args[0] }, msg),
-        warn: (msg, ...args) => logger.warn({ module: moduleName, ...args[0] }, msg),
-        info: (msg, ...args) => logger.info({ module: moduleName, ...args[0] }, msg),
-        debug: (msg, ...args) => logger.debug({ module: moduleName, ...args[0] }, msg)
+        error: (msg, ...args) => logger.error({ module: moduleName, ...meta(args) }, msg),
+        warn: (msg, ...args) => logger.warn({ module: moduleName, ...meta(args) }, msg),
+        info: (msg, ...args) => logger.info({ module: moduleName, ...meta(args) }, msg),
+        debug: (msg, ...args) => logger.debug({ module: moduleName, ...meta(args) }, msg)
     };
 }
 

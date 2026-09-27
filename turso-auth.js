@@ -55,19 +55,23 @@ async function useTursoAuthState() {
                     return data;
                 },
                 set: async (data) => {
+                    // Secuencial en lotes de 10: evita burst Promise.all de cientos de writes a Turso (429/OOM)
                     const tasks = [];
                     for (const category in data) {
                         for (const id in data[category]) {
                             const value = data[category][id];
                             const key = `${category}-${id}`;
                             if (value) {
-                                tasks.push(db.saveAuthKey(key, JSON.stringify(value, BufferJSON.replacer)));
+                                tasks.push({ op: 'save', key, val: JSON.stringify(value, BufferJSON.replacer) });
                             } else {
-                                tasks.push(db.deleteAuthKey(key));
+                                tasks.push({ op: 'del', key });
                             }
                         }
                     }
-                    await Promise.all(tasks);
+                    for (let i = 0; i < tasks.length; i += 10) {
+                        const batch = tasks.slice(i, i + 10);
+                        await Promise.all(batch.map(t => t.op === 'save' ? db.saveAuthKey(t.key, t.val) : db.deleteAuthKey(t.key)));
+                    }
                 }
             }
         },

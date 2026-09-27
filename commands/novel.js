@@ -604,11 +604,12 @@ module.exports = {
         '!reconovela': reconovelaCommand
     },
     async execute(sock, chatId, msg, args, extras) {
+        const { start } = extras;
+        // !reconovela solo usa AniList (no lncrawl) → sigue disponible aunque la descarga esté pausada
+        if (start === '!reconovela') return reconovelaCommand.execute(sock, chatId, msg, args, extras);
         if (NOVELA_PAUSADA) {
             return sock.sendMessage(chatId, { text: MSG_NOVELA_PAUSADA }, { quoted: msg });
         }
-        const { start } = extras;
-        if (start === '!reconovela') return reconovelaCommand.execute(sock, chatId, msg, args, extras);
         return novelaCommand.execute(sock, chatId, msg, args, extras);
     }
 };

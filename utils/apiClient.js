@@ -106,11 +106,16 @@ async function fetchWithRetry(url, options = {}, retries = 3, backoff = 1000) {
     }
 }
 
-// Circuit breakers por dominio (para no mezclar fallos de APIs distintas)
+// Circuit breakers por dominio (para no mezclar fallos de APIs distintas).
+// Tope anti-crecimiento: dominios nuevos por encima de 100 evictan el más viejo.
 const circuitBreakers = new Map();
+const MAX_CIRCUIT_BREAKERS = 100;
 
 function getCircuitBreaker(domain) {
     if (!circuitBreakers.has(domain)) {
+        if (circuitBreakers.size >= MAX_CIRCUIT_BREAKERS) {
+            circuitBreakers.delete(circuitBreakers.keys().next().value);
+        }
         circuitBreakers.set(domain, new CircuitBreaker());
     }
     return circuitBreakers.get(domain);

@@ -4,8 +4,8 @@
  */
 
 const { LRUCache } = require('./lruCache');
-const { fetchWithRetry, CircuitBreaker } = require('./apiClient');
-const { InputValidator, ValidationError } = require('./inputValidator');
+const { fetchWithRetry, CircuitBreaker, safeApiCall } = require('./apiClient');
+const { InputValidator, ValidationError, validateCommand } = require('./inputValidator');
 const { logger, createLogger, logCommand, logPerformance } = require('./logger');
 const { RateLimiter, rateLimiter, rateLimitMiddleware } = require('./rateLimiter');
 
@@ -16,10 +16,12 @@ module.exports = {
     // API Client
     fetchWithRetry,
     CircuitBreaker,
+    safeApiCall,
     
     // Validation
     InputValidator,
     ValidationError,
+    validateCommand,
     
     // Logging
     logger,

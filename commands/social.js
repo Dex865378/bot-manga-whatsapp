@@ -4,7 +4,7 @@
 module.exports = {
     name: 'utilities',
     isMultiple: true,
-    names: ['!config', '!kick', '!promover', '!news', '!sorteo'],
+    names: ['!config', '!kick', '!promover', '!broadcast', '!anuncio', '!sorteo'],
     async execute(sock, chatId, msg, args, { start, cmd, txt, sender, isGroup, isAdmin, isGlobalAdmin, db, botState, delay, ADMIN_NUM }) {
 
         // ==========================================
@@ -121,12 +121,13 @@ module.exports = {
         }
 
         // ==========================================
-        //  !news <mensaje> — Enviar noticia (solo admin global)
+        //  !broadcast / !anuncio <mensaje> — Enviar noticia (solo admin global)
+        //  (antes !news, renombrado para liberar !news → noticias anime en media.js)
         // ==========================================
-        if (start === '!news') {
+        if (start === '!broadcast' || start === '!anuncio') {
             if (!isGlobalAdmin) return sock.sendMessage(chatId, { text: '🚫 Solo el admin global puede usar esto.' }, { quoted: msg });
             const texto = args.join(' ').trim();
-            if (!texto) return sock.sendMessage(chatId, { text: '📰 Uso: *!news <mensaje>*' }, { quoted: msg });
+            if (!texto) return sock.sendMessage(chatId, { text: '📰 Uso: *!broadcast <mensaje>*' }, { quoted: msg });
 
             return sock.sendMessage(chatId, {
                 text: `📰 *NOTICIAS DEL BOT* 📰\n━━━━━━━━━━━━━━\n${texto}\n━━━━━━━━━━━━━━\n🤖 _Diky Bot_`

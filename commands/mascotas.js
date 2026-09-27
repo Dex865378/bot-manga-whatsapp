@@ -187,6 +187,7 @@ module.exports = {
         '!mascotas', '!dinosaurios', '!aves', '!dragones', '!acuaticos', '!salvajes', '!miticos',
         '!parque', '!principal', '!alimentar', '!escudo',
         '!lucha', '!aceptar_lucha', '!rechazar_lucha',
+        '!comprar_mascota', '!rechazar',
     ],
 
     async execute(sock, chatId, msg, args, { start, sender, db, botState, isGlobalAdmin, isAdmin, ADMIN_NUM }) {
@@ -222,7 +223,7 @@ ${perfilAnimal}
 🏪 *Adoptar (Categorías)*
 Busca en: !dinosaurios, !aves, !dragones,
 !acuaticos, !salvajes, !miticos.
-Comprar: *!comprar <nombre>*
+Comprar: *!comprar_mascota <nombre>*
 
 🎮 *Tus Acciones*
 🌳 *!parque* — Ver tus mascotas
@@ -252,11 +253,11 @@ Comprar: *!comprar <nombre>*
         }
 
         // ──────────────────────────────────────────────
-        //  !comprar_mascota <tipo>
+        //  !comprar_mascota <tipo> (alias: !comprar n/a — ese lo maneja economy.js)
         // ──────────────────────────────────────────────
-        if (cmd === '!comprar') {
+        if (cmd === '!comprar_mascota') {
             const tipoQ = args.join(' ').trim();
-            if (!tipoQ) return sock.sendMessage(chatId, { text: '❌ Escribe el nombre de la mascota. Ej: *!comprar T-Rex*' }, { quoted: msg });
+            if (!tipoQ) return sock.sendMessage(chatId, { text: '❌ Escribe el nombre de la mascota. Ej: *!comprar_mascota T-Rex*' }, { quoted: msg });
 
             const petData = findPetData(tipoQ);
             if (!petData) return sock.sendMessage(chatId, { text: `❌ No encontré *${tipoQ}*.\nRevisa las categorías con *!mascotas*.` }, { quoted: msg });
@@ -461,9 +462,9 @@ Comprar: *!comprar <nombre>*
         }
 
         // ──────────────────────────────────────────────
-        //  !aceptar (responde al desafío)
+        //  !aceptar_lucha (responde al desafío)
         // ──────────────────────────────────────────────
-        if (cmd === '!aceptar' || cmd === '!aceptar_lucha') {
+        if (cmd === '!aceptar_lucha') {
             const desafio = desafiosPendientes.get(sender);
             if (!desafio) return; // Ignorar silenciosamente
 
@@ -518,9 +519,9 @@ ${batalla.log}
         }
 
         // ──────────────────────────────────────────────
-        //  !rechazar
+        //  !rechazar_lucha
         // ──────────────────────────────────────────────
-        if (cmd === '!rechazar' || cmd === '!rechazar_lucha') {
+        if (cmd === '!rechazar_lucha' || cmd === '!rechazar') {
             const desafio = desafiosPendientes.get(sender);
             if (!desafio) return;
             desafiosPendientes.delete(sender);

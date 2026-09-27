@@ -48,6 +48,17 @@ const CONFIG = {
 // Estado de llamadas concurrentes
 let currentAiCalls = 0;
 
+// Cliente Google reutilizado (evita new por mensaje → menos GC en 512MB)
+let googleClient = null;
+let googleClientKey = null;
+function getGoogleClient(key) {
+    if (!googleClient || googleClientKey !== key) {
+        googleClient = new GoogleGenerativeAI(key);
+        googleClientKey = key;
+    }
+    return googleClient;
+}
+
 /**
  * Genera respuesta usando Google AI
  */
@@ -63,7 +74,7 @@ async function chatWithGoogleAI(prompt, retries = 2) {
     currentAiCalls++;
 
     try {
-        const genAI = new GoogleGenerativeAI(key);
+        const genAI = getGoogleClient(key);
         // gemini-1.5-flash: gemini-pro (la version anterior usada aqui) fue
         // retirado por Google y ya no responde de forma confiable, lo que
         // causaba que este proveedor fallara casi siempre y cayera a los

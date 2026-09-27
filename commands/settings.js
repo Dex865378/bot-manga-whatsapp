@@ -17,7 +17,7 @@ async function refreshGroupCache(db, botState, chatId) {
 module.exports = {
     name: 'settings',
     isMultiple: true,
-    names: ['!bienvenida', '!setbienvenida', '!adm', '!bot', '!reglas', '!tag', '!antispam', '!mododios', '!ia', '!sincronizar', '!manga'],
+    names: ['!bienvenida', '!setbienvenida', '!adm', '!bot', '!reglas', '!tag', '!antispam', '!mododios', '!ia', '!sincronizar', '!modomanga', '!manga'],
     async execute(sock, chatId, msg, args, extras) {
         const { start, isGroup, isAdmin, isGlobalAdmin, db, botState, sender } = extras;
         if (!isGroup && !isGlobalAdmin) return sock.sendMessage(chatId, { text: 'Este comando solo funciona en grupos.' }, { quoted: msg });
@@ -170,8 +170,8 @@ module.exports = {
             } catch (e) { return sock.sendMessage(chatId, { text: 'Error al obtener reglas.' }); }
         }
 
-        // !manga on/off - Modo manga exclusivo (desactiva todo menos manga + admin)
-        if (start === '!manga') {
+        // !modomanga / !manga on/off - Modo manga exclusivo (desactiva todo menos manga + admin)
+        if (start === '!modomanga' || start === '!manga') {
             const mode = args[0]?.toLowerCase();
             if (mode === 'on') {
                 if (!isAdmin) return sock.sendMessage(chatId, { text: 'Solo admins.' }, { quoted: msg });

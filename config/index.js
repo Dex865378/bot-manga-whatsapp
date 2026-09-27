@@ -40,7 +40,7 @@ const CONFIG = {
     CACHE: {
         TRADUCCIONES: { max: 500, ttl: 24 * 60 * 60 * 1000 },      // 24h
         MANGA_INFO: { max: 200, ttl: 60 * 60 * 1000 },             // 1h
-        SILENCIADOS: { max: 1000, ttl: null },                     // Sin TTL
+        SILENCIADOS: { max: 1000, ttl: 24 * 60 * 60 * 1000 },               // 24h con purga (ttl=null impide cleanup y fuga memoria)
         GROUP_CONFIG: { max: 200, ttl: 15 * 60 * 1000 },            // 15min (aumentado para mejor rendimiento)
         ADMIN_CACHE: { max: 100, ttl: 10 * 60 * 1000 },            // 10min
         API_CACHE: { max: 100, ttl: 30 * 60 * 1000 },             // 30min

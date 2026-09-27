@@ -1,20 +1,14 @@
-FROM node:20-bullseye
+FROM node:20-bullseye-slim
 
-# 1. Instalar dependencias del sistema
-RUN apt-get update && apt-get install -y \
+ENV NODE_ENV=production
+ENV NODE_OPTIONS=--max-old-space-size=400
+
+# 1. Instalar dependencias del sistema (solo las usadas: ffmpeg stickers, unzip novelas)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    python3 \
     curl \
     ca-certificates \
     unzip \
-    libwebp-dev \
-    libcairo2-dev \
-    libjpeg-dev \
-    libpango1.0-dev \
-    libgif-dev \
-    librsvg2-dev \
-    imagemagick \
-    graphicsmagick \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 

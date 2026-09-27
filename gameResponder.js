@@ -7,6 +7,14 @@ async function handleGameResponse(sock, msg, context) {
     if (!botState.juegos[chatId]) return false;
 
     const juego = botState.juegos[chatId];
+    // TTL anti-bloqueo: si el usuario abandona a mitad de partida el juego
+    // quedaba para siempre y bloqueaba nuevos (fun.js/trivia.js rechazan si
+    // existe). 10 min sin respuesta → liberar el chat en silencio.
+    if (!juego._ts) juego._ts = Date.now();
+    else if (Date.now() - juego._ts > 10 * 60 * 1000) {
+        delete botState.juegos[chatId];
+        return false;
+    }
     const esUsuarioDelJuego = (juego.responder === sender || juego.pareja === sender || juego.solicitante === sender || juego.tipo === 'ahorcado');
     const citaMensajeCorrecto = (quotedMsgId === juego.msgId);
     const esDueño = (juego.responder === sender || juego.pareja === sender || juego.solicitante === sender);

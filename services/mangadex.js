@@ -43,21 +43,41 @@ const TTL_CAPS =  6 * 60 * 60 * 1000;  //  6h
 /** Delay no bloqueante */
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
-/** Carga el JSON de IDs persistido en disco */
+/** Carga el JSON de IDs persistido en disco (cacheado en RAM: 1 lectura) */
+let _idsDiscoCache = null;
 function cargarIdsPersistedos() {
+    if (_idsDiscoCache) return _idsDiscoCache;
     try {
         if (fs.existsSync(IDS_CACHE_FILE)) {
-            return JSON.parse(fs.readFileSync(IDS_CACHE_FILE, 'utf-8'));
+            _idsDiscoCache = JSON.parse(fs.readFileSync(IDS_CACHE_FILE, 'utf-8'));
+            return _idsDiscoCache;
         }
     } catch (_) {}
-    return {};
+    _idsDiscoCache = {};
+    return _idsDiscoCache;
 }
 
-/** Persiste el mapeo código→ID en disco */
+/** Tope anti-crecimiento para los Maps de caché (512MB Render) */
+const MAX_ID_CACHE = 500;
+const MAX_CAP_CACHE = 100;
+const MAX_RECO_CACHE = 50;
+function capMapSize(map, max) {
+    if (map.size <= max) return;
+    const exceso = map.size - max;
+    const it = map.keys();
+    for (let i = 0; i < exceso; i++) {
+        const k = it.next().value;
+        if (k === undefined) break;
+        map.delete(k);
+    }
+}
+
+/** Persiste el mapeo código→ID en disco (write-through sobre caché RAM) */
 function persistirId(codigo, mangaId) {
     try {
         const data = cargarIdsPersistedos();
         data[codigo] = mangaId;
+        _idsDiscoCache = data;
         fs.writeFileSync(IDS_CACHE_FILE, JSON.stringify(data, null, 2), 'utf-8');
     } catch (e) {
         console.error('[MangaDex] Error persistiendo ID:', e.message);
@@ -107,6 +127,7 @@ async function buscarMangaId(titulo, codigo) {
     const persistido = cargarIdsPersistedos();
     if (persistido[codigo]) {
         _idCache.set(codigo, { id: persistido[codigo], ts: Date.now() });
+        capMapSize(_idCache, MAX_ID_CACHE);
         return persistido[codigo];
     }
 
@@ -134,6 +155,7 @@ async function buscarMangaId(titulo, codigo) {
 
         const id = match.id;
         _idCache.set(codigo, { id, ts: Date.now() });
+        capMapSize(_idCache, MAX_ID_CACHE);
         persistirId(codigo, id);
         console.log(`[MangaDex] ID encontrado para "${titulo}": ${id}`);
         return id;
@@ -187,6 +209,7 @@ async function obtenerCapitulos(mangaId) {
 
         const result = { caps, idioma };
         _capCache.set(mangaId, { result, ts: Date.now() });
+        capMapSize(_capCache, MAX_CAP_CACHE);
         return result;
     } catch (e) {
         console.error('[MangaDex] Error obteniendo capítulos:', e.message);
@@ -350,13 +373,16 @@ async function obtenerCapitulo(titulo, codigo, numCap) {
     const nombreBase = `${titulo.replace(/[^a-z0-9]/gi, '_')}_Cap${numCap}`;
 
     // 6. Decidir modo: PDF o imágenes sueltas
+    // Se liberan los buffers de páginas tras armar el PDF (pico 2-3x RAM si coexisten).
     if (buffers.length <= MAX_PAGES_PDF) {
         const pdf = await ensamblarPDF(buffers, titulo, numCap);
+        const paginas = buffers.length;
+        buffers.length = 0;
         return {
             modo: 'pdf',
             pdf,
             nombreArchivo: `${nombreBase}.pdf`,
-            paginas: buffers.length,
+            paginas,
             idioma
         };
     } else {
@@ -393,6 +419,7 @@ function limpiarCacheId(codigo) {
     try {
         const data = cargarIdsPersistedos();
         delete data[codigo];
+        _idsDiscoCache = data;
         fs.writeFileSync(IDS_CACHE_FILE, JSON.stringify(data, null, 2), 'utf-8');
     } catch (_) {}
 }
@@ -404,6 +431,7 @@ function limpiarCacheId(codigo) {
  */
 function forzarMangaId(codigo, id) {
     _idCache.set(codigo, { id, ts: Date.now() });
+    capMapSize(_idCache, MAX_ID_CACHE);
     try {
         const data = cargarIdsPersistedos();
         data[codigo] = id;
@@ -631,6 +659,7 @@ async function recomendarManga(genero, excludeIds = []) {
 
         if (resultados.length > 0) {
             _recoCache.set(cacheKey, { mangas: resultados, ts: Date.now() });
+            capMapSize(_recoCache, MAX_RECO_CACHE);
 
             let disponibles = resultados.filter(r => !excludeIds.includes(r.manga.id));
             if (disponibles.length === 0) disponibles = resultados; // Si ya vio todos, reiniciar filtro

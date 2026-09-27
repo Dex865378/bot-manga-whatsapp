@@ -97,6 +97,34 @@ setInterval(() => {
             totalLimpiado += n;
         }
     }
+    // Barrido de sesiones interactivas y juegos sin TTL propio (5 min).
+    // mangaSessions/novelaSessions solo se purgaban lazy al acceder; los chats
+    // inactivos quedaban en RAM para siempre. juegos/duelos/propuestas son
+    // objetos planos sin expiración y bloqueaban nuevos juegos si el usuario
+    // abandonaba a mitad de partida.
+    try {
+        const ahora = Date.now();
+        const TTL_SESION = 5 * 60 * 1000;
+        const TTL_JUEGO = 10 * 60 * 1000;
+        for (const [k, s] of botState.mangaSessions.entries()) {
+            if (!s || ahora - (s.ts || 0) > TTL_SESION) botState.mangaSessions.delete(k);
+        }
+        for (const [k, s] of botState.novelaSessions.entries()) {
+            if (!s || ahora - (s.ts || 0) > TTL_SESION) botState.novelaSessions.delete(k);
+        }
+        for (const [chatId, j] of Object.entries(botState.juegos)) {
+            const ts = j && (j._ts || j.creadoEn || j.inicio);
+            if (!j) delete botState.juegos[chatId];
+            else if (ts && ahora - ts > TTL_JUEGO) delete botState.juegos[chatId];
+            else if (!ts) j._ts = ahora; // primera vez visto: marcar para futuro barrido
+        }
+        for (const [k, d] of Object.entries(botState.duelos)) {
+            if (d && d.expira && ahora > d.expira) delete botState.duelos[k];
+        }
+        for (const [k, p] of Object.entries(botState.propuestasBodas)) {
+            if (p && p.expira && ahora > p.expira) delete botState.propuestasBodas[k];
+        }
+    } catch (e) { }
     if (totalLimpiado > 0 && VERBOSE_LOGS) console.log(`[GC] Cachés LRU limpiadas: ${totalLimpiado} entradas expiradas.`);
 }, 10 * 60 * 1000);
 
@@ -257,17 +285,20 @@ async function flushStatsBatch() {
     statsBatch.rachas.clear();
     statsBatch.dirty = false;
 
-    // Flush comandos en batch
-    for (const [userId, incremento] of comandosCopy) {
-        try {
+    // Flush comandos en paralelo con concurrencia acotada (antes: secuencial N+1).
+    // 100 usuarios = 200 roundtrips seguidos; ahora van de 5 en 5.
+    const entries = [...comandosCopy.entries()];
+    for (let i = 0; i < entries.length; i += 5) {
+        await Promise.allSettled(entries.slice(i, i + 5).map(async ([userId, incremento]) => {
             const u = await db.obtenerUsuario(userId);
             if (u) await db.actualizarUsuario(userId, { total_comandos: (u.total_comandos || 0) + incremento });
-        } catch (e) { }
+        }));
     }
 
-    // Flush rachas
-    for (const userId of rachasCopy) {
-        try { await db.actualizarRacha(userId); } catch (e) { }
+    // Flush rachas igual, de 5 en 5
+    const rachas = [...rachasCopy];
+    for (let i = 0; i < rachas.length; i += 5) {
+        await Promise.allSettled(rachas.slice(i, i + 5).map((userId) => db.actualizarRacha(userId)));
     }
 
     if (comandosCopy.size > 0) console.log(`📊 [Batch] Sincronizados ${comandosCopy.size} usuarios, ${rachasCopy.size} rachas.`);
@@ -290,9 +321,20 @@ function verificarCooldown(userId, comando, ms = 3000) {
     return 0;
 }
 
-// ============================================================
-//              FUNCIÓN DE BIENVENIDA (Reutilizable)
-// ============================================================
+// Caché en RAM de assets de bienvenida (evita fs.readFileSync por cada join)
+let _bienvenidaCache = null;
+function getBienvenidaAssets() {
+    if (_bienvenidaCache) return _bienvenidaCache;
+    try {
+        const imgPath = path.join(__dirname, 'imagen_bienvenida.png');
+        const stkPath = path.join(__dirname, 'sticker_bienvenida.webp');
+        _bienvenidaCache = {
+            img: fs.existsSync(imgPath) ? fs.readFileSync(imgPath) : null,
+            stk: fs.existsSync(stkPath) ? fs.readFileSync(stkPath) : null
+        };
+    } catch (e) { _bienvenidaCache = { img: null, stk: null }; }
+    return _bienvenidaCache;
+}
 // Usada por: group-participants.update (admin) y mensajes de sistema (sin admin)
 async function enviarBienvenida(sock, groupId, participantJid) {
     try {
@@ -312,13 +354,13 @@ async function enviarBienvenida(sock, groupId, participantJid) {
             customMsg = `¡Hola @${nombre}!\n\n` + customMsg;
         }
         
-        // Enviar imagen de bienvenida
-        const imgPath = path.join(__dirname, 'imagen_bienvenida.png');
-        if (fs.existsSync(imgPath)) {
+        // Enviar imagen de bienvenida (cacheada en RAM)
+        const { img: bienvenidaImg, stk: bienvenidaStk } = getBienvenidaAssets();
+        if (bienvenidaImg) {
             try {
                 const captionFinal = `╔══════════════════════╗\n║    😺 *¡BIENVENID@!* 😺    ║\n╚══════════════════════╝\n\n${customMsg}`;
                 await sock.sendMessage(groupId, {
-                    image: fs.readFileSync(imgPath),
+                    image: bienvenidaImg,
                     caption: captionFinal,
                     mentions: [participantJid]
                 });
@@ -331,12 +373,11 @@ async function enviarBienvenida(sock, groupId, participantJid) {
             await sock.sendMessage(groupId, { text: customMsg, mentions: [participantJid] });
         }
         
-        // Pausa y sticker
+        // Pausa y sticker (cacheado en RAM)
         await delay(1500);
-        const stickerPath = path.join(__dirname, 'sticker_bienvenida.webp');
-        if (fs.existsSync(stickerPath)) {
+        if (bienvenidaStk) {
             try {
-                await sock.sendMessage(groupId, { sticker: fs.readFileSync(stickerPath) });
+                await sock.sendMessage(groupId, { sticker: bienvenidaStk });
             } catch (eStk) {
                 console.error(`❌ Error sticker bienvenida:`, eStk.message);
             }
@@ -523,7 +564,14 @@ async function traducirConCache(texto, tipo = 'resumen') {
 // esta en Turso).
 function registrarEnBufferChat(chatId, sender, pushName, texto) {
     if (!texto || !texto.trim()) return;
-    if (!botState.chatBuffers.has(chatId)) botState.chatBuffers.set(chatId, []);
+    if (!botState.chatBuffers.has(chatId)) {
+        // Tope de grupos recordados: evita crecimiento ilimitado en muchos grupos
+        if (botState.chatBuffers.size >= 200) {
+            const oldest = botState.chatBuffers.keys().next().value;
+            botState.chatBuffers.delete(oldest);
+        }
+        botState.chatBuffers.set(chatId, []);
+    }
     const buf = botState.chatBuffers.get(chatId);
     buf.push({ sender: (sender || '').split('@')[0], pushName: pushName || '', texto: texto.slice(0, 300), ts: Date.now() });
     while (buf.length > botState.CHAT_BUFFER_MAX) buf.shift();
@@ -606,13 +654,19 @@ async function chatWithGemini(texto, contexto = '') {
     return await aiService.chatWithGoogleAI(prompt);
 }
 
-// --- Fallback local para mangas ---
+// --- Fallback local para mangas (cacheado: evita readFileSync por mensaje) ---
+let _mangasCache = null;
+let _mangasCacheMtime = 0;
 function cargarMangasLocal() {
     try {
         const f = path.join(__dirname, 'mangas.json');
-        if (fs.existsSync(f)) return JSON.parse(fs.readFileSync(f, 'utf8'));
-    } catch (e) { }
-    return [];
+        if (!fs.existsSync(f)) return [];
+        const st = fs.statSync(f);
+        if (_mangasCache && st.mtimeMs === _mangasCacheMtime) return _mangasCache;
+        _mangasCache = JSON.parse(fs.readFileSync(f, 'utf8'));
+        _mangasCacheMtime = st.mtimeMs;
+        return _mangasCache;
+    } catch (e) { return _mangasCache || []; }
 }
 
 // ============================================================
@@ -706,8 +760,9 @@ app.listen(PORT, '0.0.0.0', () => console.log(`🌐 Dashboard en puerto ${PORT}`
 // ============================================================
 async function convertirAWebp(buffer, isVideo = false) {
     const ext = isVideo ? 'mp4' : 'png';
-    const tmpIn = path.join(os.tmpdir(), `stk_in_${Date.now()}.${ext}`);
-    const tmpOut = path.join(os.tmpdir(), `stk_out_${Date.now()}.webp`);
+    const uid = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const tmpIn = path.join(os.tmpdir(), `stk_in_${uid}.${ext}`);
+    const tmpOut = path.join(os.tmpdir(), `stk_out_${uid}.webp`);
     fs.writeFileSync(tmpIn, buffer);
     try {
         const vf = 'scale=512:512:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=white@0,format=yuva420p';
@@ -727,6 +782,16 @@ async function convertirAWebp(buffer, isVideo = false) {
 
 // ============================================================
 //                     BOT PRINCIPAL
+// ============================================================
+// Guard contra timers duplicados en reconexiones (fuga RAM en 512MB):
+// startBot() se re-ejecuta en cada reconnect; sin esto cada setInterval
+// se duplicaba y acumulaba queries + closures con sock viejo.
+function onceInterval(key, fn, ms) {
+    if (!global.__botTimers) global.__botTimers = {};
+    if (global.__botTimers[key]) clearInterval(global.__botTimers[key]);
+    global.__botTimers[key] = setInterval(fn, ms);
+    return global.__botTimers[key];
+}
 // ============================================================
 async function startBot() {
     botState.status = 'Cargando motor...';
@@ -862,7 +927,7 @@ async function startBot() {
             handler.registerAllValidations();
 
             // --- GESTOR DE SUBASTAS (Segundo Plano) ---
-            setInterval(async () => {
+            onceInterval('subastas', async () => {
                 try {
                     if (!db.isConnected()) return;
                     const subastas = await db.obtenerSubastasActivas();
@@ -908,7 +973,7 @@ async function startBot() {
                 }
             }
             // Heartbeat: Guardar credenciales cada 10 minutos para asegurar persistencia
-            setInterval(async () => {
+            onceInterval('heartbeat', async () => {
                 if (botState.isConnected && saveCreds) {
                     try {
                         await saveCreds();
@@ -982,7 +1047,7 @@ async function startBot() {
     const mensajesProcesadosIds = new Map(); // msg.key.id -> timestamp
     const TTL_DEDUP_MS = 2 * 60 * 1000; // 2 minutos es de sobra para cualquier reenvio
 
-    setInterval(() => {
+    onceInterval('dedup-cleaner', () => {
         const ahora = Date.now();
         for (const [id, ts] of mensajesProcesadosIds.entries()) {
             if (ahora - ts > TTL_DEDUP_MS) mensajesProcesadosIds.delete(id);
@@ -1107,7 +1172,7 @@ async function startBot() {
 
     // Keep-alive para Render
     if (RENDER_URL) {
-        setInterval(() => axios.get(RENDER_URL).catch(() => { }), 4 * 60 * 1000);
+        onceInterval('keepalive', () => axios.get(RENDER_URL).catch(() => { }), 4 * 60 * 1000);
     }
 
     // 🎭 ROMPE-HIELO: si un grupo con IA activa lleva rato en silencio, Diky
@@ -1118,7 +1183,7 @@ async function startBot() {
     const SILENCIO_MIN_MS = 3 * 60 * 60 * 1000; // 3 horas de silencio disparan el rompe-hielo
     const ultimoRompehielo = new Map(); // chatId -> timestamp del ultimo mensaje espontaneo
 
-    setInterval(async () => {
+    onceInterval('rompehielo', async () => {
         try {
             for (const [chatId, buf] of botState.chatBuffers.entries()) {
                 if (!buf || buf.length === 0) continue;
@@ -1158,7 +1223,7 @@ async function startBot() {
     }, 20 * 60 * 1000); // revisa cada 20 minutos
 
     // --- MODO DIOS AUTOMÁTICO (Cada 5 horas recarga al Admin) ---
-    setInterval(async () => {
+    onceInterval('modo-dios', async () => {
         if (ADMIN_NUM) {
             const adminJid = ADMIN_NUM + '@s.whatsapp.net';
             try {
@@ -1183,7 +1248,7 @@ async function startBot() {
     }, 5 * 60 * 60 * 1000); // 5 Horas
 
     // --- SORTEO DE LOTERÍA AUTOMÁTICO (Cada 6 horas) ---
-    setInterval(async () => {
+    onceInterval('loteria', async () => {
         if (!botState.loteria || botState.loteria.participantes.length === 0) return;
         const pool = botState.loteria.participantes;
         const winner = pool[Math.floor(Math.random() * pool.length)];
@@ -1351,7 +1416,7 @@ async function procesarMensaje(sock, msg) {
             const comandosValidos = [
                 '!menu', '!menu2', '!help', '!ping', '!s', '!sticker', '!v', '!toimg', '!ascii',
                 '!profile', '!p', '!perfil', '!config', '!marry', '!divorce',
-                '!catalogo', '!manga', '!leer', '!buscar',
+                '!catalogo', '!manga', '!modomanga', '!leer', '!buscar', '!recomanga', '!parar', '!setmanga', '!sincronizar',
                 '!decir', '!waifu', '!trace', '!personaje', '!anime', '!proximo', '!estrenos', '!temporada', '!wiki', '!estudio', '!recomendar', '!random',
                 '!quiz', '!quizanime', '!adivina', '!matematicas', '!bandera', '!ahorcado', '!pescar', '!pokemon', '!duelo', '!duelo_real', '!aceptar',
                 '!slot', '!ruleta', '!ruleta_rusa', '!ppt', '!pptx', '!minar', '!apostar', '!dado', '!moneda', '!8ball',
@@ -1361,17 +1426,17 @@ async function procesarMensaje(sock, msg) {
                 '!pat', '!hug', '!kiss', '!slap', '!punch', '!cry', '!dance', '!bite', '!highfive',
                 '!fumar', '!cafe', '!puchero', '!sonrojar', '!baka', '!dormir', '!comiendo', '!pensar',
                 '!patear', '!celebrar', '!aburrido', '!risa', '!smug', '!stare',
-                '!tag', '!reglas', '!kick', '!adm', '!promover', '!bot', '!bienvenida', '!setbienvenida', '!news', '!sorteo', '!rifa', '!ia',
+                '!tag', '!reglas', '!kick', '!adm', '!promover', '!bot', '!bienvenida', '!setbienvenida', '!news', '!broadcast', '!anuncio', '!sorteo', '!rifa', '!ia',
                 '!tienda', '!comprar', '!vender', '!inventario', '!mejor', '!bounty', '!regalar', '!regalaritem', '!dar',
                 '!antispam', '!mododios',
                 '!prestigio', '!loteria', '!clase', '!pedir', '!plantarse', '!pl', '!trivia', '!daily', '!w', '!slut', '!robar', '!canjear',
                 '!subastar', '!subastas', '!ofertar',
-                '!waifus', '!mascotas', '!alimentar', '!casar', '!proponer', '!divorce', '!logros', '!tareas',
+                '!waifus', '!mascotas', '!alimentar', '!casar', '!proponer', '!logros', '!tareas',
                 '!ver',
                 '!reconovela', '!novela',
                 '!dinosaurios', '!aves', '!dragones', '!acuaticos', '!salvajes', '!miticos',
                 '!parque', '!principal', '!lucha', '!escudo',
-                '!aceptar_lucha', '!rechazar_lucha'
+                '!aceptar_lucha', '!rechazar_lucha', '!comprar_mascota', '!rechazar',
             ];
 
             if (FAST_COMMANDS.has(start) && (handler.commands.has(start) || comandosValidos.includes(start))) {

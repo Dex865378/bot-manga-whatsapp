@@ -26,9 +26,14 @@ function loadCommands(isReload = false) {
             if (cmd.isMultiple && Array.isArray(cmd.names)) {
                 console.log(`📦 [CARGANDO] ${file}: ${cmd.names.length} comandos -> ${cmd.names.slice(0,5).join(', ')}...`);
                 for (const name of cmd.names) {
+                    if (name === '__help_data__') continue; // help.js solo aporta datos, no es comando
+                    if (commands.has(name)) {
+                        console.warn(`⚠️ [COLISIÓN] ${name} ya registrado — ${file} lo pisa. Revisar duplicados.`);
+                    }
                     commands.set(name, cmd);
                 }
             } else if (cmd.name && cmd.execute) {
+                if (cmd.name.startsWith('__')) continue; // ayuda/datos internos, no comandos
                 console.log(`📦 [CARGANDO] ${file}: ${cmd.name}`);
                 commands.set(cmd.name, cmd);
             } else {
