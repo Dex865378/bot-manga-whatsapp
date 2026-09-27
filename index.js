@@ -1126,7 +1126,10 @@ async function procesarMensaje(sock, msg) {
 
         // --- SILENCIO CHECK ---
         const silenciadoHasta = botState.silenciados.get(sender);
-        if (silenciadoHasta && Date.now() < silenciadoHasta) return;
+        if (silenciadoHasta && Date.now() < silenciadoHasta) {
+            if (VERBOSE_LOGS) console.log(`[SILENT] comando ignorado: sender ${(sender || '').split('@')[0]} silenciado hasta ${new Date(silenciadoHasta).toISOString()}`);
+            return;
+        }
 
         // --- EXTRACCIÓN Y LIMPIEZA ---
         const quotedMsgId = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage ?
@@ -1350,7 +1353,10 @@ async function procesarMensaje(sock, msg) {
 
                 // 3. Modo Admin (Restricción)
                 const isModoAdminActivo = groupConf ? groupConf.modo_admin === 1 : (botState.modoAdmin[chatId] || false);
-                if (isGroup && isModoAdminActivo && !isAdmin) return;
+                if (isGroup && isModoAdminActivo && !isAdmin) {
+                    if (VERBOSE_LOGS) console.log(`[SILENT] ${start} ignorado: modo admin activo y sender no es admin`);
+                    return;
+                }
 
                 // 3.5. Modo Manga (solo comandos de manga + admin)
                 const isModoMangaActivo = groupConf ? groupConf.modo_manga === 1 : (botState.mangaMode.get(chatId) || false);
@@ -1360,6 +1366,7 @@ async function procesarMensaje(sock, msg) {
                         '!bot', '!adm', '!menu', '!menu2', '!help', '!ping'
                     ];
                     if (!mangaAllowed.includes(start)) {
+                        if (VERBOSE_LOGS) console.log(`[SILENT] ${start} ignorado: modo manga activo`);
                         return; // Silenciosamente ignorar
                     }
                 }
