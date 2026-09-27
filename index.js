@@ -1352,25 +1352,48 @@ async function procesarMensaje(sock, msg) {
         let isAdmin = isGlobalAdmin;
 
         if (isCommand && isGroup && !isAdmin) {
+            const adminsDe = (parts) => (parts || [])
+                .filter(p => p && p.admin)
+                // Normalizar a solo dígitos: sender puede llegar como @lid y la
+                // metadata traer @s.whatsapp.net (o al revés); el JID completo
+                // nunca coincidía y solo el dueño pasaba el filtro.
+                .map(p => cleanNumber(p.id || p.jid || ''))
+                .filter(Boolean);
+            const esAdminEn = (lista) =>
+                lista.includes(senderClean) || lista.includes(sender) ||
+                lista.some(a => senderClean.includes(a) || a.includes(senderClean));
+
             const cached = botState.adminCache.get(chatId);
             const ahora = Date.now();
-            if (cached && (ahora - cached.time < TTL_ADMIN)) {
-                if (cached.admins.includes(sender)) isAdmin = true;
-            } else {
-                // No bloqueamos todo el bot si groupMetadata tarda.
-                // Throttle: máx 1 fetch cada 60s por chat aunque el cache siga
-                // expirado (TTL_ADMIN es 10min); evita N fetches en ráfagas.
+            let lista = cached && (ahora - cached.time < TTL_ADMIN) ? cached.admins : null;
+
+            // Si el remitente NO está en la lista (posible admin nuevo con caché
+            // viejo), refrescar de forma esperada con timeout en vez de usar el
+            // caché vencido: así el primer comando del nuevo admin ya funciona.
+            if (!lista || !esAdminEn(lista)) {
                 const lastFetch = adminFetchAt.get(chatId) || 0;
                 if (ahora - lastFetch >= ADMIN_FETCH_MIN_MS) {
                     adminFetchAt.set(chatId, ahora);
+                    try {
+                        const metadata = await Promise.race([
+                            sock.groupMetadata(chatId),
+                            new Promise((_, rej) => setTimeout(() => rej(new Error('admin-timeout')), 5000))
+                        ]);
+                        lista = adminsDe(metadata.participants);
+                        botState.adminCache.set(chatId, { admins: lista, time: Date.now() });
+                    } catch (e) { /* timeout/red: se usa el caché viejo abajo */ }
+                } else if (!lista) {
+                    // Throttle activo y sin caché: refresco en segundo plano
                     sock.groupMetadata(chatId).then(metadata => {
-                        const admins = metadata.participants.filter(p => p.admin).map(p => p.id);
-                        botState.adminCache.set(chatId, { admins, time: Date.now() });
+                        botState.adminCache.set(chatId, { admins: adminsDe(metadata.participants), time: Date.now() });
                     }).catch(() => { });
                 }
+            }
 
-                // Mientras se actualiza, usamos el cache viejo si existe
-                if (cached && cached.admins.includes(sender)) isAdmin = true;
+            if (lista && esAdminEn(lista)) {
+                isAdmin = true;
+            } else if (VERBOSE_LOGS) {
+                console.log(`[ADMIN] ${chatId} ${senderClean} no es admin (lista: ${lista ? lista.length : 'sin caché'}).`);
             }
         }
 
