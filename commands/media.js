@@ -43,8 +43,7 @@ const recoTitles = new Map(); // código R### → { titulo, id }
 const recoSent = new Map(); // chatId -> Set(mangaId)
 
 // Helper para detectar si un texto de sinopsis está en inglés
-function esTextoIngles(text) {
-    if (!text || text.length < 10) return false;
+function esTextoIngles(text) {    if (!text || text.length < 10) return false;
     const lower = ' ' + text.toLowerCase() + ' ';
     // Umbral bajado a 1 coincidencia (antes 2): con 2, sinopsis cortas o con
     // muchos nombres propios se colaban sin traducir. Lista ampliada de
@@ -59,6 +58,21 @@ function esTextoIngles(text) {
         if (lower.includes(w)) return true;
     }
     return false;
+}
+
+// Parte un texto en trozos de max N caracteres sin cortar palabras
+// (para !decir: Google TTS solo acepta ~200 caracteres por pedido)
+function partirTextoTTS(texto, max = 190) {
+    const trozos = [];
+    let resto = (texto || '').replace(/\s+/g, ' ').trim();
+    while (resto.length > max) {
+        let corte = resto.lastIndexOf(' ', max);
+        if (corte < max * 0.4) corte = max; // palabra larguisima: cortar duro
+        trozos.push(resto.slice(0, corte));
+        resto = resto.slice(corte).trim();
+    }
+    if (resto) trozos.push(resto);
+    return trozos.length ? trozos : ['...'];
 }
 
 module.exports = {
@@ -294,42 +308,73 @@ module.exports = {
                 }
             }
 
-            const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(queryText.substring(0, 200))}&tl=${targetLang}&client=tw-ob`;
+            // TTS sin limite de texto: Google solo acepta ~200 caracteres por
+            // pedido, asi que se parte en trozos, se descarga cada audio y
+            // FFmpeg los une en una sola nota de voz (aunque sea larguisima).
             try {
-                const audioRes = await axios.get(ttsUrl, {
-                    responseType: 'arraybuffer',
-                    timeout: 10000,
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Referer': 'https://translate.google.com/'
+            const MAX_TTS_CHUNKS = 100; // ~19.000 caracteres ≈ 15+ min de audio
+            const todosTrozos = partirTextoTTS(queryText, 190);
+            const recortado = todosTrozos.length > MAX_TTS_CHUNKS;
+            const trozos = todosTrozos.slice(0, MAX_TTS_CHUNKS);
+            if (trozos.length > 5) {
+                await sock.sendMessage(chatId, { text: `🎙️ Generando audio largo (${trozos.length} partes)... dame unos segundos.` }, { quoted: msg });
+            }
+            const uid = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            const partesTmp = [];
+            const tmpOut = path.join(os.tmpdir(), `decir_out_${uid}.ogg`);
+            try {
+                for (let i = 0; i < trozos.length; i++) {
+                    const partUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(trozos[i])}&tl=${targetLang}&client=tw-ob`;
+                    try {
+                        const audioRes = await axios.get(partUrl, {
+                            responseType: 'arraybuffer',
+                            timeout: 10000,
+                            maxContentLength: 5 * 1024 * 1024,
+                            maxBodyLength: 5 * 1024 * 1024,
+                            headers: {
+                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                                'Referer': 'https://translate.google.com/'
+                            }
+                        });
+                        const mp3Buffer = Buffer.from(audioRes.data);
+                        if (mp3Buffer.length < 500) continue; // parte vacia: saltar
+                        const tmpPart = path.join(os.tmpdir(), `decir_part_${uid}_${i}.mp3`);
+                        fs.writeFileSync(tmpPart, mp3Buffer);
+                        partesTmp.push(tmpPart);
+                    } catch (ePart) {
+                        console.error(`❌ [decir] Trozo ${i + 1}/${trozos.length} fallo:`, ePart.message);
                     }
-                });
-                const mp3Buffer = Buffer.from(audioRes.data);
-                if (mp3Buffer.length < 1024) throw new Error('TTS devolvio audio vacio');
-
-                const tmpIn = path.join(os.tmpdir(), `decir_in_${Date.now()}.mp3`);
-                const tmpOut = path.join(os.tmpdir(), `decir_out_${Date.now()}.ogg`);
-                try {
-                    fs.writeFileSync(tmpIn, mp3Buffer);
-                    await execFileAsync('ffmpeg', [
-                        '-i', tmpIn,
-                        '-vn',
-                        '-c:a', 'libopus',
-                        '-b:a', '48k',
-                        '-ar', '48000',
-                        '-ac', '1',
-                        '-f', 'ogg',
-                        '-y',
-                        tmpOut
-                    ], { timeout: 15000, windowsHide: true });
-
-                    const opusBuffer = fs.readFileSync(tmpOut);
-                    if (opusBuffer.length < 1024) throw new Error('FFmpeg genero audio vacio');
-                    return sock.sendMessage(chatId, { audio: opusBuffer, mimetype: 'audio/ogg; codecs=opus', ptt: true }, { quoted: msg });
-                } finally {
-                    try { fs.unlinkSync(tmpIn); } catch (e) { }
-                    try { fs.unlinkSync(tmpOut); } catch (e) { }
+                    if (i < trozos.length - 1) await new Promise(r => setTimeout(r, 300)); // no saturar TTS
                 }
+                if (partesTmp.length === 0) throw new Error('TTS no devolvio audio');
+
+                // Unir partes con FFmpeg (concat demuxer) y convertir a nota de voz
+                const listFile = path.join(os.tmpdir(), `decir_list_${uid}.txt`);
+                fs.writeFileSync(listFile, partesTmp.map(p => `file '${p.replace(/'/g, "'\\''")}'`).join('\n'));
+                partesTmp.push(listFile); // para limpiar tambien la lista
+                await execFileAsync('ffmpeg', [
+                    '-f', 'concat', '-safe', '0',
+                    '-i', listFile,
+                    '-vn',
+                    '-c:a', 'libopus',
+                    '-b:a', '48k',
+                    '-ar', '48000',
+                    '-ac', '1',
+                    '-f', 'ogg',
+                    '-y',
+                    tmpOut
+                ], { timeout: 60000, windowsHide: true });
+
+                const opusBuffer = fs.readFileSync(tmpOut);
+                if (opusBuffer.length < 1024) throw new Error('FFmpeg genero audio vacio');
+                if (recortado) {
+                    await sock.sendMessage(chatId, { text: `⚠️ Texto muy largo: audio hasta el limite de ${MAX_TTS_CHUNKS} partes.` });
+                }
+                return sock.sendMessage(chatId, { audio: opusBuffer, mimetype: 'audio/ogg; codecs=opus', ptt: true }, { quoted: msg });
+            } finally {
+                for (const f of partesTmp) { try { fs.unlinkSync(f); } catch (e) { } }
+                try { fs.unlinkSync(tmpOut); } catch (e) { }
+            }
             } catch (ttsErr) {
                 console.error('❌ [decir] TTS Error:', ttsErr.message);
                 // Fallback: enviar como texto si TTS falla
