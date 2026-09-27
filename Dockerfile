@@ -1,16 +1,18 @@
-FROM node:20-bullseye-slim
+FROM node:20-bookworm-slim
 
 ENV NODE_ENV=production
 ENV NODE_OPTIONS=--max-old-space-size=400
 
 # 1. Instalar dependencias del sistema (solo las usadas: ffmpeg stickers, unzip novelas)
+# Nota: base bookworm (Debian 12). bullseye ya terminó su LTS y sus repos
+# tiran error 100 en apt-get, por eso no se usa.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     curl \
     ca-certificates \
     unzip \
-    && update-ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && (update-ca-certificates || true)
 
 # 1.1 lightnovel-crawler (!novela / !reconovela) esta PAUSADO por ahora
 # (ver comments/novel.js) - el paquete Python sufrio una reescritura
