@@ -78,7 +78,7 @@ function partirTextoTTS(texto, max = 190) {
 module.exports = {
     name: 'media',
     isMultiple: true,
-    names: ['!waifu', '!anime', '!personaje', '!estudio', '!proximo', '!estrenos', '!temporada', '!recomendar', '!random', '!trace', '!news', '!wiki', '!decir', '!catalogo', '!manga', '!leer', '!buscar', '!ver', '!parar', '!setmanga', '!recomanga'],
+    names: ['!waifu', '!anime', '!personaje', '!estudio', '!proximo', '!estrenos', '!temporada', '!recomendar', '!random', '!trace', '!news', '!wiki', '!decir', '!setdecir', '!catalogo', '!manga', '!leer', '!buscar', '!ver', '!parar', '!setmanga', '!recomanga'],
     async execute(sock, chatId, msg, args, { start, cmd, txt, db, delay, downloadMediaMessage, traducirConCache, botState, sender, pushName }) {
         // !parar - Cancela descargas masivas en curso
         if (start === '!parar') {
@@ -278,7 +278,7 @@ module.exports = {
                 t = '¡Hola a todos! 😺 ¡Diky Bot presente y listo para el desmadre! Escribe *!menu* para ver lo que puedo hacer.';
             }
 
-            // 3. Soporte para Idiomas y Traducción
+            // 3. Soporte para Idiomas y Traducción (15 idiomas)
             const langMap = {
                 'jp': 'ja', 'ja': 'ja', 'jap': 'ja',
                 'en': 'en', 'ing': 'en',
@@ -287,7 +287,13 @@ module.exports = {
                 'pt': 'pt', 'por': 'pt',
                 'ru': 'ru', 'rus': 'ru',
                 'de': 'de', 'ale': 'de',
-                'ar': 'ar', 'ara': 'ar'
+                'ar': 'ar', 'ara': 'ar',
+                'ko': 'ko', 'cor': 'ko', 'coreano': 'ko',
+                'zh': 'zh-CN', 'chi': 'zh-CN', 'chino': 'zh-CN',
+                'hi': 'hi', 'hin': 'hi', 'hindi': 'hi',
+                'nl': 'nl', 'hol': 'nl', 'holandes': 'nl',
+                'tr': 'tr', 'tur': 'tr', 'turco': 'tr',
+                'id': 'id', 'ind': 'id', 'indonesio': 'id'
             };
 
             const firstWord = args[0]?.toLowerCase();
@@ -380,6 +386,44 @@ module.exports = {
                 // Fallback: enviar como texto si TTS falla
                 return sock.sendMessage(chatId, { text: `🗣️ _"${queryText}"_` }, { quoted: msg });
             }
+        }
+
+        // !setdecir — cartelera de idiomas soportados por !decir
+        if (start === '!setdecir') {
+            return sock.sendMessage(chatId, { text:
+`🎙️ *IDIOMAS DE !decir* 🎙️
+El bot traduce tu texto y lo dice en voz alta.
+
+• *Español* 🇪🇸 (por defecto)
+└ *!decir hola a todos*
+• *Japonés* 🇯🇵 — jp
+└ *!decir jp hola a todos*
+• *Inglés* 🇺🇸 — en
+└ *!decir en hola a todos*
+• *Francés* 🇫🇷 — fr
+└ *!decir fr hola a todos*
+• *Italiano* 🇮🇹 — it
+└ *!decir it hola a todos*
+• *Portugués* 🇧🇷 — pt
+└ *!decir pt hola a todos*
+• *Ruso* 🇷🇺 — ru
+└ *!decir ru hola a todos*
+• *Alemán* 🇩🇪 — de
+└ *!decir de hola a todos*
+• *Árabe* 🇸🇦 — ar
+└ *!decir ar hola a todos*
+• *Coreano* 🇰🇷 — ko
+└ *!decir ko hola a todos*
+• *Chino* 🇨🇳 — zh
+└ *!decir zh hola a todos*
+• *Hindi* 🇮🇳 — hi
+└ *!decir hi hola a todos*
+• *Holandés* 🇳🇱 — nl
+└ *!decir nl hola a todos*
+• *Turco* 🇹🇷 — tr
+└ *!decir tr hola a todos*
+• *Indonesio* 🇮🇩 — id
+└ *!decir id hola a todos*` }, { quoted: msg });
         }
 
         // Manga functions

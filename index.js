@@ -1476,7 +1476,7 @@ async function procesarMensaje(sock, msg) {
                 '!menu', '!menu2', '!help', '!ping', '!s', '!sticker', '!v', '!toimg', '!ascii',
                 '!profile', '!p', '!perfil', '!config', '!marry', '!divorce',
                 '!catalogo', '!manga', '!modomanga', '!leer', '!buscar', '!recomanga', '!parar', '!setmanga', '!sincronizar',
-                '!decir', '!waifu', '!trace', '!personaje', '!anime', '!proximo', '!estrenos', '!temporada', '!wiki', '!estudio', '!recomendar', '!random',
+                '!decir', '!setdecir', '!waifu', '!trace', '!personaje', '!anime', '!proximo', '!estrenos', '!temporada', '!wiki', '!estudio', '!recomendar', '!random',
                 '!quiz', '!quizanime', '!adivina', '!matematicas', '!bandera', '!ahorcado', '!pescar', '!pokemon', '!duelo', '!duelo_real', '!aceptar',
                 '!slot', '!ruleta', '!ruleta_rusa', '!ppt', '!pptx', '!minar', '!apostar', '!dado', '!moneda', '!8ball',
                 '!bj', '!blackjack', '!poker', '!minas', '!carta', '!donde', '!deljuego', '!suelten', '!carrera',

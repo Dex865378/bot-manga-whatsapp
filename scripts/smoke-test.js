@@ -46,7 +46,7 @@ check(inesperadas.length === 0, `Sin colisiones inesperadas${inesperadas.length 
 // 3. Comandos críticos existen
 for (const c of ['!ping', '!menu', '!leer', '!manga', '!modomanga', '!recomanga', '!parar',
     '!setmanga', '!sincronizar', '!reconovela', '!comprar_mascota', '!rechazar',
-    '!broadcast', '!anuncio', '!news', '!aceptar_lucha', '!rechazar_lucha', '!waifus']) {
+    '!broadcast', '!anuncio', '!news', '!aceptar_lucha', '!rechazar_lucha', '!waifus', '!setdecir']) {
     check(handler.commands.has(c), `Existe ${c}`);
 }
 
