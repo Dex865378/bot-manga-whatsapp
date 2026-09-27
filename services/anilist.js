@@ -162,8 +162,61 @@ async function recomendarNovela(generoEs, excludeIds = []) {
     return disponiblesFallback[Math.floor(Math.random() * disponiblesFallback.length)];
 }
 
+// ─── Búsqueda de anime por nombre (respaldo de !anime cuando Jikan falla) ────
+const _animeCache = new Map(); // nombre lower → { anime, ts }
+const TTL_ANIME = 6 * 60 * 60 * 1000; // 6h
+
+/**
+ * Busca un anime por nombre en AniList.
+ * @param {string} nombre
+ * @returns {Promise<{titulo, score, generos, estudio, estado, episodios, url, portada, sinopsis}|null>}
+ */
+async function buscarAnime(nombre) {
+    const key = (nombre || '').toLowerCase().trim();
+    if (!key) return null;
+    const hit = _animeCache.get(key);
+    if (hit && Date.now() - hit.ts < TTL_ANIME) return hit.anime;
+
+    const query = `
+        query ($search: String) {
+            Media(search: $search, type: ANIME) {
+                title { romaji english }
+                averageScore
+                genres
+                studios { nodes { name } }
+                status
+                episodes
+                siteUrl
+                coverImage { large }
+                description(asHtml: false)
+            }
+        }`;
+    const data = await anilistQuery(query, { search: nombre }, 2);
+    const m = data && data.Media;
+    if (!m) return null;
+
+    const anime = {
+        titulo: (m.title && (m.title.english || m.title.romaji)) || nombre,
+        score: m.averageScore ? (m.averageScore / 10).toFixed(2) : null,
+        generos: (m.genres || []).join(', '),
+        estudio: ((m.studios && m.studios.nodes) || []).map(s => s.name).join(', ') || 'Desconocido',
+        estado: m.status || '?',
+        episodios: m.episodes || '?',
+        url: m.siteUrl || '',
+        portada: (m.coverImage && m.coverImage.large) || null,
+        sinopsis: (m.description || '').replace(/<[^>]+>/g, '').trim().slice(0, 900)
+    };
+    if (_animeCache.size >= 100) {
+        const oldest = _animeCache.keys().next().value;
+        _animeCache.delete(oldest);
+    }
+    _animeCache.set(key, { anime, ts: Date.now() });
+    return anime;
+}
+
 module.exports = {
     recomendarNovela,
+    buscarAnime,
     GENEROS_DISPLAY,
     GENERO_MAP_ES_EN
 };

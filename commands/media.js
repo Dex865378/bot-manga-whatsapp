@@ -7,6 +7,7 @@ const { promisify } = require('util');
 const { fetchWithRetry } = require('../utils/apiClient');
 const { LRUCache } = require('../utils/lruCache');
 const mangadex = require('../services/mangadex');
+const anilist = require('../services/anilist');
 
 const execFileAsync = promisify(execFile);
 
@@ -657,16 +658,53 @@ module.exports = {
 
             const q = args.join(' ');
             if (!q) return sock.sendMessage(chatId, { text: '📺 Uso: !anime <nombre> o !anime reto' });
-            try {
-                // Caché de API para evitar repetir llamadas
-                const cacheKey = `anime:${q.toLowerCase()}`;
-                let a = getApiCache(cacheKey);
-                if (!a) {
+
+            // 1) Intentar Jikan (fuente principal)
+            let a = getApiCache(`anime:${q.toLowerCase()}`);
+            let jikanFallo = false;
+            if (!a) {
+                try {
                     const res = await fetchWithRetry(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(q)}&limit=1`, { timeout: 8000 }, 3, 1000);
-                    if (!res.data.data[0]) return sock.sendMessage(chatId, { text: '❌ No encontrado.' });
-                    a = res.data.data[0];
-                    setApiCache(cacheKey, a);
+                    if (res.data.data && res.data.data[0]) {
+                        a = res.data.data[0];
+                        setApiCache(`anime:${q.toLowerCase()}`, a);
+                    } else {
+                        jikanFallo = true; // sin resultados: se prueba AniList antes de rendirse
+                    }
+                } catch (e) {
+                    console.error('❌ [anime] Jikan fallo, probando AniList:', e.message);
+                    jikanFallo = true;
                 }
+            }
+
+            // 2) Respaldo AniList (cuando Jikan está caído, limitado o sin resultados)
+            if (!a) {
+                try {
+                    const b = await anilist.buscarAnime(q);
+                    if (b) {
+                        const sinop = b.sinopsis ? await traducirConCache(b.sinopsis, 'resumen') : 'Sin descripción disponible.';
+                        let infoB = `🎬 **${String(b.titulo).toUpperCase()}** 🎬\n`;
+                        infoB += `━━━━━━━━━━━━━━\n🌟 **Calificación:** ${b.score || 'N/A'} / 10\n`;
+                        infoB += `🎭 **Géneros:** ${b.generos || 'N/A'}\n🎥 **Estudio:** ${b.estudio}\n`;
+                        infoB += `📅 **Estado:** ${b.estado}\n🎞️ **Episodios:** ${b.episodios}\n`;
+                        if (b.url) infoB += `🔗 **Link:** ${b.url}\n`;
+                        infoB += `━━━━━━━━━━━━━━\n📖 **SINOPSIS:**\n_${sinop}_`;
+                        if (b.portada) {
+                            return sock.sendMessage(chatId, { image: { url: b.portada }, caption: infoB }, { quoted: msg });
+                        }
+                        return sock.sendMessage(chatId, { text: infoB }, { quoted: msg });
+                    }
+                } catch (e2) {
+                    console.error('❌ [anime] AniList tambien fallo:', e2.message);
+                }
+                // Ninguna fuente respondió
+                if (jikanFallo) {
+                    return sock.sendMessage(chatId, { text: `❌ No encontré *${q}* en Jikan ni en AniList. Revisa el nombre e intenta de nuevo.` }, { quoted: msg });
+                }
+                return sock.sendMessage(chatId, { text: '❌ Las APIs de anime no responden ahora. Intenta en unos minutos.' }, { quoted: msg });
+            }
+
+            try {
                 const sinopsis = await traducirConCache(a.synopsis, 'resumen');
                 const generos = a.genres.map(g => g.name).join(', ');
                 const estudio = a.studios.map(s => s.name).join(', ') || 'Desconocido';
