@@ -634,8 +634,11 @@ async function setMensajeBienvenida(chatId, mensaje) {
             sql: 'INSERT INTO grupos_bienvenida (chat_id, mensaje) VALUES (?, ?) ON CONFLICT(chat_id) DO UPDATE SET mensaje = ?',
             args: [chatId, mensaje, mensaje]
         });
-        return true;
-    } catch (e) { return false; }
+        return { ok: true };
+    } catch (e) {
+        console.error('❌ [DB] Error setMensajeBienvenida:', e.message);
+        return { ok: false, error: e.message };
+    }
 }
 
 async function obtenerTopMonedas(limit = 10) {

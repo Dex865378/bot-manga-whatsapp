@@ -72,15 +72,33 @@ module.exports = {
 
         if (start === '!bienvenida') {
             if (!isAdmin) return sock.sendMessage(chatId, { text: 'Solo admins.' }, { quoted: msg });
-            const mode = args[0]?.toLowerCase();
+            const mode = (args[0] || '').toLowerCase();
             if (mode === 'on') {
                 await db.activarBienvenida(chatId);
-                return sock.sendMessage(chatId, { text: 'Bienvenidas *activadas*.' }, { quoted: msg });
+                return sock.sendMessage(chatId, { text: 'Bienvenidas *activadas*.\n_El bot no necesita ser admin para saludar._' }, { quoted: msg });
             } else if (mode === 'off') {
                 await db.desactivarBienvenida(chatId);
                 return sock.sendMessage(chatId, { text: 'Bienvenidas *desactivadas*.' }, { quoted: msg });
+            } else if (mode === 'ver') {
+                const conf = await db.tieneBienvenida(chatId);
+                if (!conf.activa) return sock.sendMessage(chatId, { text: 'Bienvenidas *desactivadas* en este grupo.\nUso: *!bienvenida on*' }, { quoted: msg });
+                return sock.sendMessage(chatId, { text: `👋 *Mensaje actual:*\n\n${conf.mensaje || '_(por defecto)_'}` }, { quoted: msg });
+            } else if (mode === 'test') {
+                // Prueba manual sin esperar que entre alguien. Si se menciona a
+                // usuarios, se les saluda a ellos; si no, al que pide la prueba.
+                const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+                const targets = mentioned.length > 0 ? mentioned : [sender];
+                const conf = await db.tieneBienvenida(chatId);
+                if (!conf.activa) return sock.sendMessage(chatId, { text: 'Bienvenidas *desactivadas* en este grupo.\nUso: *!bienvenida on*' }, { quoted: msg });
+                for (const t of targets) {
+                    const nombre = (t || '').split('@')[0];
+                    let preview = conf.mensaje || `¡Hola @${nombre}! 🎉\nBienvenid@ al grupo.`;
+                    preview = preview.replace(/{usuario}/gi, `@${nombre}`).replace(/{user}/gi, `@${nombre}`);
+                    await sock.sendMessage(chatId, { text: `🧪 *Prueba de bienvenida:*\n\n${preview}`, mentions: [t] });
+                }
+                return;
             }
-            return sock.sendMessage(chatId, { text: 'Uso: *!bienvenida on/off*' }, { quoted: msg });
+            return sock.sendMessage(chatId, { text: 'Uso: *!bienvenida on/off/ver/test*' }, { quoted: msg });
         }
 
         if (start === '!setbienvenida') {
@@ -88,11 +106,12 @@ module.exports = {
             const message = args.join(' ');
             if (!message) return sock.sendMessage(chatId, { text: 'Especifica un mensaje. Usa `{usuario}` para mencionar al nuevo miembro.\nEjemplo: *!setbienvenida Hola {usuario}, bienvenido al infierno.*' }, { quoted: msg });
             const result = await db.setMensajeBienvenida(chatId, message);
-            if (result) {
+            if (result && result.ok) {
                 await db.activarBienvenida(chatId);
                 return sock.sendMessage(chatId, { text: 'Mensaje de bienvenida actualizado en este grupo.\n_(Las bienvenidas han sido activadas)_' }, { quoted: msg });
             }
-            return sock.sendMessage(chatId, { text: 'Error al guardar el mensaje.' }, { quoted: msg });
+            console.error(`❌ [!setbienvenida] No se pudo guardar en ${chatId}:`, result?.error || 'desconocido');
+            return sock.sendMessage(chatId, { text: `Error al guardar el mensaje: ${result?.error || 'falla de base de datos'}` }, { quoted: msg });
         }
 
         if (start === '!adm') {

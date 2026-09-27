@@ -267,9 +267,9 @@ const helpData = {
         cooldown: 'Ninguno (solo admins)'
     },
     '!bienvenida': {
-        desc: 'Gestiona mensajes de bienvenida.',
-        usage: '!bienvenida [on|off]\n!setbienvenida <mensaje>',
-        ejemplo: '!bienvenida on\n!setbienvenida ¡Bienvenido {usuario}!',
+        desc: 'Gestiona mensajes de bienvenida (el bot no necesita ser admin para saludar).',
+        usage: '!bienvenida [on|off|ver|test]\n!setbienvenida <mensaje>',
+        ejemplo: '!bienvenida on\n!setbienvenida ¡Bienvenido {usuario}!\n!bienvenida test',
         args: 'Estado o mensaje (opcional)',
         cooldown: 'Ninguno (solo admins)'
     },

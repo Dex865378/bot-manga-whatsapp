@@ -336,7 +336,10 @@ function getBienvenidaAssets() {
 async function enviarBienvenida(sock, groupId, participantJid) {
     try {
         const conf = await db.tieneBienvenida(groupId);
-        if (!conf.activa) return;
+        if (!conf.activa) {
+            if (VERBOSE_LOGS) console.log(`[BIENVENIDA] omitida en ${groupId?.slice(-10)}: desactivada (usa !bienvenida on)`);
+            return;
+        }
         
         const nombre = participantJid.split('@')[0];
         
@@ -960,6 +963,41 @@ async function startBot() {
     const mensajesProcesadosIds = new Map(); // msg.key.id -> timestamp
     const TTL_DEDUP_MS = 2 * 60 * 1000; // 2 minutos es de sobra para cualquier reenvio
 
+    // Deduplicador de bienvenidas: el mismo join puede llegar por 2 vías
+    // (messageStubType en upsert + evento group-participants.update). Ventana
+    // de 10 min por grupo+usuario para saludar una sola vez.
+    const welcomeDedup = new Map(); // `${groupId}:${user}` -> timestamp
+    const TTL_WELCOME_DEDUP_MS = 10 * 60 * 1000;
+    function yaSaludado(groupId, user) {
+        const key = `${groupId}:${(user || '').split('@')[0]}`;
+        const ahora = Date.now();
+        const ts = welcomeDedup.get(key);
+        if (ts && (ahora - ts < TTL_WELCOME_DEDUP_MS)) return true;
+        welcomeDedup.set(key, ahora);
+        if (welcomeDedup.size > 500) {
+            const oldest = welcomeDedup.keys().next().value;
+            welcomeDedup.delete(oldest);
+        }
+        return false;
+    }
+    // Normaliza un participante que puede venir como JID string, JSON string
+    // (messageStubParameters) u objeto { phoneNumber } de Baileys.
+    function normWelcomeJid(p) {
+        if (!p) return null;
+        if (typeof p === 'string') {
+            const t = p.trim();
+            if (t.startsWith('{')) {
+                try {
+                    const o = JSON.parse(t);
+                    if (o && o.phoneNumber) return o.phoneNumber;
+                } catch (_) { return null; }
+            }
+            return t.includes('@') ? t : `${t}@s.whatsapp.net`;
+        }
+        if (typeof p === 'object') return p.phoneNumber || p.id || null;
+        return null;
+    }
+
     onceInterval('dedup-cleaner', () => {
         const ahora = Date.now();
         for (const [id, ts] of mensajesProcesadosIds.entries()) {
@@ -983,6 +1021,22 @@ async function startBot() {
             // IGNORAR mensajes extremadamente viejos (más de 5 minutos) para evitar lag
             const msgTime = msg.messageTimestamp;
             if (ahora - msgTime > 300) continue;
+
+            // Detectar uniones al grupo por stub (funciona sin ser admin).
+            // Estos avisos suelen venir SIN msg.message (solo stub), así que se
+            // revisan ANTES del filtro `if (!msg.message)`. Tipos según
+            // Baileys WAProto: 27=ADD, 31=INVITE, 71=ADD_REQUEST_JOIN.
+            const remoteJidStub = msg.key.remoteJid;
+            if (remoteJidStub?.endsWith('@g.us') && [27, 31, 71].includes(msg.messageStubType)) {
+                const partes = (msg.messageStubParameters || []).map(normWelcomeJid).filter(Boolean);
+                if (partes.length > 0) {
+                    console.log(`👥 [STUB] Entrada de ${partes.length} usuario(s) a ${remoteJidStub}`);
+                    for (const p of partes) {
+                        if (!yaSaludado(remoteJidStub, p)) await enviarBienvenida(sock, remoteJidStub, p);
+                    }
+                }
+                if (!msg.message) continue;
+            }
 
             // Detectar mensajes de sistema de unión al grupo (alternativa sin ser admin)
             const isGroupMsg = msg.key.remoteJid?.endsWith('@g.us');
@@ -1071,12 +1125,15 @@ async function startBot() {
         }
     });
 
-    // --- BIENVENIDAS (Evento admin - legacy) ---
+    // --- BIENVENIDAS (evento de participantes; funciona sin ser admin,
+    // pero WhatsApp no siempre lo entrega: el stub en upsert es el respaldo) ---
     sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
         console.log(`👥 [ADMIN] Evento grupo: ${action} en ${id} para ${participants.length} usuarios`);
         if (action !== 'add') return;
-        
-        for (const p of participants) {
+
+        for (const raw of participants) {
+            const p = normWelcomeJid(raw);
+            if (!p || yaSaludado(id, p)) continue;
             await enviarBienvenida(sock, id, p);
             // Pausa entre usuarios si hay varios
             if (participants.length > 1) await delay(2000);
