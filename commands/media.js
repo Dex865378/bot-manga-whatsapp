@@ -365,7 +365,7 @@ module.exports = {
                     // Voz grave e imponente: baja el tono sin cambiar la velocidad.
                     // (aresample primero: asetrate fija tasa ABSOLUTA, sin esto
                     // acelera el audio en vez de grabarlo)
-                    '-af', 'aresample=48000,asetrate=48000*0.78,aresample=48000,atempo=1.282',
+                    '-af', 'aresample=48000,asetrate=48000*0.78,aresample=48000,atempo=1.32',
                     '-c:a', 'libopus',
                     '-b:a', '48k',
                     '-ar', '48000',
