@@ -325,7 +325,7 @@ module.exports = {
 
             mText += `━━━━━━━━━━━━━━━━━━━━━━\n`;
             mText += `> _Escribe un comando para empezar._\n`;
-            mText += `> _Diky Bot V2 - El bot más completo._`;
+            mText += `> _Diky Bot V3 - El bot más completo._`;
 
             return sock.sendMessage(chatId, { text: mText }, { quoted: msg });
         }
