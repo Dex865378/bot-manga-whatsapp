@@ -16,7 +16,6 @@ const {
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const { Boom } = require('@hapi/boom');
-const express = require('express');
 const axios = require('axios');
 const QRCode = require('qrcode');
 const fs = require('fs');
@@ -449,6 +448,10 @@ const botState = {
 };
 
 const TTL_CONFIG = 5 * 60 * 1000; // 5 minutos para caché de config
+// Throttle de groupMetadata: si el cache de admins expiró, no disparar 1
+// fetch por mensaje (tormenta en grupos activos) sino máx 1 cada 60s por chat.
+const adminFetchAt = new Map();
+const ADMIN_FETCH_MIN_MS = 60 * 1000;
 
 // Helper para obtener configuración de grupo con caché LRU
 async function obtenerConfigGrupo(chatId) {
@@ -630,19 +633,63 @@ Reglas de como hablas (importante, sigelas siempre):
 - No necesitas que te pregunten algo para tener personalidad, incluso un saludo simple lo respondes con onda, no en seco.`;
 
 // 🔄 Wrapper del servicio de IA (migrado a services/aiService.js)
-async function chatWithLiquidAI(texto, contexto = '') {
-    const prompt = contexto
-        ? `${DIKY_PERSONALIDAD}\n\nContexto adicional: ${contexto}\n\nMensaje del usuario: ${texto}`
-        : `${DIKY_PERSONALIDAD}\n\nMensaje del usuario: ${texto}`;
+// Semáforo global: la IA no pasa por esperarSlotHeavy por diseño (para no
+// quedarse muda durante descargas), pero sin ningún tope N grupos hablando a
+// la vez = N cascadas de hasta 60s reteniendo prompt+historial. Máx 3
+// concurrentes; quien espera más de 25s se descarta (devuelve null y el
+// llamador simplemente no responde ese mensaje).
+let iaActivas = 0;
+const colaIA = [];
+const MAX_IA_CONCURRENTES = 3;
+const MAX_COLA_IA = 10;
+const TIMEOUT_COLA_IA_MS = 25000;
 
-    const response = await aiService.chatWithAI(prompt, 'auto');
-    
-    // Limpiar tags de thinking si existen
-    if (typeof response === 'string') {
-        return response.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
+function liberarSlotIA() {
+    iaActivas = Math.max(0, iaActivas - 1);
+    if (colaIA.length > 0) {
+        const next = colaIA.shift();
+        clearTimeout(next.timer);
+        iaActivas++;
+        next.resolve(true);
     }
-    
-    return response;
+}
+
+function esperarSlotIA() {
+    return new Promise((resolve) => {
+        if (iaActivas < MAX_IA_CONCURRENTES) {
+            iaActivas++;
+            return resolve(true);
+        }
+        if (colaIA.length >= MAX_COLA_IA) return resolve(false);
+        const entry = { resolve, timer: null };
+        entry.timer = setTimeout(() => {
+            const i = colaIA.indexOf(entry);
+            if (i >= 0) colaIA.splice(i, 1);
+            resolve(false);
+        }, TIMEOUT_COLA_IA_MS);
+        colaIA.push(entry);
+    });
+}
+
+async function chatWithLiquidAI(texto, contexto = '') {
+    const gotSlot = await esperarSlotIA();
+    if (!gotSlot) return null;
+    try {
+        const prompt = contexto
+            ? `${DIKY_PERSONALIDAD}\n\nContexto adicional: ${contexto}\n\nMensaje del usuario: ${texto}`
+            : `${DIKY_PERSONALIDAD}\n\nMensaje del usuario: ${texto}`;
+
+        const response = await aiService.chatWithAI(prompt, 'auto');
+
+        // Limpiar tags de thinking si existen
+        if (typeof response === 'string') {
+            return response.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
+        }
+
+        return response;
+    } finally {
+        liberarSlotIA();
+    }
 }
 
 // 🔄 Gemini wrapper (delegado a servicio)
@@ -670,33 +717,43 @@ function cargarMangasLocal() {
 }
 
 // ============================================================
-//                     EXPRESS DASHBOARD
+//              DASHBOARD HTTP (nativo, sin express)
 // ============================================================
-const app = express();
+// Solo 3 rutas (/, /health, /reset-session): express (~20MB baseline en
+// 512MB) era sobredimensionado. http nativo hace lo mismo.
+const http = require('http');
 
-app.get('/', (req, res) => {
-    const up = Math.floor((Date.now() - botState.startTime) / 1000);
-    const h = Math.floor(up / 3600), m = Math.floor((up % 3600) / 60), s = up % 60;
-    const dbBadge = db.isConnected()
-        ? '<span style="background:#166534;color:#4ade80;padding:2px 8px;border-radius:10px">TURSO ✅</span>'
-        : '<span style="background:#7f1d1d;color:#fca5a5;padding:2px 8px;border-radius:10px">LOCAL 📁</span>';
-    const statusHtml = botState.isConnected
-        ? '<p style="color:#22c55e;font-size:1.5em">✅ BOT ONLINE</p>'
-        : botState.pairingCode
-            ? `<p style="color:#94a3b8">CÓDIGO DE VINCULACIÓN:</p>
-               <p style="font-size:3em;letter-spacing:10px;color:#facc15;font-weight:bold">${botState.pairingCode}</p>
-               <p style="color:#64748b;font-size:0.8em">WhatsApp → Dispositivos vinculados → Vincular con número</p>`
-            : `<p style="color:#eab308;font-size:1.2em">⏳ ${botState.status}</p>`;
+function dashboardHandler(req, res) {
+    const url = new URL(req.url || '/', 'http://localhost');
+    const sendJson = (code, obj) => {
+        res.writeHead(code, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(obj));
+    };
 
-    const qrHtml = (!botState.isConnected && botState.qrDataUrl)
-        ? `<div style="margin-top:16px">
-               <p style="color:#94a3b8;margin-bottom:8px">QR DE VINCULACION:</p>
-               <img src="${botState.qrDataUrl}" alt="QR WhatsApp" style="background:#fff;padding:10px;border-radius:10px;max-width:260px;width:100%;display:block;margin:0 auto">
-               <p style="color:#64748b;font-size:0.8em;margin-top:8px">WhatsApp -> Dispositivos vinculados -> Vincular dispositivo</p>
-           </div>`
-        : '';
+    if (url.pathname === '/' && req.method === 'GET') {
+        const up = Math.floor((Date.now() - botState.startTime) / 1000);
+        const h = Math.floor(up / 3600), m = Math.floor((up % 3600) / 60), s = up % 60;
+        const dbBadge = db.isConnected()
+            ? '<span style="background:#166534;color:#4ade80;padding:2px 8px;border-radius:10px">TURSO ✅</span>'
+            : '<span style="background:#7f1d1d;color:#fca5a5;padding:2px 8px;border-radius:10px">LOCAL 📁</span>';
+        const statusHtml = botState.isConnected
+            ? '<p style="color:#22c55e;font-size:1.5em">✅ BOT ONLINE</p>'
+            : botState.pairingCode
+                ? `<p style="color:#94a3b8">CÓDIGO DE VINCULACIÓN:</p>
+                   <p style="font-size:3em;letter-spacing:10px;color:#facc15;font-weight:bold">${botState.pairingCode}</p>
+                   <p style="color:#64748b;font-size:0.8em">WhatsApp → Dispositivos vinculados → Vincular con número</p>`
+                : `<p style="color:#eab308;font-size:1.2em">⏳ ${botState.status}</p>`;
 
-    res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Diky Bot</title>
+        const qrHtml = (!botState.isConnected && botState.qrDataUrl)
+            ? `<div style="margin-top:16px">
+                   <p style="color:#94a3b8;margin-bottom:8px">QR DE VINCULACION:</p>
+                   <img src="${botState.qrDataUrl}" alt="QR WhatsApp" style="background:#fff;padding:10px;border-radius:10px;max-width:260px;width:100%;display:block;margin:0 auto">
+                   <p style="color:#64748b;font-size:0.8em;margin-top:8px">WhatsApp -> Dispositivos vinculados -> Vincular dispositivo</p>
+               </div>`
+            : '';
+
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Diky Bot</title>
     <meta http-equiv="refresh" content="5"><style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{background:#0f172a;color:#e2e8f0;font-family:'Segoe UI',sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh}
@@ -716,19 +773,48 @@ app.get('/', (req, res) => {
         <p>🔧 <b>Admin:</b> ${ADMIN_NUM || '⚠️'}</p>
         <p><b>Ultimo error:</b> ${botState.lastDisconnectCode || '-'} ${botState.lastDisconnectReason || ''}</p>
     </div></div></body></html>`);
-});
+        return;
+    }
 
-app.get('/health', (req, res) => {
-    const queues = [...colaSalida.entries()].map(([chatId, state]) => ({
-        chatId,
-        size: state.cola.length,
-        procesando: state.procesando,
-        slow: esChatLento(chatId),
-        errors: state.errors || 0,
-        lastSendAgoMs: state.lastSendAt ? Date.now() - state.lastSendAt : null
-    }));
-    res.json({ ok: true, connected: botState.isConnected, queues });
-});
+    if (url.pathname === '/health' && req.method === 'GET') {
+        const mem = process.memoryUsage();
+        const queues = [...colaSalida.entries()].map(([chatId, state]) => ({
+            chatId,
+            size: state.cola.length,
+            procesando: state.procesando,
+            slow: esChatLento(chatId),
+            errors: state.errors || 0,
+            lastSendAgoMs: state.lastSendAt ? Date.now() - state.lastSendAt : null
+        }));
+        sendJson(200, {
+            ok: true,
+            connected: botState.isConnected,
+            memMB: {
+                rss: +(mem.rss / 1048576).toFixed(1),
+                heapUsed: +(mem.heapUsed / 1048576).toFixed(1),
+                heapTotal: +(mem.heapTotal / 1048576).toFixed(1)
+            },
+            queues
+        });
+        return;
+    }
+
+    if (url.pathname === '/reset-session' && req.method === 'GET') {
+        const token = process.env.RESET_SESSION_TOKEN;
+        if (!token || url.searchParams.get('token') !== token) {
+            sendJson(403, { ok: false, error: 'RESET_SESSION_TOKEN invalido o no configurado' });
+            return;
+        }
+        resetAuthSession('dashboard reset').then(() => {
+            sendJson(200, { ok: true, message: 'Sesion de WhatsApp borrada. Render reiniciara el bot.' });
+            setTimeout(() => process.exit(0), 800);
+        }).catch((e) => sendJson(500, { ok: false, error: e.message }));
+        return;
+    }
+
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: false, error: 'not found' }));
+}
 
 async function resetAuthSession(reason = 'manual reset') {
     try { await db.init(); } catch (e) { }
@@ -743,17 +829,7 @@ async function resetAuthSession(reason = 'manual reset') {
     console.log(`[AUTH RESET] ${reason}`);
 }
 
-app.get('/reset-session', async (req, res) => {
-    const token = process.env.RESET_SESSION_TOKEN;
-    if (!token || req.query.token !== token) {
-        return res.status(403).json({ ok: false, error: 'RESET_SESSION_TOKEN invalido o no configurado' });
-    }
-
-    await resetAuthSession('dashboard reset');
-    res.json({ ok: true, message: 'Sesion de WhatsApp borrada. Render reiniciara el bot.' });
-    setTimeout(() => process.exit(0), 800);
-});
-app.listen(PORT, '0.0.0.0', () => console.log(`🌐 Dashboard en puerto ${PORT}`));
+http.createServer(dashboardHandler).listen(PORT, '0.0.0.0', () => console.log(`🌐 Dashboard en puerto ${PORT}`));
 
 // ============================================================
 //                     STICKER UTILS
@@ -1372,11 +1448,17 @@ async function procesarMensaje(sock, msg) {
             if (cached && (ahora - cached.time < TTL_ADMIN)) {
                 if (cached.admins.includes(sender)) isAdmin = true;
             } else {
-                // No bloqueamos todo el bot si groupMetadata tarda
-                sock.groupMetadata(chatId).then(metadata => {
-                    const admins = metadata.participants.filter(p => p.admin).map(p => p.id);
-                    botState.adminCache.set(chatId, { admins, time: ahora });
-                }).catch(() => { });
+                // No bloqueamos todo el bot si groupMetadata tarda.
+                // Throttle: máx 1 fetch cada 60s por chat aunque el cache siga
+                // expirado (TTL_ADMIN es 10min); evita N fetches en ráfagas.
+                const lastFetch = adminFetchAt.get(chatId) || 0;
+                if (ahora - lastFetch >= ADMIN_FETCH_MIN_MS) {
+                    adminFetchAt.set(chatId, ahora);
+                    sock.groupMetadata(chatId).then(metadata => {
+                        const admins = metadata.participants.filter(p => p.admin).map(p => p.id);
+                        botState.adminCache.set(chatId, { admins, time: Date.now() });
+                    }).catch(() => { });
+                }
 
                 // Mientras se actualiza, usamos el cache viejo si existe
                 if (cached && cached.admins.includes(sender)) isAdmin = true;
@@ -1755,9 +1837,10 @@ async function procesarMensaje(sock, msg) {
                     // paralelo a lo que sea que el bot este haciendo en otros chats
                     // (descargas de manga, musica, etc.) porque procesarMensaje ya
                     // se ejecuta de forma concurrente por diseño, y esta llamada de
-                    // IA no pasa por esperarSlotHeavy ni por ninguna cola que puedan
-                    // ocupar esas tareas pesadas — asi el bot nunca se "queda mudo"
-                    // mientras manda muchos capitulos o una cancion.
+                    // IA usa su propio semáforo (máx 3 concurrentes) en vez del de
+                    // tareas pesadas — asi el bot nunca se "queda mudo" mientras
+                    // manda muchos capitulos, pero N grupos hablando a la vez ya
+                    // no apilan N cascadas de 60s en RAM.
                     const historialChat = obtenerContextoChat(chatId, 12);
                     const perfilUsuario = await db.getPerfilIA(sender).catch(() => null);
 

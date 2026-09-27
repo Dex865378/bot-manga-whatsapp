@@ -196,7 +196,7 @@ module.exports = {
             } catch (ffErr) {
                 console.error(`⚠️ FFmpeg falló para ${start}: ${ffErr.message}. Usando fallback. `);
                 try { fs.unlinkSync(tmpOut); } catch (e) { }
-                const gifRes = await axios.get(gifUrl, { responseType: 'arraybuffer', timeout: 15000 });
+                const gifRes = await axios.get(gifUrl, { responseType: 'arraybuffer', timeout: 15000, maxContentLength: 15 * 1024 * 1024, maxBodyLength: 15 * 1024 * 1024 });
                 const gifBuffer = Buffer.from(gifRes.data);
                 try {
                     await sock.sendMessage(chatId, {

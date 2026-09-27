@@ -151,7 +151,7 @@ module.exports = {
             mText += `• !mejor (Top global nivel/riqueza)\n`;
             mText += `• !dar <monto> @usuario\n`;
             mText += `• !canjear <monto> (Diky -> XP)\n`;
-            mText += `• !marry @usuario / !divorce\n`;
+            mText += `• !marry @usuario / !divorce (matrimonio formal)\n`;
             mText += `• !clase (Elegir profesión)\n`;
             mText += `• !inventario\n`;
             mText += `• !bounty (Ver recompensas)\n\n`;
@@ -178,7 +178,7 @@ module.exports = {
             mText += `• !slot (Tragamonedas)\n`;
             mText += `• !ruleta (Rusa)\n`;
             mText += `• !apostar (Rojo/Blanco)\n`;
-            mText += `• !dado / !moneda / !ppt\n\n`;
+            mText += `• !dado / !moneda / !ppt (clásico) / !pptx (9 elementos)\n\n`;
 
             mText += `⚔️ *[ AVENTURA ]*\n`;
             mText += `• !minar (Explorar la cueva)\n`;

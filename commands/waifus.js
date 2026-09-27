@@ -347,7 +347,7 @@ module.exports = {
             let enviadas = 0;
             for (const waifu of successful) {
                 try {
-                    const imgRes = await axios.get(waifu.url, { responseType: 'arraybuffer', timeout: 10000 });
+                    const imgRes = await axios.get(waifu.url, { responseType: 'arraybuffer', timeout: 10000, maxContentLength: 15 * 1024 * 1024, maxBodyLength: 15 * 1024 * 1024 });
                     enviadas++;
                     await sock.sendMessage(chatId, {
                         image: Buffer.from(imgRes.data),

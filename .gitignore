@@ -10,6 +10,12 @@ temp_*.mp4
 temp_*.png
 *.log
 cookies.txt
+# Credenciales y material sensible: nunca al repo (el .txt con las
+# credenciales de Render ya quedó fuera del commit 4ff45c4 a mano)
+*_credenciales_*.txt
+*credenciales*.txt
+.env.*
+!.env.example
 
 
 .codegraph/

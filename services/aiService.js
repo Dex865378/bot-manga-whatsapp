@@ -45,8 +45,20 @@ const CONFIG = {
         .filter(Boolean)
 };
 
-// Estado de llamadas concurrentes
-let currentAiCalls = 0;
+// Estado de llamadas concurrentes POR PROVEEDOR (antes un contador global:
+// 2 llamadas a Google bloqueaban a Groq/Cerebras aunque estuvieran libres,
+// y el aviso de "ocupado" cortaba la cascada sin probar el siguiente proveedor).
+const aiCalls = { google: 0, groq: 0, cerebras: 0, openrouter: 0 };
+// Timestamp de la última vez que un proveedor estuvo saturado: sirve para
+// distinguir "todos fallaron" de "había cola" al final de la cascada.
+let aiBusyAt = 0;
+
+function aiAcquire(name) {
+    if (aiCalls[name] >= CONFIG.MAX_CONCURRENT_AI) { aiBusyAt = Date.now(); return false; }
+    aiCalls[name]++;
+    return true;
+}
+function aiRelease(name) { aiCalls[name] = Math.max(0, aiCalls[name] - 1); }
 
 // Cliente Google reutilizado (evita new por mensaje → menos GC en 512MB)
 let googleClient = null;
@@ -66,12 +78,8 @@ async function chatWithGoogleAI(prompt, retries = 2) {
     const key = process.env.GEMINI_KEY || process.env.GOOGLE_AI_KEY;
     if (!key) return null;
 
-    // Control de concurrencia
-    if (currentAiCalls >= CONFIG.MAX_CONCURRENT_AI) {
-        return '⏳ El sistema de IA está muy ocupado. Intenta en unos segundos.';
-    }
-
-    currentAiCalls++;
+    // Control de concurrencia (solo cuenta este proveedor)
+    if (!aiAcquire('google')) return null;
 
     try {
         const genAI = getGoogleClient(key);
@@ -98,7 +106,7 @@ async function chatWithGoogleAI(prompt, retries = 2) {
         console.error('❌ [AI] Google AI Error:', e.message);
         return null;
     } finally {
-        currentAiCalls--;
+        aiRelease('google');
     }
 }
 
@@ -110,11 +118,8 @@ async function chatWithGroq(prompt, retries = 2) {
     const keys = CONFIG.GROQ_KEYS;
     if (keys.length === 0) return null;
 
-    if (currentAiCalls >= CONFIG.MAX_CONCURRENT_AI) {
-        return '⏳ El sistema de IA está muy ocupado. Intenta en unos segundos.';
-    }
+    if (!aiAcquire('groq')) return null;
 
-    currentAiCalls++;
     const apiKey = keys[Math.floor(Math.random() * keys.length)];
 
     try {
@@ -142,7 +147,7 @@ async function chatWithGroq(prompt, retries = 2) {
         console.error('❌ [AI] Groq Error:', e.message);
         return null;
     } finally {
-        currentAiCalls--;
+        aiRelease('groq');
     }
 }
 
@@ -155,11 +160,8 @@ async function chatWithCerebras(prompt, retries = 2) {
     const keys = CONFIG.CEREBRAS_KEYS;
     if (keys.length === 0) return null;
 
-    if (currentAiCalls >= CONFIG.MAX_CONCURRENT_AI) {
-        return '⏳ El sistema de IA está muy ocupado. Intenta en unos segundos.';
-    }
+    if (!aiAcquire('cerebras')) return null;
 
-    currentAiCalls++;
     const apiKey = keys[Math.floor(Math.random() * keys.length)];
 
     try {
@@ -186,7 +188,7 @@ async function chatWithCerebras(prompt, retries = 2) {
         console.error('❌ [AI] Cerebras Error:', e.message);
         return null;
     } finally {
-        currentAiCalls--;
+        aiRelease('cerebras');
     }
 }
 
@@ -197,12 +199,8 @@ async function chatWithOpenRouter(prompt, retries = 2) {
     const keys = CONFIG.OPENROUTER_KEYS;
     if (keys.length === 0) return null;
 
-    // Control de concurrencia
-    if (currentAiCalls >= CONFIG.MAX_CONCURRENT_AI) {
-        return '⏳ El sistema de IA está muy ocupado. Intenta en unos segundos.';
-    }
-
-    currentAiCalls++;
+    // Control de concurrencia (solo cuenta este proveedor)
+    if (!aiAcquire('openrouter')) return null;
 
     // Rotación de claves
     const keyIndex = Math.floor(Math.random() * keys.length);
@@ -233,7 +231,7 @@ async function chatWithOpenRouter(prompt, retries = 2) {
         console.error('❌ [AI] OpenRouter Error:', e.message);
         return null;
     } finally {
-        currentAiCalls--;
+        aiRelease('openrouter');
     }
 }
 
@@ -247,20 +245,30 @@ async function chatWithAI(prompt, preferredProvider = 'auto') {
     if (preferredProvider === 'cerebras') return await chatWithCerebras(prompt);
     if (preferredProvider === 'openrouter') return await chatWithOpenRouter(prompt);
 
-    // Auto: Intentar en orden. Cada proveedor devuelve null si fallo o no
-    // tiene key configurada, y ahi se pasa al siguiente automaticamente.
-    let response = await chatWithGoogleAI(prompt);
+    // Auto: Intentar en orden. Cada proveedor devuelve null si fallo, no tiene
+    // key o está saturado (la saturación ya no corta la cascada: se prueba el
+    // siguiente proveedor y solo al final se avisa si había cola).
+    let sawBusy = false;
+    const paso = async (fn) => {
+        const r = await fn(prompt);
+        if (r) return r;
+        if (Date.now() - aiBusyAt < 30000) sawBusy = true;
+        return null;
+    };
+
+    let response = await paso(chatWithGoogleAI);
     if (response) return response;
 
-    response = await chatWithGroq(prompt);
+    response = await paso(chatWithGroq);
     if (response) return response;
 
-    response = await chatWithCerebras(prompt);
+    response = await paso(chatWithCerebras);
     if (response) return response;
 
-    response = await chatWithOpenRouter(prompt);
+    response = await paso(chatWithOpenRouter);
     if (response) return response;
 
+    if (sawBusy) return '⏳ El sistema de IA está muy ocupado. Intenta en unos segundos.';
     return '❌ Los servicios de IA no están disponibles en este momento.';
 }
 

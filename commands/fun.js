@@ -215,9 +215,11 @@ module.exports = {
                 const top = shuffled.slice(0, 5);
                 let response = `🏆 *TOP 5: ${tema.toUpperCase()}* 🏆\n\n`;
 
+                // 1 sola query (IN) en vez de 5 secuenciales
+                const users = await db.obtenerUsuariosBatch(top).catch(() => ({}));
                 for (let i = 0; i < top.length; i++) {
-                    const u = await db.obtenerUsuario(top[i]);
-                    const name = u.nombre_wa || u.nombre || `@${top[i].split('@')[0]}`;
+                    const u = users[top[i]];
+                    const name = (u && (u.nombre_wa || u.nombre)) || `@${top[i].split('@')[0]}`;
                     response += `${i + 1}. ${name}\n`;
                 }
                 return sock.sendMessage(chatId, { text: response, mentions: top }, { quoted: msg });

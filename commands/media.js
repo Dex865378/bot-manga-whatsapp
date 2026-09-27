@@ -509,36 +509,47 @@ module.exports = {
                         }
 
                         try {
-                            const resultado = await mangadex.obtenerCapitulo(titulo, codigo, num);
+                            // Se resuelve primero (sin descargar) para elegir modo:
+                            // PDF si cabe en RAM, streaming por lotes si es largo.
+                            const res = await mangadex.resolverCapitulo(titulo, codigo, num);
+                            const langFlag = res.idioma === 'es' ? '🇪🇸' : '🇺🇸';
 
-                            if (resultado.modo === 'pdf') {
+                            if (res.urls.length <= mangadex.MAX_PAGES_PDF) {
                                 // ✅ Modo principal: 1 PDF por capítulo
+                                const buffers = await mangadex.descargarPaginasABuffers(res.urls);
+                                if (buffers.length === 0) throw new Error('No se pudieron descargar las páginas');
+                                const nPags = buffers.length;
+                                let pdf = await mangadex.ensamblarPDF(buffers, titulo, num);
+                                buffers.length = 0;
                                 await sock.sendMessage(chatId, {
-                                    document: resultado.pdf,
+                                    document: pdf,
                                     mimetype: 'application/pdf',
-                                    fileName: resultado.nombreArchivo,
-                                    caption: `📖 *${titulo}*\nCap. *${num}* — ${resultado.paginas} páginas ${resultado.idioma === 'es' ? '🇪🇸' : '🇺🇸'}`
+                                    fileName: `${res.nombreBase}.pdf`,
+                                    caption: `📖 *${titulo}*\nCap. *${num}* — ${nPags} páginas ${langFlag}`
                                 }, isAll ? {} : { quoted: msg });
+                                pdf = null;
                             } else {
-                                // ⚠️ Modo fallback: capítulo muy largo → imágenes sueltas
+                                // ⚠️ Capítulo muy largo: streaming por lotes de 10
+                                // (descargar → enviar → liberar; nunca todo en RAM).
                                 await sock.sendMessage(chatId, {
-                                    text: `⚠️ El capítulo ${num} tiene *${resultado.paginas} páginas*. Enviando por lotes de imágenes...`
+                                    text: `⚠️ El capítulo ${num} tiene *${res.urls.length} páginas*. Enviando por lotes de imágenes...`
                                 });
                                 const lote = 10;
-                                for (let i = 0; i < resultado.imagenes.length; i += lote) {
-                                    const batch = resultado.imagenes.slice(i, i + lote);
+                                let enviadas = 0;
+                                for (let i = 0; i < res.urls.length; i += lote) {
+                                    if (isAll && cancelMap.get(chatId)) break;
+                                    const batch = await mangadex.descargarPaginasABuffers(res.urls.slice(i, i + lote));
                                     for (let j = 0; j < batch.length; j++) {
                                         await sock.sendMessage(chatId, {
                                             image: batch[j],
-                                            caption: `📄 Pág. ${i + j + 1}/${resultado.paginas}`
+                                            caption: `📄 Pág. ${enviadas + j + 1}/${res.urls.length}`
                                         });
                                         await new Promise(r => setTimeout(r, 800));
                                     }
+                                    enviadas += batch.length;
+                                    batch.length = 0;
                                 }
-                                resultado.imagenes.length = 0;
                             }
-                            // Liberar referencia al PDF enviado antes de la pausa (pico RAM)
-                            if (resultado.pdf) resultado.pdf = null;
 
                             if (isAll) {
                                 // Pausa generosa entre capítulos para no agotar la RAM ni sufrir ban de WhatsApp/MangaDex

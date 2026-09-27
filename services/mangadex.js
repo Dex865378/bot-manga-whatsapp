@@ -23,8 +23,10 @@ const IDS_CACHE_FILE = path.join(__dirname, '..', 'data', 'mangadex_ids.json');
 const LANGS_ES = ['es', 'es-la'];
 const LANGS_EN = ['en'];
 
-/** Máximo de páginas para armar PDF. Si supera esto → imágenes sueltas */
-const MAX_PAGES_PDF = 300;
+/** Máximo de páginas para armar PDF. Si supera esto → imágenes por lotes.
+ * 150 páginas data-saver (~150KB c/u) ≈ 22MB + 2x del ensamblado: pico
+ * seguro en 512MB. Capítulos más largos van por streaming de a 10. */
+const MAX_PAGES_PDF = 150;
 
 /** Máx concurrent downloads por capítulo */
 const MAX_CONCURRENT_DL = 5;
@@ -275,7 +277,11 @@ async function descargarPaginasABuffers(urls) {
                     responseType: 'arraybuffer',
                     timeout: 30000,
                     headers: { 'User-Agent': 'DikybotWA/1.0' },
-                    maxRedirects: 5
+                    maxRedirects: 5,
+                    // Tope por página: una página data-saver no debería pasar
+                    // de ~2MB; 8MB deja margen y frena payloads gigantes en RAM.
+                    maxContentLength: 8 * 1024 * 1024,
+                    maxBodyLength: 8 * 1024 * 1024
                 });
                 results[idx] = Buffer.from(res.data);
             } catch (e) {
@@ -343,7 +349,12 @@ async function ensamblarPDF(imageBuffers, titulo, numCap) {
  * @param {string} numCap    Número de capítulo pedido (ej: "47")
  * @returns {{ modo: 'pdf'|'imagenes', pdf?: Buffer, imagenes?: Buffer[], nombreArchivo: string, paginas: number }}
  */
-async function obtenerCapitulo(titulo, codigo, numCap) {
+/**
+ * Resuelve un capítulo a sus URLs de páginas SIN descargar nada.
+ * Paso previo para decidir modo PDF (todo en RAM) o streaming por lotes.
+ * @returns {{ urls: string[], idioma: string, nombreBase: string }}
+ */
+async function resolverCapitulo(titulo, codigo, numCap) {
     // 1. Resolver ID de MangaDex
     const mangaId = await buscarMangaId(titulo, codigo);
     if (!mangaId) throw new Error(`No se encontró "${titulo}" en MangaDex`);
@@ -366,11 +377,16 @@ async function obtenerCapitulo(titulo, codigo, numCap) {
     const langTag = idioma === 'es' ? '🇪🇸 ES' : '🇺🇸 EN';
     console.log(`[MangaDex] Cap ${numCap} de "${titulo}" → ${urls.length} páginas (${langTag})`);
 
+    const nombreBase = `${titulo.replace(/[^a-z0-9]/gi, '_')}_Cap${numCap}`;
+    return { urls, idioma, nombreBase };
+}
+
+async function obtenerCapitulo(titulo, codigo, numCap) {
+    const { urls, idioma, nombreBase } = await resolverCapitulo(titulo, codigo, numCap);
+
     // 5. Descargar páginas
     const buffers = await descargarPaginasABuffers(urls);
     if (buffers.length === 0) throw new Error('No se pudieron descargar las páginas');
-
-    const nombreBase = `${titulo.replace(/[^a-z0-9]/gi, '_')}_Cap${numCap}`;
 
     // 6. Decidir modo: PDF o imágenes sueltas
     // Se liberan los buffers de páginas tras armar el PDF (pico 2-3x RAM si coexisten).
@@ -688,6 +704,7 @@ module.exports = {
     descargarPaginasABuffers,
     ensamblarPDF,
     obtenerCapitulo,
+    resolverCapitulo,
     listarCapitulos,
     limpiarCacheId,
     forzarMangaId,

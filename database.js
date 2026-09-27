@@ -143,17 +143,26 @@ async function crearTablas() {
         for (const sql of allCols) {
             try { await dbClient.execute(sql); } catch (e) { }
         }
-        // Migración automática: pasar mascota vieja (usuarios.mascota_tipo) a mascotas_usuario
+        // Migración automática (UNA SOLA VEZ): pasar mascota vieja
+        // (usuarios.mascota_tipo) a mascotas_usuario. Antes hacía full scan
+        // + N queries en CADA arranque; ahora queda registrada en la tabla
+        // migraciones y se salta en boots siguientes.
         try {
-            const old = await dbClient.execute("SELECT user_id, mascota_tipo, mascota_nombre, mascota_hambre FROM usuarios WHERE mascota_tipo IS NOT NULL");
-            for (const row of old.rows) {
-                const exists = await dbClient.execute({ sql: 'SELECT id FROM mascotas_usuario WHERE user_id = ? AND tipo = ?', args: [row.user_id, row.mascota_tipo] });
-                if (exists.rows.length === 0) {
-                    await dbClient.execute({
-                        sql: 'INSERT INTO mascotas_usuario (user_id, tipo, categoria, nombre, hambre, es_principal) VALUES (?, ?, ?, ?, ?, 1)',
-                        args: [row.user_id, row.mascota_tipo, 'legacy', row.mascota_nombre || '', row.mascota_hambre || 100]
-                    });
+            await dbClient.execute('CREATE TABLE IF NOT EXISTS migraciones (nombre TEXT PRIMARY KEY, aplicada_en BIGINT)');
+            const ya = await dbClient.execute({ sql: 'SELECT 1 FROM migraciones WHERE nombre = ?', args: ['mascota_legacy_v1'] });
+            if (ya.rows.length === 0) {
+                const old = await dbClient.execute("SELECT user_id, mascota_tipo, mascota_nombre, mascota_hambre FROM usuarios WHERE mascota_tipo IS NOT NULL");
+                for (const row of old.rows) {
+                    const exists = await dbClient.execute({ sql: 'SELECT id FROM mascotas_usuario WHERE user_id = ? AND tipo = ?', args: [row.user_id, row.mascota_tipo] });
+                    if (exists.rows.length === 0) {
+                        await dbClient.execute({
+                            sql: 'INSERT INTO mascotas_usuario (user_id, tipo, categoria, nombre, hambre, es_principal) VALUES (?, ?, ?, ?, ?, 1)',
+                            args: [row.user_id, row.mascota_tipo, 'legacy', row.mascota_nombre || '', row.mascota_hambre || 100]
+                        });
+                    }
                 }
+                await dbClient.execute({ sql: 'INSERT INTO migraciones (nombre, aplicada_en) VALUES (?, ?)', args: ['mascota_legacy_v1', Date.now()] });
+                console.log(`📦 [DB] Migración mascota_legacy_v1 aplicada (${old.rows.length} filas revisadas).`);
             }
         } catch(_) {}
         console.log('📦 [DB] Estructura verificada.');
@@ -180,7 +189,9 @@ async function crearSubasta(sellerId, chatId, itemName, startPrice, durationMs) 
 async function obtenerSubastasActivas() {
     if (!connected) return [];
     try {
-        const rs = await dbClient.execute("SELECT * FROM auctions WHERE status = 'active'");
+        // LIMIT de seguridad: el intervalo las revisa cada 60s, no hay caso
+        // real con más de unas pocas activas; evita SELECT * sin tope.
+        const rs = await dbClient.execute("SELECT * FROM auctions WHERE status = 'active' ORDER BY end_time ASC LIMIT 50");
         return rs.rows;
     } catch (e) { return []; }
 }
