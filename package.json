@@ -10,7 +10,6 @@
     "reset-session": "node scripts/reset-session.js"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.13.0",
     "@hapi/boom": "^10.0.1",
     "@libsql/client": "^0.17.0",
     "@whiskeysockets/baileys": "^7.0.0-rc.9",

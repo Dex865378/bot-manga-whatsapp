@@ -19,7 +19,7 @@ function check(cond, msg) {
 const handler = require(path.join(ROOT, 'commandHandler.js'));
 handler.loadCommands();
 const names = [...handler.commands.keys()];
-check(names.length >= 169, `Comandos registrados: ${names.length} (esperado >= 169)`);
+check(names.length >= 168, `Comandos registrados: ${names.length} (esperado >= 168)`);
 check(!names.includes('__help_data__'), 'Sin entrada basura __help_data__ en el Map');
 check(!names.some(n => n.startsWith('__')), 'Sin comandos internos __* en el Map');
 
@@ -63,7 +63,7 @@ if (m) {
 
 // 5. Módulos core cargan (utils, servicios, responders, database sin init)
 for (const mod of ['utils', 'utils/inputValidator', 'utils/apiClient', 'utils/lruCache',
-    'services/aiService', 'services/mangadex', 'services/anilist',
+    'services/mangadex', 'services/anilist',
     'gameResponder', 'mangaResponder', 'novelaResponder', 'database', 'turso-auth']) {
     try { require(path.join(ROOT, mod)); check(true, `Carga ${mod}`); }
     catch (e) { check(false, `Carga ${mod}: ${e.message}`); }

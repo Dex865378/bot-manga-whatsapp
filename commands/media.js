@@ -64,7 +64,7 @@ module.exports = {
     name: 'media',
     isMultiple: true,
     names: ['!waifu', '!anime', '!personaje', '!estudio', '!proximo', '!estrenos', '!temporada', '!recomendar', '!random', '!trace', '!news', '!wiki', '!decir', '!catalogo', '!manga', '!leer', '!buscar', '!ver', '!parar', '!setmanga', '!recomanga'],
-    async execute(sock, chatId, msg, args, { start, cmd, txt, db, delay, downloadMediaMessage, traducirConCache, botState, sender, pushName, chatWithLiquidAI }) {
+    async execute(sock, chatId, msg, args, { start, cmd, txt, db, delay, downloadMediaMessage, traducirConCache, botState, sender, pushName }) {
         // !parar - Cancela descargas masivas en curso
         if (start === '!parar') {
             cancelMap.set(chatId, true);
@@ -258,11 +258,9 @@ module.exports = {
                 t = quoted.conversation || quoted.extendedTextMessage?.text || quoted.imageMessage?.caption || quoted.videoMessage?.caption || '';
             }
 
-            // 2. Si sigue sin haber texto, invocamos a la IA (Liquid AI) para que genere algo divertido
+            // 2. Si sigue sin haber texto, saludo fijo (sin IA)
             if (!t) {
-                await sock.sendPresenceUpdate('composing', chatId);
-                t = await chatWithLiquidAI('Saluda de forma breve y divertida al grupo como Diky Bot.', 'Eres Diky Bot, un bot de WhatsApp amigable.');
-                if (!t) return sock.sendMessage(chatId, { text: '🗣️ No tengo nada que decir en este momento.' });
+                t = '¡Hola a todos! 😺 ¡Diky Bot presente y listo para el desmadre! Escribe *!menu* para ver lo que puedo hacer.';
             }
 
             // 3. Soporte para Idiomas y Traducción

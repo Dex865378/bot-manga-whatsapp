@@ -26,7 +26,6 @@ const { promisify } = require('util');
 
 const db = require('./database');
 const { useTursoAuthState } = require('./turso-auth');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const handler = require('./commandHandler');
 const { handleGameResponse } = require('./gameResponder');
 const { handleMangaSession } = require('./mangaResponder');
@@ -36,7 +35,6 @@ const execFileAsync = promisify(execFile);
 // 🧰 Utils modularizados
 const { LRUCache, fetchWithRetry, createLogger } = require('./utils');
 const { CONFIG } = require('./config');
-const { aiService } = require('./services');
 
 // Logger para el core
 const logger = createLogger('core');
@@ -84,7 +82,7 @@ setInterval(() => {
 setInterval(() => {
     if (typeof botState === 'undefined') return;
     const cachesLRU = [
-        ['configIA', botState.configIA], ['cacheTrad', botState.cacheTrad],
+        ['cacheTrad', botState.cacheTrad],
         ['mangaInfo', botState.mangaInfo], ['silenciados', botState.silenciados],
         ['bounties', botState.bounties], ['escudos', botState.escudos],
         ['groupCache', botState.groupCache], ['adminCache', botState.adminCache]
@@ -388,10 +386,6 @@ async function enviarBienvenida(sock, groupId, participantJid) {
 
 if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
 
-// --- IA CONFIG ---
-const genAI = process.env.GEMINI_KEY ? new GoogleGenerativeAI(process.env.GEMINI_KEY) : null;
-const aiModel = genAI ? genAI.getGenerativeModel({ model: "gemini-1.5-flash" }) : null;
-
 // --- ESTADO GLOBAL ---
 const botState = {
     pairingCode: null,
@@ -412,7 +406,6 @@ const botState = {
     modoAdmin: {},    // Grupos con modo solo-admins activo
     
     // 🧠 Cachés LRU con límites desde CONFIG (anti memory-leak)
-    configIA: new LRUCache(100, 30 * 60 * 1000),                    // Configuración IA
     cacheTrad: new LRUCache(CONFIG.CACHE.TRADUCCIONES.max, CONFIG.CACHE.TRADUCCIONES.ttl),
     mangaInfo: new LRUCache(CONFIG.CACHE.MANGA_INFO.max, CONFIG.CACHE.MANGA_INFO.ttl),
     silenciados: new LRUCache(CONFIG.CACHE.SILENCIADOS.max, CONFIG.CACHE.SILENCIADOS.ttl),
@@ -433,18 +426,6 @@ const botState = {
     mangaMode: new Map(), // chatId → true/false para modo manga exclusivo
     mangaSessions: new Map(), // `${chatId}_${sender}` → { tempCode, titulo, genero, step, ts }
     novelaSessions: new Map(), // `${chatId}_${sender}` → { titulo, generoEs, step, ts } - para !reconovela
-
-    // 🧠 MEMORIA DE CONVERSACION PARA LA IA (solo RAM, se pierde en reinicios
-    // a proposito — es contexto de corto plazo, no perfil de usuario).
-    // chatId -> array de { sender, pushName, texto, ts }, limitado a los
-    // ultimos N mensajes por grupo para no crecer sin control.
-    chatBuffers: new Map(),
-    CHAT_BUFFER_MAX: 30, // mensajes recientes que se recuerdan por grupo
-
-    // Contador de mensajes casuales por usuario desde la ultima actualizacion
-    // de su perfil de personalidad (evita llamar a la IA para "resumir
-    // personalidad" en cada mensaje; solo cada N interacciones reales con la IA).
-    PERFIL_IA_CADA_N_INTERACCIONES: 8
 };
 
 const TTL_CONFIG = 5 * 60 * 1000; // 5 minutos para caché de config
@@ -459,20 +440,17 @@ async function obtenerConfigGrupo(chatId) {
     if (cached) return cached;
 
     try {
-        const [active, ai] = await Promise.all([
-            db.estaGrupoActivo(chatId),
-            db.getModoAI(chatId)
-        ]);
+        const active = await db.estaGrupoActivo(chatId);
 
-        const config = { active, ai };
+        const config = { active };
         botState.groupCache.set(chatId, config);
         return config;
     } catch (e) {
-        return { active: null, ai: { activado: false } };
+        return { active: null };
     }
 }
 
-// --- HELPERS DE IA ---
+// --- HELPERS DE TRADUCCION ---
 // Sistema LRU para caché de traducciones (elimina las más viejas gradualmente)
 const cacheTradLRU = new Map();
 const MAX_TRAD_CACHE = 200;
@@ -505,25 +483,7 @@ async function traducirConCache(texto, tipo = 'resumen') {
 
     const textoRecortado = texto.substring(0, 1000);
 
-    // Intento 1: Gemini (si hay API key configurada)
-    if (aiModel) {
-        try {
-            const prompt = `Translate the following ${tipo} into Spanish. Respond ONLY with the Spanish translation. Do not include English text. Content: ${texto.substring(0, 600)}`;
-            const result = await Promise.race([
-                aiModel.generateContent(prompt),
-                new Promise((_, rej) => setTimeout(() => rej(new Error('Gemini timeout')), 8000))
-            ]);
-            const traducido = (await result.response).text().trim();
-            if (traducido) {
-                setCacheTrad(cacheKey, traducido);
-                return traducido;
-            }
-        } catch (e) {
-            console.error('[TRADUCCION] Gemini fallo, probando Google Translate:', e.message);
-        }
-    }
-
-    // Intento 2: Google Translate endpoint principal (translate.googleapis.com)
+    // Google Translate endpoint principal (translate.googleapis.com)
     try {
         const res = await axios.get(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=es&dt=t&q=${encodeURIComponent(textoRecortado)}`, { timeout: 8000 });
         const traducido = res.data[0].map(x => x[0]).join('').trim();
@@ -553,152 +513,6 @@ async function traducirConCache(texto, tipo = 'resumen') {
 
     // Ultimo recurso: texto original (en ingles) recortado
     return texto.substring(0, 200) + '...';
-}
-
-// ============================================================
-//         MEMORIA DE IA: BUFFER DE CHAT + PERFIL DE USUARIO
-// ============================================================
-// Registra cada mensaje casual (no comandos) en un buffer corto por grupo,
-// para que cuando la IA responda tenga contexto de "de que se hablaba".
-// Se limpia solo por tamaño (CHAT_BUFFER_MAX), nunca por tiempo, porque un
-// grupo puede estar horas sin hablar y aun asi querer recordar la ultima
-// conversacion. Vive solo en RAM: si Render reinicia, se pierde, y esta bien
-// porque es contexto de corto plazo, no el perfil de personalidad (ese si
-// esta en Turso).
-function registrarEnBufferChat(chatId, sender, pushName, texto) {
-    if (!texto || !texto.trim()) return;
-    if (!botState.chatBuffers.has(chatId)) {
-        // Tope de grupos recordados: evita crecimiento ilimitado en muchos grupos
-        if (botState.chatBuffers.size >= 200) {
-            const oldest = botState.chatBuffers.keys().next().value;
-            botState.chatBuffers.delete(oldest);
-        }
-        botState.chatBuffers.set(chatId, []);
-    }
-    const buf = botState.chatBuffers.get(chatId);
-    buf.push({ sender: (sender || '').split('@')[0], pushName: pushName || '', texto: texto.slice(0, 300), ts: Date.now() });
-    while (buf.length > botState.CHAT_BUFFER_MAX) buf.shift();
-}
-
-function obtenerContextoChat(chatId, maxMensajes = 12) {
-    const buf = botState.chatBuffers.get(chatId);
-    if (!buf || buf.length === 0) return '';
-    const recientes = buf.slice(-maxMensajes);
-    return recientes.map(m => `${m.pushName || m.sender}: ${m.texto}`).join('\n');
-}
-
-// 🧠 Actualiza el perfil de personalidad de un usuario cada N interacciones
-// reales con la IA (no en cada mensaje, para no gastar llamadas de mas).
-// Usa una llamada barata y corta a la cascada de IA para destilar un resumen
-// de 2-3 lineas, que se guarda en Turso y sobrevive a reinicios de Render.
-async function actualizarPerfilSiToca(userId, pushName) {
-    try {
-        const interacciones = await db.incrementarInteraccionIA(userId);
-        if (interacciones === 0 || interacciones % botState.PERFIL_IA_CADA_N_INTERACCIONES !== 0) return;
-
-        const buf = botState.chatBuffers && Array.from(botState.chatBuffers.values()).flat()
-            .filter(m => m.sender === (userId || '').split('@')[0])
-            .slice(-15);
-        if (!buf || buf.length < 3) return; // no hay suficiente material aun
-
-        const perfilActual = await db.getPerfilIA(userId);
-        const textoReciente = buf.map(m => m.texto).join(' | ');
-
-        const prompt = `Analiza estos mensajes recientes de un usuario de WhatsApp y actualiza su perfil de personalidad en 2-3 lineas cortas (intereses, tono, temas que le gustan). Perfil anterior: "${perfilActual.resumen || 'ninguno aun'}". Mensajes recientes: "${textoReciente}". Responde SOLO con el nuevo resumen actualizado en español, sin preambulo, sin comillas.`;
-
-        const resumen = await aiService.chatWithAI(prompt, 'auto');
-        if (resumen && typeof resumen === 'string' && resumen.length < 500) {
-            await db.setPerfilIA(userId, resumen.trim());
-        }
-    } catch (e) {
-        console.error('[PERFIL IA] Error actualizando perfil:', e.message);
-    }
-}
-
-// 🎭 PERSONALIDAD FIJA DE DIKY (no se adapta al usuario, lo contrarresta)
-// Idea: si el grupo es callado, Diky es el lado activo/curioso que rompe el
-// silencio - no un espejo pasivo de cada persona. Tono tipo Rick/Camarón/
-// Pocoyo: gracioso, curioso, un poco payaso, pero sin pasarse de la raya
-// (nada ofensivo, nada de burlarse feo de alguien). Mensajes cortos, hablados,
-// sin sonar a texto formal con comas perfectas - que se note que no es humano
-// tecleando con cuidado, sino alguien tirando la idea como sale.
-const DIKY_PERSONALIDAD = `Eres Diky, el bot de este grupo de WhatsApp. Tu personalidad es fija, no cambias segun quien te hable: eres curioso, gracioso, un poco payaso, con energia como Rick (sarcastico pero simpatico), Camaron (relajado, ocurrente) o Pocoyo (curioso, directo, sin filtro pero sin maldad). Si el grupo esta muy callado, tu eres el que mete ruido, hace preguntas random o suelta un comentario para que la gente reaccione - no te quedas pasivo solo porque ellos lo estan.
-
-Reglas de como hablas (importante, sigelas siempre):
-- Mensajes CORTOS. Nada de parrafos largos ni explicaciones de manual.
-- Evita comas y puntos en exceso, escribe como se habla, no como se redacta un ensayo.
-- Nunca seas ofensivo, cruel, ni te burles feo de alguien - el humor es ligero, no hiere.
-- No uses lenguaje formal ni de asistente corporativo, nada de "Estare encantado de ayudarte".
-- Puedes hacer preguntas random, opinar, molestar con carino, cambiar de tema si algo te da curiosidad.
-- No necesitas que te pregunten algo para tener personalidad, incluso un saludo simple lo respondes con onda, no en seco.`;
-
-// 🔄 Wrapper del servicio de IA (migrado a services/aiService.js)
-// Semáforo global: la IA no pasa por esperarSlotHeavy por diseño (para no
-// quedarse muda durante descargas), pero sin ningún tope N grupos hablando a
-// la vez = N cascadas de hasta 60s reteniendo prompt+historial. Máx 3
-// concurrentes; quien espera más de 25s se descarta (devuelve null y el
-// llamador simplemente no responde ese mensaje).
-let iaActivas = 0;
-const colaIA = [];
-const MAX_IA_CONCURRENTES = 3;
-const MAX_COLA_IA = 10;
-const TIMEOUT_COLA_IA_MS = 25000;
-
-function liberarSlotIA() {
-    iaActivas = Math.max(0, iaActivas - 1);
-    if (colaIA.length > 0) {
-        const next = colaIA.shift();
-        clearTimeout(next.timer);
-        iaActivas++;
-        next.resolve(true);
-    }
-}
-
-function esperarSlotIA() {
-    return new Promise((resolve) => {
-        if (iaActivas < MAX_IA_CONCURRENTES) {
-            iaActivas++;
-            return resolve(true);
-        }
-        if (colaIA.length >= MAX_COLA_IA) return resolve(false);
-        const entry = { resolve, timer: null };
-        entry.timer = setTimeout(() => {
-            const i = colaIA.indexOf(entry);
-            if (i >= 0) colaIA.splice(i, 1);
-            resolve(false);
-        }, TIMEOUT_COLA_IA_MS);
-        colaIA.push(entry);
-    });
-}
-
-async function chatWithLiquidAI(texto, contexto = '') {
-    const gotSlot = await esperarSlotIA();
-    if (!gotSlot) return null;
-    try {
-        const prompt = contexto
-            ? `${DIKY_PERSONALIDAD}\n\nContexto adicional: ${contexto}\n\nMensaje del usuario: ${texto}`
-            : `${DIKY_PERSONALIDAD}\n\nMensaje del usuario: ${texto}`;
-
-        const response = await aiService.chatWithAI(prompt, 'auto');
-
-        // Limpiar tags de thinking si existen
-        if (typeof response === 'string') {
-            return response.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
-        }
-
-        return response;
-    } finally {
-        liberarSlotIA();
-    }
-}
-
-// 🔄 Gemini wrapper (delegado a servicio)
-async function chatWithGemini(texto, contexto = '') {
-    const prompt = contexto
-        ? `Eres Diky Bot, un bot de WhatsApp divertido. Instrucciones: ${contexto}\n\nUsuario dice: ${texto}`
-        : `Eres Diky Bot, un bot de WhatsApp divertido.\n\nUsuario dice: ${texto}`;
-    
-    return await aiService.chatWithGoogleAI(prompt);
 }
 
 // --- Fallback local para mangas (cacheado: evita readFileSync por mensaje) ---
@@ -1251,53 +1065,6 @@ async function startBot() {
         onceInterval('keepalive', () => axios.get(RENDER_URL).catch(() => { }), 4 * 60 * 1000);
     }
 
-    // 🎭 ROMPE-HIELO: si un grupo con IA activa lleva rato en silencio, Diky
-    // suelta un mensaje por su cuenta en vez de esperar a que le hablen.
-    // Revisa cada 20 minutos; solo actua en grupos donde !ia esta activado Y
-    // que tengan algo de historial reciente en el buffer (para no hablar en
-    // el vacio total sin ningun contexto de que paso antes).
-    const SILENCIO_MIN_MS = 3 * 60 * 60 * 1000; // 3 horas de silencio disparan el rompe-hielo
-    const ultimoRompehielo = new Map(); // chatId -> timestamp del ultimo mensaje espontaneo
-
-    onceInterval('rompehielo', async () => {
-        try {
-            for (const [chatId, buf] of botState.chatBuffers.entries()) {
-                if (!buf || buf.length === 0) continue;
-                if (!chatId.endsWith('@g.us')) continue;
-
-                const ultimoMensaje = buf[buf.length - 1];
-                const silencioDesde = Date.now() - ultimoMensaje.ts;
-                if (silencioDesde < SILENCIO_MIN_MS) continue;
-
-                // No molestar de madrugada: solo entre 8am y 11pm hora de Panama (UTC-5).
-                // Render corre en UTC por defecto, asi que se ajusta aqui manualmente en
-                // vez de depender de una variable TZ que el proyecto no tiene configurada.
-                const horaUTC = new Date().getUTCHours();
-                const horaPanama = (horaUTC - 5 + 24) % 24;
-                if (horaPanama < 8 || horaPanama >= 23) continue;
-
-                // No repetir el rompe-hielo mas de una vez por ventana de silencio
-                const ultimaVez = ultimoRompehielo.get(chatId) || 0;
-                if (Date.now() - ultimaVez < SILENCIO_MIN_MS) continue;
-
-                const aiConfig = await db.getModoAI(chatId).catch(() => null);
-                if (!aiConfig || !aiConfig.activado) continue;
-
-                const historial = obtenerContextoChat(chatId, 10);
-                const prompt = `El grupo lleva horas en silencio. Suelta un mensaje corto y espontaneo para romper el hielo - puede ser una pregunta random, un comentario sobre algo que se hablo antes, o simplemente algo curioso que se te ocurra. No saludes de forma generica, se natural, como si se te hubiera ocurrido algo de la nada.${historial ? `\n\nUltimo tema que se hablo:\n${historial}` : ''}`;
-
-                const mensaje = await chatWithLiquidAI(prompt, aiConfig.contexto || '');
-                if (mensaje && typeof mensaje === 'string') {
-                    await sock.sendMessage(chatId, { text: mensaje });
-                    registrarEnBufferChat(chatId, 'diky_bot', 'Diky', mensaje);
-                    ultimoRompehielo.set(chatId, Date.now());
-                }
-            }
-        } catch (e) {
-            console.error('[ROMPE-HIELO] Error:', e.message);
-        }
-    }, 20 * 60 * 1000); // revisa cada 20 minutos
-
     // --- MODO DIOS AUTOMÁTICO (Cada 5 horas recarga al Admin) ---
     onceInterval('modo-dios', async () => {
         if (ADMIN_NUM) {
@@ -1378,15 +1145,6 @@ async function procesarMensaje(sock, msg) {
         let cmd = cleanTxt;
         const isCommand = cmd.startsWith('!');
         const juegoActivo = botState.juegos[chatId];
-
-        // 🧠 Registrar mensajes CASUALES (no comandos) en el buffer de contexto
-        // del grupo, para que cuando la IA responda tenga memoria de la
-        // conversacion reciente. Se hace SIEMPRE que sea texto de grupo, no
-        // solo cuando le hablan al bot, porque el contexto util es "de que
-        // se hablaba antes", no solo los mensajes dirigidos a Diky.
-        if (!isCommand && txt && txt.trim() && chatId.endsWith('@g.us')) {
-            registrarEnBufferChat(chatId, sender, pushName, txt);
-        }
 
         // --- REGISTRO INTELIGENTE DE NOMBRE (WhatsApp Nickname) ---
         if (pushName && isCommand) {
@@ -1476,7 +1234,7 @@ async function procesarMensaje(sock, msg) {
             const context = {
                 chatId, sender, cmd, txt, msg, botState, db, isCommand, isGroup, isAdmin, isGlobalAdmin,
                 pushName, downloadMediaMessage, traducirConCache, FFMPEG_PATH, ADMIN_NUM,
-                quotedMsgId, quotedParticipant, msgType, chatWithLiquidAI
+                quotedMsgId, quotedParticipant, msgType
             };
             const wasMangaResponse = await handleMangaSession(sock, msg, context);
             if (wasMangaResponse) return;
@@ -1508,7 +1266,7 @@ async function procesarMensaje(sock, msg) {
                 '!pat', '!hug', '!kiss', '!slap', '!punch', '!cry', '!dance', '!bite', '!highfive',
                 '!fumar', '!cafe', '!puchero', '!sonrojar', '!baka', '!dormir', '!comiendo', '!pensar',
                 '!patear', '!celebrar', '!aburrido', '!risa', '!smug', '!stare',
-                '!tag', '!reglas', '!kick', '!adm', '!promover', '!bot', '!bienvenida', '!setbienvenida', '!news', '!broadcast', '!anuncio', '!sorteo', '!rifa', '!ia',
+                '!tag', '!reglas', '!kick', '!adm', '!promover', '!bot', '!bienvenida', '!setbienvenida', '!news', '!broadcast', '!anuncio', '!sorteo', '!rifa',
                 '!tienda', '!comprar', '!vender', '!inventario', '!mejor', '!bounty', '!regalar', '!regalaritem', '!dar',
                 '!antispam', '!mododios',
                 '!prestigio', '!loteria', '!clase', '!pedir', '!plantarse', '!pl', '!trivia', '!daily', '!w', '!slut', '!robar', '!canjear',
@@ -1535,7 +1293,7 @@ async function procesarMensaje(sock, msg) {
                     start, cmd, txt, args, sender, pushName, isGroup, isAdmin, isGlobalAdmin,
                     botState, db, delay, FFMPEG_PATH, ADMIN_NUM,
                     traducirConCache, convertirAWebp, downloadMediaMessage,
-                    quotedMsgId, quotedParticipant, msgType, chatWithLiquidAI,
+                    quotedMsgId, quotedParticipant, msgType,
                     sockOriginal: sock
                 };
                 const executedFast = await handler.handleCommand(start, sockProxy, chatId, msg, args, extras);
@@ -1748,7 +1506,7 @@ async function procesarMensaje(sock, msg) {
                     start, cmd, txt, args, sender, pushName, isGroup, isAdmin, isGlobalAdmin,
                     botState, db, delay, FFMPEG_PATH, ADMIN_NUM,
                     traducirConCache, convertirAWebp, downloadMediaMessage,
-                    quotedMsgId, quotedParticipant, msgType, chatWithLiquidAI,
+                    quotedMsgId, quotedParticipant, msgType,
                     sockOriginal: sock // Para comandos express que necesitan bypass de cola
                 };
 
@@ -1788,85 +1546,6 @@ async function procesarMensaje(sock, msg) {
             }
         }
 
-        // --- MODO AI AUTO-RESPONSE (Si no se ejecutó un comando y es grupo) ---
-        if (isCommand) return;
-
-        const isTextMessage = ['conversation', 'extendedTextMessage'].includes(msgType);
-        if (isGroup && !participaEnJuego && isTextMessage) {
-            // Usamos la configuración de la caché cargada previamente si es posible
-            let aiConfig = null;
-
-            // Detección de mención robusta
-            const botBare = (sock.user?.id || '').split(':')[0];
-            if (!botBare) return;
-            const botMent = `@${botBare}`;
-
-            const isMentionedByTag = txt.includes(botMent) ||
-                (msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []).some(m => m.includes(botBare));
-            const isReplyToBot = msg.message?.extendedTextMessage?.contextInfo?.participant?.includes(botBare);
-            const isMentionedByName = txt.toLowerCase().includes('diky');
-
-            const isAIRelevant = isMentionedByTag || isReplyToBot || isMentionedByName;
-
-            // 🔧 FIX: antes se cortaba aqui si no habia mencion Y el cache de
-            // config del grupo (botState.groupCache) estaba vacio - eso hacia
-            // que mensajes casuales NUNCA activaran la IA si ese cache
-            // especifico no se habia poblado a tiempo, aunque !ia on ya
-            // estuviera guardado en la base de datos. Ahora siempre se
-            // consulta la config real (getModoAI ya tiene su propio cache
-            // interno de 5 minutos, asi que no pega a Turso en cada mensaje).
-            const cachedGroupConfig = botState.groupCache.get(chatId);
-            const groupConfig = cachedGroupConfig || await obtenerConfigGrupo(chatId);
-            aiConfig = groupConfig.ai;
-
-            if (!isAIRelevant && !aiConfig.activado) return;
-
-            if (aiConfig.activado) {
-                const ahora = Date.now();
-                const timeSinceLast = ahora - (aiConfig.last_reply || 0);
-
-                if (isAIRelevant || timeSinceLast > 30000) {
-                    await sock.sendPresenceUpdate('composing', chatId);
-                    const cleanTxtIA = txt.replace(botMent, '').trim();
-                    if (!cleanTxtIA && isMentionedByTag) return sock.sendMessage(chatId, { text: '¿En qué puedo ayudarte? 😺' });
-
-                    // 🧠 Construir el prompt enriquecido: contexto del grupo (lo que el
-                    // admin configuro con !ia contexto) + memoria de conversacion
-                    // reciente (buffer en RAM) + perfil de personalidad del usuario
-                    // (guardado en Turso, sobrevive a reinicios). Todo esto corre en
-                    // paralelo a lo que sea que el bot este haciendo en otros chats
-                    // (descargas de manga, musica, etc.) porque procesarMensaje ya
-                    // se ejecuta de forma concurrente por diseño, y esta llamada de
-                    // IA usa su propio semáforo (máx 3 concurrentes) en vez del de
-                    // tareas pesadas — asi el bot nunca se "queda mudo" mientras
-                    // manda muchos capitulos, pero N grupos hablando a la vez ya
-                    // no apilan N cascadas de 60s en RAM.
-                    const historialChat = obtenerContextoChat(chatId, 12);
-                    const perfilUsuario = await db.getPerfilIA(sender).catch(() => null);
-
-                    let contextoCompleto = aiConfig.contexto || '';
-                    if (historialChat) {
-                        contextoCompleto += `\n\nConversacion reciente del grupo (para que tengas contexto de que se habla, no la repitas literal):\n${historialChat}`;
-                    }
-                    if (perfilUsuario && perfilUsuario.resumen) {
-                        contextoCompleto += `\n\nSobre la persona que te escribe ahora (${pushName || 'sin nombre'}): ${perfilUsuario.resumen}`;
-                    }
-
-                    const resIA = await chatWithLiquidAI(cleanTxtIA || 'Hola', contextoCompleto);
-                    if (resIA) {
-                        await db.updateLastAIReply(chatId);
-                        // Registrar la respuesta del bot tambien en el buffer, para que
-                        // el propio bot recuerde lo que acaba de decir en turnos futuros.
-                        registrarEnBufferChat(chatId, 'diky_bot', 'Diky', resIA);
-                        // Actualizar perfil de personalidad EN SEGUNDO PLANO (sin await
-                        // bloqueante): esto puede tardar por ser otra llamada a la IA,
-                        // pero el usuario ya recibio su respuesta, asi que no se nota.
-                        actualizarPerfilSiToca(sender, pushName).catch(() => {});
-                        return sock.sendMessage(chatId, { text: resIA }, { quoted: msg });
-                    }
-                }
-            }
-        }
     } catch (e) {
         console.error('❌ Error fatal en procesarMensaje:', e.message);
     }

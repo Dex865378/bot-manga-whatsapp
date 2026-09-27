@@ -79,7 +79,7 @@ function findMangaSession(botState, chatId, sender, pushName, msg) {
 }
 
 async function handleMangaSession(sock, msg, context) {
-    const { chatId, sender, txt, botState, db, isCommand, isGroup, isAdmin, isGlobalAdmin, pushName, downloadMediaMessage, traducirConCache, FFMPEG_PATH, ADMIN_NUM, quotedMsgId, quotedParticipant, msgType, chatWithLiquidAI } = context;
+    const { chatId, sender, txt, botState, db, isCommand, isGroup, isAdmin, isGlobalAdmin, pushName, downloadMediaMessage, traducirConCache, FFMPEG_PATH, ADMIN_NUM, quotedMsgId, quotedParticipant, msgType } = context;
 
     if (!botState.mangaSessions) return false;
 
@@ -106,7 +106,7 @@ async function handleMangaSession(sock, msg, context) {
             start, cmd: start, txt: commandStr, args, sender, pushName, isGroup, isAdmin, isGlobalAdmin,
             botState, db, delay: (ms) => new Promise(r => setTimeout(r, ms)), FFMPEG_PATH, ADMIN_NUM,
             traducirConCache, convertirAWebp: null, downloadMediaMessage,
-            quotedMsgId, quotedParticipant, msgType, chatWithLiquidAI,
+            quotedMsgId, quotedParticipant, msgType,
             sockOriginal: sock
         };
         await handler.handleCommand(start, sock, chatId, msg, args, extras);

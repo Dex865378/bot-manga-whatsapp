@@ -27,15 +27,6 @@ const CONFIG = {
         TOKEN: process.env.TURSO_AUTH_TOKEN
     },
     
-    // AI Keys
-    AI: {
-        GOOGLE_KEY: process.env.GEMINI_KEY || process.env.GOOGLE_AI_KEY,
-        OPENROUTER_KEYS: (process.env.OPENROUTER_KEY || '')
-            .split(',')
-            .map(k => k.trim())
-            .filter(Boolean)
-    },
-    
     // Cache Settings
     CACHE: {
         TRADUCCIONES: { max: 500, ttl: 24 * 60 * 60 * 1000 },      // 24h
