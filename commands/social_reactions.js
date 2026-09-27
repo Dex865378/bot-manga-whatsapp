@@ -128,8 +128,16 @@ module.exports = {
         if (gifukaiReaction) config.apis.push({ source: 'gifukai', reaction: gifukaiReaction, api: `https://api.gifukai.com/${gifukaiReaction}` });
         if (otakuReaction) config.apis.push({ source: 'otaku', reaction: otakuReaction, api: `https://api.otakugifs.xyz/gif?reaction=${otakuReaction}` });
         if (config.api) config.apis.push({ source: config.source, reaction: null, api: config.api });
-        const ment = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-        const target = (ment.length > 0) ? ment[0] : null;
+        const ctxInfo = msg.message?.extendedTextMessage?.contextInfo
+            || msg.message?.imageMessage?.contextInfo
+            || msg.message?.videoMessage?.contextInfo || {};
+        const ment = ctxInfo.mentionedJid || [];
+        let target = (ment.length > 0) ? ment[0] : null;
+        // Si respondió al mensaje de alguien (sin etiquetar), esa persona es el objetivo
+        if (!target && ctxInfo.participant && ctxInfo.participant !== sender
+            && !ctxInfo.participant.includes('status@broadcast')) {
+            target = ctxInfo.participant;
+        }
 
         let caption = '';
         const pick = (v) => Array.isArray(v) ? v[Math.floor(Math.random() * v.length)] : v;
@@ -141,48 +149,51 @@ module.exports = {
         }
 
         try {
+            // Proveedores en PARALELO: gana la primera URL válida.
+            // Antes eran secuenciales (8s de timeout c/u) y eso solo ya podía tardar ~24s.
             let gifUrl = '';
-            let lastApiError = null;
-            for (const provider of config.apis) {
-                try {
-                    const res = await axios.get(provider.api, { timeout: 8000 });
+            if (config.apis.length > 0) {
+                const fetchOne = async (provider) => {
+                    const res = await axios.get(provider.api, { timeout: 5000, maxContentLength: 1048576, maxBodyLength: 1048576 });
                     const url = extractGifUrl(provider, res.data);
                     if (!isExpectedGifUrl(provider.source, provider.reaction, url)) {
                         throw new Error(`URL invalida para ${provider.source}:${provider.reaction || 'default'}`);
                     }
-                    gifUrl = url;
-                    break;
-                } catch (apiErr) {
-                    lastApiError = apiErr;
-                }
+                    if (config.source === 'otaku' && config.reaction && !url.includes(`/gifs/${config.reaction}/`)) {
+                        throw new Error(`La API devolvio una categoria distinta para ${start}`);
+                    }
+                    return url;
+                };
+                const results = await Promise.allSettled(config.apis.map(fetchOne));
+                const win = results.find(r => r.status === 'fulfilled');
+                if (win) gifUrl = win.value;
             }
 
-            try {
-                if (!gifUrl || !/^https?:\/\//i.test(gifUrl)) {
-                    throw new Error('La API no devolvio una URL valida');
-                }
-                if (config.source === 'otaku' && config.reaction && !gifUrl.includes(`/gifs/${config.reaction}/`)) {
-                    throw new Error(`La API devolvio una categoria distinta para ${start}`);
-                }
-            } catch (apiErr) {
-                // Fallback si la API falla o no tiene la categoría
-                if (config.fallbacks) {
-                    gifUrl = config.fallbacks[Math.floor(Math.random() * config.fallbacks.length)];
-                } else {
-                    throw apiErr;
-                }
+            if ((!gifUrl || !/^https?:\/\//i.test(gifUrl)) && config.fallbacks) {
+                gifUrl = config.fallbacks[Math.floor(Math.random() * config.fallbacks.length)];
+            }
+            if (!gifUrl || !/^https?:\/\//i.test(gifUrl)) {
+                throw new Error('La API no devolvio una URL valida');
             }
 
-            const tmpOut = path.join(os.tmpdir(), `reac_out_${Date.now()}.mp4`);
+            // Descargar el GIF 1 sola vez a disco: antes ffmpeg lo bajaba por
+            // red desde Render (lento) y además convertía; ahora convierte local.
+            const uid = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            const tmpIn = path.join(os.tmpdir(), `reac_in_${uid}.gif`);
+            const tmpOut = path.join(os.tmpdir(), `reac_out_${uid}.mp4`);
+            const gifRes = await axios.get(gifUrl, { responseType: 'arraybuffer', timeout: 10000, maxContentLength: 15 * 1024 * 1024, maxBodyLength: 15 * 1024 * 1024 });
+            const gifBuffer = Buffer.from(gifRes.data);
+            const cleanup = () => { try { fs.unlinkSync(tmpIn); } catch (e) { } try { fs.unlinkSync(tmpOut); } catch (e) { } };
 
             try {
+                fs.writeFileSync(tmpIn, gifBuffer);
                 const ffmpegArgs = [
-                    '-i', gifUrl, '-movflags', 'faststart', '-pix_fmt', 'yuv420p',
-                    '-vf', 'scale=400:-2', '-c:v', 'libx264', '-crf', '32',
+                    '-i', tmpIn, '-movflags', 'faststart', '-pix_fmt', 'yuv420p',
+                    '-vf', 'scale=384:-2', '-c:v', 'libx264', '-crf', '32',
                     '-preset', 'ultrafast', '-tune', 'zerolatency', '-an', '-y', tmpOut
                 ];
 
-                await execFileAsync(FFMPEG_PATH, ffmpegArgs, { timeout: 45000, windowsHide: true });
+                await execFileAsync(FFMPEG_PATH, ffmpegArgs, { timeout: 25000, windowsHide: true });
                 const mp4Buffer = fs.readFileSync(tmpOut);
 
                 await sock.sendMessage(chatId, {
@@ -191,13 +202,8 @@ module.exports = {
                     gifPlayback: true,
                     mentions: target ? [sender, target] : [sender]
                 }, { quoted: msg });
-
-                try { fs.unlinkSync(tmpOut); } catch (e) { }
             } catch (ffErr) {
-                console.error(`⚠️ FFmpeg falló para ${start}: ${ffErr.message}. Usando fallback. `);
-                try { fs.unlinkSync(tmpOut); } catch (e) { }
-                const gifRes = await axios.get(gifUrl, { responseType: 'arraybuffer', timeout: 15000, maxContentLength: 15 * 1024 * 1024, maxBodyLength: 15 * 1024 * 1024 });
-                const gifBuffer = Buffer.from(gifRes.data);
+                console.error(`⚠️ FFmpeg falló para ${start}: ${ffErr.message}. Enviando GIF sin convertir.`);
                 try {
                     await sock.sendMessage(chatId, {
                         video: gifBuffer, caption: caption, gifPlayback: true,
@@ -209,6 +215,8 @@ module.exports = {
                         mentions: target ? [sender, target] : [sender]
                     }, { quoted: msg });
                 }
+            } finally {
+                cleanup();
             }
         } catch (e) {
             console.error(`❌ Error en reaccion modular ${start}:`, e.message);
