@@ -545,7 +545,7 @@ async function traducirConCache(texto, tipo = 'resumen') {
         console.error('[TRADUCCION] Endpoint principal fallo, probando endpoint alterno:', e.message);
     }
 
-    // Intento 3: Google Translate endpoint alterno (translate.google.com, a veces
+    // Intento 2: Google Translate endpoint alterno (translate.google.com, a veces
     // responde cuando translate.googleapis.com esta rate-limited)
     try {
         const res2 = await axios.get(`https://translate.google.com/translate_a/single?client=gtx&sl=en&tl=es&dt=t&q=${encodeURIComponent(textoRecortado)}`, {
@@ -561,8 +561,53 @@ async function traducirConCache(texto, tipo = 'resumen') {
         console.error('[TRADUCCION] Endpoint alterno tambien fallo, se enviara texto original en ingles:', e2.message);
     }
 
+    // Intento 3: MyMemory (gratis, sin key). Los endpoints gtx de Google dan
+    // 429 muy seguido desde IPs de datacenter (Render), asi que este es el
+    // que realmente salva la traduccion en produccion. Limite ~500
+    // caracteres por pedido: se parte en trozos por palabras.
+    try {
+        const traducido3 = await traducirMyMemory(textoRecortado);
+        if (traducido3) {
+            setCacheTrad(cacheKey, traducido3);
+            return traducido3;
+        }
+    } catch (e3) {
+        console.error('[TRADUCCION] MyMemory tambien fallo, se enviara texto original en ingles:', e3.message);
+    }
+
     // Ultimo recurso: texto original (en ingles) recortado
     return texto.substring(0, 200) + '...';
+}
+
+// Parte el texto en trozos de max N caracteres sin cortar palabras
+function partirEnTrozos(texto, max = 450) {
+    const trozos = [];
+    let resto = texto;
+    while (resto.length > max) {
+        let corte = resto.lastIndexOf(' ', max);
+        if (corte < max * 0.5) corte = max; // palabra larguisima: cortar duro
+        trozos.push(resto.slice(0, corte));
+        resto = resto.slice(corte).trim();
+    }
+    if (resto) trozos.push(resto);
+    return trozos;
+}
+
+async function traducirMyMemory(texto) {
+    const trozos = partirEnTrozos(texto);
+    const traducidos = [];
+    for (const t of trozos) {
+        const res = await axios.get('https://api.mymemory.translated.net/get', {
+            params: { q: t, langpair: 'en|es' },
+            timeout: 10000
+        });
+        const status = res.data?.responseStatus;
+        const txt = res.data?.responseData?.translatedText;
+        if (status !== 200 || !txt) throw new Error('MyMemory status ' + status);
+        traducidos.push(txt.trim());
+        if (trozos.length > 1) await new Promise(r => setTimeout(r, 500)); // no saturar cuota
+    }
+    return traducidos.join(' ').trim() || null;
 }
 
 // --- Fallback local para mangas (cacheado: evita readFileSync por mensaje) ---
