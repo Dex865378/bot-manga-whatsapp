@@ -1,9 +1,11 @@
 /**
- * 🖼️ PORTADAS — imagen de !menu / bienvenida / despedida (solo admins).
+ * 🖼️ PORTADA ÚNICA — imagen del !menu, bienvenida y despedida (solo admins).
  *
  * Uso:
- *   !setportada menu|bienvenida|despedida   (con foto adjunta o respondiendo a una foto)
- *   !setportada ver                          (muestra las 3 actuales)
+ *   !setportada   (con foto adjunta o respondiendo a una foto)
+ *
+ * Una sola imagen para todo: al cambiarla se aplica automáticamente al menú,
+ * a la bienvenida y a la despedida.
  *
  * La imagen se comprime a JPEG (máx 1024px, calidad alta) para que pese poco
  * y se guarde/envíe rápido, sin pérdida visible. Se guarda en Turso y se
@@ -53,32 +55,11 @@ module.exports = {
             return sock.sendMessage(chatId, { text: 'Solo admins.' }, { quoted: msg });
         }
 
-        const sub = (args[0] || '').toLowerCase();
-
-        // !setportada ver — muestra las 3 portadas actuales
-        if (sub === 'ver') {
-            for (const clave of ['menu', 'bienvenida', 'despedida']) {
-                const img = await db.getPortada(clave).catch(() => null);
-                if (img) {
-                    await sock.sendMessage(chatId, { image: img, caption: `🖼️ Portada actual: *${clave}*` }, { quoted: msg });
-                } else {
-                    await sock.sendMessage(chatId, { text: `🖼️ Portada *${clave}*: _(no configurada, se usa la imagen por defecto)_` }, { quoted: msg });
-                }
-            }
-            return;
-        }
-
-        if (!['menu', 'bienvenida', 'despedida'].includes(sub)) {
-            return sock.sendMessage(chatId, {
-                text: '🖼️ *Uso:*\n• *!setportada menu* + foto\n• *!setportada bienvenida* + foto\n• *!setportada despedida* + foto\n• *!setportada ver*\n\nManda el comando con la foto adjunta o respondiendo a una foto.'
-            }, { quoted: msg });
-        }
-
-        // Foto adjunta o respondida
+        // Foto adjunta o respondida (sin subcomandos: una sola portada para todo)
         const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         const media = msg.message?.imageMessage || quoted?.imageMessage;
         if (!media) {
-            return sock.sendMessage(chatId, { text: `❌ Adjunta una foto o responde a una foto con *!setportada ${sub}*.` }, { quoted: msg });
+            return sock.sendMessage(chatId, { text: '❌ Adjunta una foto o responde a una foto con *!setportada*.' }, { quoted: msg });
         }
 
         try {
@@ -87,13 +68,16 @@ module.exports = {
             const comprimida = await comprimirPortada(buffer, FFMPEG_PATH);
             const antes = (buffer.length / 1024).toFixed(0);
             const despues = (comprimida.length / 1024).toFixed(0);
-            const r = await db.setPortada(sub, comprimida);
-            if (!r.ok) {
-                return sock.sendMessage(chatId, { text: `❌ No se pudo guardar: ${r.error || 'error'}` }, { quoted: msg });
+            // Una sola imagen para todo: menú + bienvenida + despedida
+            for (const clave of ['menu', 'bienvenida', 'despedida']) {
+                const r = await db.setPortada(clave, comprimida);
+                if (!r.ok) {
+                    return sock.sendMessage(chatId, { text: `❌ No se pudo guardar: ${r.error || 'error'}` }, { quoted: msg });
+                }
             }
             return sock.sendMessage(chatId, {
                 image: comprimida,
-                caption: `✅ Portada de *${sub}* actualizada.\n📦 ${antes}KB → ${despues}KB (comprimida sin pérdida visible).`
+                caption: `✅ Portada actualizada (menú + bienvenida + despedida).\n📦 ${antes}KB → ${despues}KB (comprimida sin pérdida visible).`
             }, { quoted: msg });
         } catch (e) {
             console.error('[SETPORTADA] Error:', e.message);

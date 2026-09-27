@@ -281,10 +281,10 @@ const helpData = {
         cooldown: 'Ninguno (solo admins)'
     },
     '!setportada': {
-        desc: 'Cambia la imagen del !menu, bienvenida o despedida (solo admins). Manda el comando con foto o respondiendo a una foto.',
-        usage: '!setportada <menu|bienvenida|despedida|ver>',
-        ejemplo: '!setportada menu\n!setportada ver',
-        args: 'Destino + foto',
+        desc: 'Cambia la imagen del !menu, bienvenida y despedida a la vez (solo admins). Manda el comando con foto o respondiendo a una foto.',
+        usage: '!setportada',
+        ejemplo: '!setportada (+ foto)',
+        args: 'Foto adjunta o respondida',
         cooldown: 'Ninguno (solo admins)'
     },
     '!tag': {
