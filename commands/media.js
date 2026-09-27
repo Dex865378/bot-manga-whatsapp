@@ -362,6 +362,8 @@ module.exports = {
                     '-f', 'concat', '-safe', '0',
                     '-i', listFile,
                     '-vn',
+                    // Voz grave e imponente: baja el tono sin cambiar la velocidad
+                    '-af', 'asetrate=48000*0.82,aresample=48000,atempo=1.22',
                     '-c:a', 'libopus',
                     '-b:a', '48k',
                     '-ar', '48000',
