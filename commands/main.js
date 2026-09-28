@@ -20,7 +20,7 @@ function getMenuDefaultImg() {
 
 async function enviarMenuConPortada(sock, chatId, msg, db, texto) {
     let img = null;
-    try { img = await db.getPortada('menu'); } catch (_) { }
+    try { img = await db.getPortada('menu', chatId); } catch (_) { }
     if (!img) img = getMenuDefaultImg();
     if (img) {
         return sock.sendMessage(chatId, { image: img, caption: texto }, { quoted: msg });
@@ -167,7 +167,7 @@ module.exports = {
             mText += `• *!setdespedida <mensaje>*\n`;
             mText += `└ _Guardar despedida personalizada ({usuario})._\n`;
             mText += `• *!setportada*\n`;
-            mText += `└ _Cambiar imagen del menú, bienvenida y despedida._\n`;
+            mText += `└ _Portada de ESTE grupo (menú, bienvenida y despedida)._\n`;
             mText += `• *!reglas*\n`;
             mText += `└ _Ver o configurar reglas del grupo._\n`;
             mText += `• *!sorteo*\n`;

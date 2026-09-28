@@ -281,7 +281,7 @@ const helpData = {
         cooldown: 'Ninguno (solo admins)'
     },
     '!setportada': {
-        desc: 'Cambia la imagen del !menu, bienvenida y despedida a la vez (solo admins). Manda el comando con foto o respondiendo a una foto.',
+        desc: 'Pone la portada de ESTE grupo (imagen del !menu, bienvenida y despedida). Cada grupo tiene la suya; no afecta a otros grupos. Solo admins. Manda el comando con foto o respondiendo a una foto.',
         usage: '!setportada',
         ejemplo: '!setportada (+ foto)',
         args: 'Foto adjunta o respondida',

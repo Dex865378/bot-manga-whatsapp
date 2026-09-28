@@ -357,7 +357,7 @@ async function enviarBienvenida(sock, groupId, participantJid) {
         // Enviar imagen de bienvenida: portada configurada con !setportada
         // (cacheada en RAM) o la imagen por defecto. Imagen + texto en UN mensaje.
         let bienvenidaImg = null;
-        try { bienvenidaImg = await db.getPortada('bienvenida'); } catch (_) { }
+        try { bienvenidaImg = await db.getPortada('bienvenida', groupId); } catch (_) { }
         if (!bienvenidaImg) bienvenidaImg = getBienvenidaAssets().img;
         const { stk: bienvenidaStk } = getBienvenidaAssets();
         if (bienvenidaImg) {
@@ -417,7 +417,7 @@ async function enviarDespedida(sock, groupId, participantJid) {
         if (!customMsg.includes(`@${nombre}`)) customMsg = `Adiós @${nombre} 👋\n\n` + customMsg;
 
         let img = null;
-        try { img = await db.getPortada('despedida'); } catch (_) { }
+        try { img = await db.getPortada('despedida', groupId); } catch (_) { }
         if (!img) img = getBienvenidaAssets().img;
         if (img) {
             try {

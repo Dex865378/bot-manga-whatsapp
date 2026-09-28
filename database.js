@@ -42,6 +42,7 @@ async function crearTablas() {
         `CREATE TABLE IF NOT EXISTS grupos_bienvenida (chat_id TEXT PRIMARY KEY, mensaje TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
         `CREATE TABLE IF NOT EXISTS grupos_despedida (chat_id TEXT PRIMARY KEY, mensaje TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
         `CREATE TABLE IF NOT EXISTS portadas (clave TEXT PRIMARY KEY, imagen BLOB, mime TEXT DEFAULT 'image/jpeg', updated_at BIGINT)`,
+        `CREATE TABLE IF NOT EXISTS portadas_grupo (chat_id TEXT NOT NULL, clave TEXT NOT NULL, imagen BLOB, mime TEXT DEFAULT 'image/jpeg', updated_at BIGINT, PRIMARY KEY (chat_id, clave))`,
         `CREATE TABLE IF NOT EXISTS usuarios (
             user_id TEXT PRIMARY KEY, nombre TEXT, edad INTEGER, nacimiento TEXT, altura TEXT, descripcion TEXT, superpoder TEXT, 
             manga_fav TEXT, anime_fav TEXT, waifu_husbando TEXT, pareja TEXT, titulo TEXT, 
@@ -680,35 +681,56 @@ async function setMensajeDespedida(chatId, mensaje) {
 }
 
 // --- Portadas (imágenes de !menu / bienvenida / despedida) ---
-// Caché RAM: la imagen se lee de Turso 1 sola vez y luego vive en memoria
-// (envío super rápido, sin I/O por mensaje). Se invalida al cambiarla.
-const portadaCache = new Map(); // clave -> Buffer|null (null = no hay, no reintentar en este boot)
+// POR GRUPO: cada grupo tiene su propia portada (tabla portadas_grupo).
+// La tabla global `portadas` queda como imagen por defecto para los grupos
+// que aún no ponen la suya. Caché RAM por (chat, clave).
+const portadaCache = new Map(); // `${chatId||'global'}::${clave}` -> Buffer|null
 const PORTADAS_VALIDAS = ['menu', 'bienvenida', 'despedida'];
 
-async function getPortada(clave) {
+function portadaCacheKey(clave, chatId) { return `${chatId || 'global'}::${clave}`; }
+
+async function getPortada(clave, chatId) {
     if (!PORTADAS_VALIDAS.includes(clave)) return null;
-    if (portadaCache.has(clave)) return portadaCache.get(clave);
+    const key = portadaCacheKey(clave, chatId);
+    if (portadaCache.has(key)) return portadaCache.get(key);
     let buf = null;
     try {
         if (!connected) await init();
-        const rs = await dbClient.execute({ sql: 'SELECT imagen FROM portadas WHERE clave = ?', args: [clave] });
-        if (rs.rows.length > 0 && rs.rows[0].imagen) buf = Buffer.from(rs.rows[0].imagen);
+        // 1. Portada propia del grupo
+        if (chatId) {
+            const rs = await dbClient.execute({ sql: 'SELECT imagen FROM portadas_grupo WHERE chat_id = ? AND clave = ?', args: [chatId, clave] });
+            if (rs.rows.length > 0 && rs.rows[0].imagen) buf = Buffer.from(rs.rows[0].imagen);
+        }
+        // 2. Si el grupo no tiene, imagen global por defecto
+        if (!buf) {
+            const rs = await dbClient.execute({ sql: 'SELECT imagen FROM portadas WHERE clave = ?', args: [clave] });
+            if (rs.rows.length > 0 && rs.rows[0].imagen) buf = Buffer.from(rs.rows[0].imagen);
+        }
     } catch (e) { buf = null; }
-    portadaCache.set(clave, buf);
+    portadaCache.set(key, buf);
     return buf;
 }
 
-async function setPortada(clave, buffer) {
+async function setPortada(clave, buffer, chatId) {
     if (!PORTADAS_VALIDAS.includes(clave)) return { ok: false, error: 'clave invalida' };
     if (!Buffer.isBuffer(buffer) || buffer.length === 0) return { ok: false, error: 'imagen vacia' };
     if (buffer.length > 2 * 1024 * 1024) return { ok: false, error: 'imagen muy pesada (>2MB)' };
-    portadaCache.set(clave, buffer);
+    portadaCache.set(portadaCacheKey(clave, chatId), buffer);
     try {
         if (!connected) await init();
-        await dbClient.execute({
-            sql: 'INSERT INTO portadas (clave, imagen, mime, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(clave) DO UPDATE SET imagen = ?, mime = ?, updated_at = ?',
-            args: [clave, buffer, 'image/jpeg', Date.now(), buffer, 'image/jpeg', Date.now()]
-        });
+        if (chatId) {
+            // Portada solo de ESTE grupo (no afecta a los demás)
+            await dbClient.execute({
+                sql: 'INSERT INTO portadas_grupo (chat_id, clave, imagen, mime, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(chat_id, clave) DO UPDATE SET imagen = ?, mime = ?, updated_at = ?',
+                args: [chatId, clave, buffer, 'image/jpeg', Date.now(), buffer, 'image/jpeg', Date.now()]
+            });
+        } else {
+            // Sin grupo: imagen global por defecto
+            await dbClient.execute({
+                sql: 'INSERT INTO portadas (clave, imagen, mime, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(clave) DO UPDATE SET imagen = ?, mime = ?, updated_at = ?',
+                args: [clave, buffer, 'image/jpeg', Date.now(), buffer, 'image/jpeg', Date.now()]
+            });
+        }
         return { ok: true, bytes: buffer.length };
     } catch (e) {
         console.error('❌ [DB] Error setPortada:', e.message);
@@ -716,8 +738,11 @@ async function setPortada(clave, buffer) {
     }
 }
 
-function limpiarCachePortada(clave) {
-    if (clave) portadaCache.delete(clave);
+function limpiarCachePortada(clave, chatId) {
+    if (clave) {
+        if (chatId) portadaCache.delete(portadaCacheKey(clave, chatId));
+        else for (const k of [...portadaCache.keys()]) if (k.endsWith(`::${clave}`)) portadaCache.delete(k);
+    }
     else portadaCache.clear();
 }
 

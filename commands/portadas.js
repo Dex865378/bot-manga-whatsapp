@@ -1,11 +1,12 @@
 /**
- * 🖼️ PORTADA ÚNICA — imagen del !menu, bienvenida y despedida (solo admins).
+ * 🖼️ PORTADA DEL GRUPO — imagen del !menu, bienvenida y despedida (solo admins).
  *
- * Uso:
+ * Uso (en el grupo):
  *   !setportada   (con foto adjunta o respondiendo a una foto)
  *
- * Una sola imagen para todo: al cambiarla se aplica automáticamente al menú,
- * a la bienvenida y a la despedida.
+ * Cada grupo tiene SU propia portada: lo que se ponga aquí solo se ve en
+ * este grupo, los demás grupos no se enteran. Si el grupo aún no pone una,
+ * se usa la imagen global por defecto (la que pone el dueño por privado).
  *
  * La imagen se comprime a JPEG (máx 1024px, calidad alta) para que pese poco
  * y se guarde/envíe rápido, sin pérdida visible. Se guarda en Turso y se
@@ -68,16 +69,21 @@ module.exports = {
             const comprimida = await comprimirPortada(buffer, FFMPEG_PATH);
             const antes = (buffer.length / 1024).toFixed(0);
             const despues = (comprimida.length / 1024).toFixed(0);
-            // Una sola imagen para todo: menú + bienvenida + despedida
+            // Portada propia de ESTE grupo (menú + bienvenida + despedida).
+            // En grupo se guarda por chat_id: no afecta a los demás grupos.
+            // Por privado (dueño) se guarda como imagen global por defecto.
+            const miChat = isGroup ? chatId : null;
             for (const clave of ['menu', 'bienvenida', 'despedida']) {
-                const r = await db.setPortada(clave, comprimida);
+                const r = await db.setPortada(clave, comprimida, miChat);
                 if (!r.ok) {
                     return sock.sendMessage(chatId, { text: `❌ No se pudo guardar: ${r.error || 'error'}` }, { quoted: msg });
                 }
             }
             return sock.sendMessage(chatId, {
                 image: comprimida,
-                caption: `✅ Portada actualizada (menú + bienvenida + despedida).\n📦 ${antes}KB → ${despues}KB (comprimida sin pérdida visible).`
+                caption: isGroup
+                    ? `✅ Portada de ESTE GRUPO actualizada (menú + bienvenida + despedida).\n📦 ${antes}KB → ${despues}KB (comprimida sin pérdida visible).\n💡 Los demás grupos conservan la suya.`
+                    : `✅ Imagen global por defecto actualizada (menú + bienvenida + despedida).\n📦 ${antes}KB → ${despues}KB (comprimida sin pérdida visible).\n💡 Se usa solo en grupos que aún no ponen su propia portada.`
             }, { quoted: msg });
         } catch (e) {
             console.error('[SETPORTADA] Error:', e.message);
