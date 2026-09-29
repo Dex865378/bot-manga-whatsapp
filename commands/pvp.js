@@ -264,17 +264,19 @@ module.exports = {
                 const rival = mencionados[0];
                 if (rival === sender) return sock.sendMessage(chatId, { text: '😅 No puedes retarte a ti mismo.' }, { quoted: msg });
                 const [pregunta, respuesta] = DUELO_Q[Math.floor(Math.random() * DUELO_Q.length)];
-                botState.juegos[chatId] = {
-                    tipo: 'quizduelo', pregunta, respuesta,
-                    responder: sender, pareja: rival, _ts: Date.now()
-                };
-                return sock.sendMessage(chatId, {
-                    text: `🧠⚡ *¡DUELO DE PREGUNTAS!*\n━━━━━━━━━━━━━━\n${nom(sender)}  vs  ${nom(rival)}\n\n❓ *${pregunta}*\n\nEl primero en responder bien gana. ¡Rápido!`,
+                const sent = await sock.sendMessage(chatId, {
+                    text: `🧠⚡ *¡DUELO DE PREGUNTAS!*\n━━━━━━━━━━━━━━\n${nom(sender)}  vs  ${nom(rival)}\n\n❓ *${pregunta}*\n\nEl primero en responder bien gana. ¡Rápido!\n💡 Responde CITANDO este mensaje con tu respuesta.`,
                     mentions: [sender, rival]
                 }, { quoted: msg });
+                botState.juegos[chatId] = {
+                    tipo: 'quizduelo', pregunta, respuesta,
+                    responder: sender, pareja: rival,
+                    msgId: sent?.key?.id || null, _ts: Date.now()
+                };
+                return;
             }
             if (juego && juego.tipo === 'quizduelo') {
-                return sock.sendMessage(chatId, { text: `⏳ Duelo en curso, responde la pregunta:\n❓ *${juego.pregunta}*` }, { quoted: msg });
+                return sock.sendMessage(chatId, { text: `⏳ Duelo en curso, responde CITANDO la pregunta:\n❓ *${juego.pregunta}*` }, { quoted: msg });
             }
             return sock.sendMessage(chatId, { text: '🧠 Uso: *!quizduelo @usuario*\nEl primero de los dos en responder bien gana.' }, { quoted: msg });
         }

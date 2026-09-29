@@ -25,12 +25,15 @@ async function handleGameResponse(sock, msg, context) {
         return false;
     }
     const normDuelo = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, '').trim();
-    // Duelo de preguntas: responden con texto normal (no comando). El
-    // primero de los dos en acertar gana; si fallan se les avisa para que
-    // sigan intentando. Se compara por número normalizado porque el JID de
-    // la mención y el del remitente pueden venir en distinto formato.
+    // Duelo de preguntas: solo cuenta si la respuesta CITA el mensaje de la
+    // pregunta (así la charla normal del grupo no dispara el juego ni avisos
+    // de fallo). El primero de los dos en acertar gana; si fallan se les
+    // avisa para que sigan intentando. Se compara por número normalizado
+    // porque el JID de la mención y el del remitente pueden venir en distinto
+    // formato. Si msgId no se pudo guardar al crear, se acepta sin cita.
     if (juego.tipo === 'quizduelo') {
         if (isCommand) return false;
+        if (juego.msgId && quotedMsgId !== juego.msgId) return false;
         const normSender = (sender || '').split('@')[0].replace(/\D/g, '');
         const esDuelista = [juego.responder, juego.pareja].some(j => j && (j.split('@')[0].replace(/\D/g, '') === normSender));
         if (!esDuelista) return false;
