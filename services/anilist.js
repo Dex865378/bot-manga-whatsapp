@@ -28,7 +28,7 @@ async function anilistQuery(query, variables, retries = 2) {
     try {
         const res = await axios.post(ANILIST_URL, { query, variables }, {
             timeout: 15000,
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'User-Agent': 'DikybotWA/1.0 (WhatsApp Bot)' }
         });
         return res.data?.data || null;
     } catch (e) {

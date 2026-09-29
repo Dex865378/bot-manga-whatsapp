@@ -783,7 +783,9 @@ El bot traduce tu texto y lo dice en voz alta.
                         if (b.url) infoB += `🔗 **Link:** ${b.url}\n`;
                         infoB += `━━━━━━━━━━━━━━\n📖 **SINOPSIS:**\n_${sinop}_`;
                         if (b.portada) {
-                            return sock.sendMessage(chatId, { image: { url: b.portada }, caption: infoB }, { quoted: msg });
+                            try {
+                                return sock.sendMessage(chatId, { image: { url: b.portada }, caption: infoB }, { quoted: msg });
+                            } catch (_) { /* portada falló: mandar solo texto */ }
                         }
                         return sock.sendMessage(chatId, { text: infoB }, { quoted: msg });
                     }
@@ -809,9 +811,12 @@ El bot traduce tu texto y lo dice en voz alta.
                 info += `🔗 **Link:** ${a.url}\n━━━━━━━━━━━━━━\n`;
                 info += `📖 **SINOPSIS:**\n_${sinopsis}_\n━━━━━━━━━━━━━━\n✨ _Busca más detalles con !wiki ${a.title}_`;
 
-                // Enviar imagen por URL directa (sin descargar buffer a RAM)
+                // Enviar imagen por URL directa (sin descargar buffer a RAM);
+                // si la portada falla, mandar el texto igual en vez de error.
                 if (a.images?.jpg?.image_url) {
-                    return sock.sendMessage(chatId, { image: { url: a.images.jpg.image_url }, caption: info }, { quoted: msg });
+                    try {
+                        return sock.sendMessage(chatId, { image: { url: a.images.jpg.image_url }, caption: info }, { quoted: msg });
+                    } catch (_) { /* portada falló: mandar solo texto */ }
                 }
                 return sock.sendMessage(chatId, { text: info }, { quoted: msg });
             } catch (e) {
@@ -1015,12 +1020,26 @@ El bot traduce tu texto y lo dice en voz alta.
 
         if (start === '!news') {
             try {
-                const res = await axios.get('https://somoskudasai.com/feed/');
-                const items = (res.data.match(/<title>([\s\S]*?)<\/title>/g) || []).slice(2, 7);
-                let m = '📰 *NOTICIAS ANIME*\n\n';
-                items.forEach((title, i) => { m += `${i + 1}. *${title.replace(/<\/?title>|<!\[CDATA\[|\]\]>/g, '')}*\n`; });
-                return sock.sendMessage(chatId, { text: m });
-            } catch (e) { return sock.sendMessage(chatId, { text: '❌ Error.' }); }
+                // Wikimedia y la mayoría de feeds bloquean peticiones sin UA;
+                // además sin timeout el comando se colgaba para siempre.
+                const UA = { 'User-Agent': 'DikybotWA/1.0 (WhatsApp Bot)' };
+                let xml = null;
+                const feeds = ['https://somoskudasai.com/feed/', 'https://www.animenewsnetwork.com/newsroom/rss.xml'];
+                for (const feed of feeds) {
+                    try {
+                        const r = await axios.get(feed, { timeout: 10000, headers: UA, maxContentLength: 2 * 1024 * 1024 });
+                        if (r.data) { xml = r.data; break; }
+                    } catch (_) { /* probar siguiente feed */ }
+                }
+                if (!xml) return sock.sendMessage(chatId, { text: '❌ No pude traer las noticias ahora. Intenta en unos minutos.' }, { quoted: msg });
+                const items = [...xml.matchAll(/<item>[\s\S]*?<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>[\s\S]*?<link>([^<]+)<\/link>/g)].slice(0, 5);
+                if (items.length === 0) return sock.sendMessage(chatId, { text: '❌ No encontré noticias en el feed. Intenta más tarde.' }, { quoted: msg });
+                let m = '📰 *NOTICIAS ANIME*\n━━━━━━━━━━━━━━\n';
+                for (const it of items) {
+                    m += `\n• *${it[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim()}*\n🔗 ${it[2].trim()}\n`;
+                }
+                return sock.sendMessage(chatId, { text: m }, { quoted: msg });
+            } catch (e) { return sock.sendMessage(chatId, { text: '❌ No pude traer las noticias ahora. Intenta en unos minutos.' }, { quoted: msg }); }
         }
 
         if (start === '!wiki') {
@@ -1028,7 +1047,9 @@ El bot traduce tu texto y lo dice en voz alta.
             if (!q) return sock.sendMessage(chatId, { text: '📖 Uso: !wiki <tema>' }, { quoted: msg });
             try {
                 // Paso 1: Buscar el título correcto usando la API de búsqueda de Wikipedia
-                const searchRes = await axios.get(`https://es.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q)}&srlimit=1&format=json`, { timeout: 8000 });
+                // (Wikimedia devuelve 403 a peticiones sin User-Agent descriptivo)
+                const UA = { 'User-Agent': 'DikybotWA/1.0 (WhatsApp Bot)' };
+                const searchRes = await axios.get(`https://es.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q)}&srlimit=1&format=json`, { timeout: 8000, headers: UA });
                 const searchResults = searchRes.data?.query?.search;
                 if (!searchResults || searchResults.length === 0) {
                     return sock.sendMessage(chatId, { text: `❌ No se encontró ningún artículo sobre *"${q}"* en Wikipedia.` }, { quoted: msg });
@@ -1037,7 +1058,7 @@ El bot traduce tu texto y lo dice en voz alta.
 
                 // Paso 2: Obtener el resumen con el título exacto (usando guiones bajos)
                 const wikiTitle = pageTitle.replace(/ /g, '_');
-                const res = await axios.get(`https://es.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiTitle)}`, { timeout: 8000 });
+                const res = await axios.get(`https://es.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiTitle)}`, { timeout: 8000, headers: UA });
                 const data = res.data;
 
                 let wikiText = `📖 *WIKIPEDIA: ${data.title}*\n━━━━━━━━━━━━━━\n\n${data.extract}\n\n━━━━━━━━━━━━━━\n🔗 ${data.content_urls?.mobile?.page || ''}`;
