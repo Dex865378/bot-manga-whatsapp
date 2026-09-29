@@ -343,7 +343,13 @@ module.exports = {
                         mentions: ganadores
                     }, { quoted: msg });
                 }
-                return sock.sendMessage(chatId, { text: `🎱 ¡BOLA *${bola}*! (van ${juego.cantados.length}/50)\n👉 *!bingo cantar* para la siguiente.` }, { quoted: msg });
+                const estado = Object.entries(juego.jugadores)
+                    .map(([jid, j]) => `• ${nom(jid)}: le faltan *${j.carton.length - j.aciertos.length}*`)
+                    .join('\n');
+                return sock.sendMessage(chatId, {
+                    text: `🎱 ¡BOLA *${bola}*! (van ${juego.cantados.length}/50)\n━━━━━━━━━━━━━━\n${estado}\n━━━━━━━━━━━━━━\n👉 *!bingo cantar* para la siguiente.`,
+                    mentions: Object.keys(juego.jugadores)
+                }, { quoted: msg });
             }
 
             // Ver cartón: !bingo carton

@@ -25,6 +25,26 @@ async function handleGameResponse(sock, msg, context) {
         return false;
     }
     const normDuelo = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, '').trim();
+    // Palabras genéricas que se ignoran al comparar ("océano pacífico" vale
+    // igual que "pacífico"). Solo se quitan si queda algo en AMBOS lados.
+    const STOP_DUELO = new Set(['el', 'la', 'los', 'las', 'de', 'del', 'un', 'una', 'y', 'oceano', 'mar', 'rio', 'lago', 'laguna', 'monte', 'montana', 'volcan', 'ciudad', 'pais', 'isla', 'desierto']);
+    const sinGenericas = (s) => {
+        const partes = normDuelo(s).split(/\s+/).filter(w => w && !STOP_DUELO.has(w));
+        return partes.join(' ');
+    };
+    const respuestasEquivalentes = (dicho, correcta) => {
+        const a = normDuelo(dicho), b = normDuelo(correcta);
+        if (!a || !b) return false;
+        if (a === b) return true;
+        const sa = sinGenericas(dicho), sb = sinGenericas(correcta);
+        if (sa && sb && sa === sb) return true;
+        // Contención: "pacifico" dentro de "oceano pacifico" y viceversa.
+        // Se exige mínimo 4 letras en el lado corto para no aceptar "mar" por "marte".
+        const corto = sa.length <= sb.length ? sa : sb;
+        const largo = sa.length <= sb.length ? sb : sa;
+        if (corto.length >= 4 && (largo === corto || largo.split(/\s+/).includes(corto) || largo.includes(` ${corto}`) || largo.startsWith(`${corto} `))) return true;
+        return false;
+    };
     // Duelo de preguntas: solo cuenta si la respuesta CITA el mensaje de la
     // pregunta (así la charla normal del grupo no dispara el juego ni avisos
     // de fallo). El primero de los dos en acertar gana; si fallan se les
@@ -38,7 +58,7 @@ async function handleGameResponse(sock, msg, context) {
         const esDuelista = [juego.responder, juego.pareja].some(j => j && (j.split('@')[0].replace(/\D/g, '') === normSender));
         if (!esDuelista) return false;
         juego._ts = Date.now();
-        if (normDuelo(txt) === normDuelo(juego.respuesta) && normDuelo(txt).length > 0) {
+        if (respuestasEquivalentes(txt, juego.respuesta)) {
             const win = sender, lose = sender === juego.responder ? juego.pareja : juego.responder;
             delete botState.juegos[chatId];
             const subio = await db.sumarXP(win, 20).catch(() => false);
