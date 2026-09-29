@@ -660,17 +660,26 @@ module.exports = {
 
             // Función para limpiar número y comparar
             const cleanNumber = (n) => (n || '').split('@')[0].replace(/\D/g, '');
-            const adminClean = cleanNumber(ADMIN_NUM);
 
             // Filtrar al admin del ranking (para que no aparezca).
-            // Comparación EXACTA de dígitos: includes() en ambos sentidos
-            // borraba a medio mundo (ej: admin '...12' sacaba a todo el que
-            // tuviera '12' en su número; y con ADMIN_NUM vacío, ''.includes
-            // devolvía true para TODOS y el ranking salía vacío).
-            const filtrarAdmin = (lista) => {
-                if (!adminClean) return lista;
-                return lista.filter(u => cleanNumber(u.user_id) !== adminClean);
+            // Comparación EXACTA de dígitos contra TODOS los números de
+            // NUMERO_ADMIN (viene como lista separada por comas: si se limpia
+            // el string entero junto, los dígitos se concatenan y no matchean
+            // a nadie — por eso el admin supremo seguía saliendo en el top).
+            // Además se acepta coincidencia por últimos 8 dígitos, por si el
+            // user_id viene con formato distinto al del ENV.
+            const esAdminSupremo = (userId) => {
+                const digits = cleanNumber(userId);
+                if (!digits) return false;
+                for (const a of String(ADMIN_NUM || '').split(',')) {
+                    const adminDigits = cleanNumber(a);
+                    if (!adminDigits || adminDigits.length < 7) continue;
+                    if (digits === adminDigits) return true;
+                    if (adminDigits.length >= 8 && digits.endsWith(adminDigits.slice(-8))) return true;
+                }
+                return false;
             };
+            const filtrarAdmin = (lista) => lista.filter(u => !esAdminSupremo(u.user_id));
 
             const topNFiltered = filtrarAdmin(topN);
             const topMFiltered = filtrarAdmin(topM);
