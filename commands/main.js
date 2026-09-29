@@ -308,6 +308,16 @@ module.exports = {
             mText += `└ _10 operaciones contra reloj (récord)._\n`;
             mText += `• *!simon*\n`;
             mText += `└ _Memoria de emojis (récord)._\n`;
+            mText += `• *!hongbao @ana @luis*\n`;
+            mText += `└ _Sobre rojo, reclama con !abrir._\n`;
+            mText += `• *!mentiroso @usuario*\n`;
+            mText += `└ _Dados con apuesta (!apuesta) y duda (!duda)._\n`;
+            mText += `• *!cadena*\n`;
+            mText += `└ _Encadena palabras (!cadena <palabra>)._\n`;
+            mText += `• *!traidor*\n`;
+            mText += `└ _Roles secretos, excusas (!soy) y voto (!votar)._\n`;
+            mText += `• *!botella @ana @luis*\n`;
+            mText += `└ _Elimina uno por uno (!girar)._\n`;
             mText += `• *!emojimix 😂❤️*\n`;
             mText += `└ _Sticker mezclando 2 emojis._\n\n`;
 

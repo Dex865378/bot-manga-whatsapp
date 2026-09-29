@@ -172,10 +172,10 @@ module.exports = {
             if (g === 'X' || g === 'O') {
                 const ganador = g === 'X' ? juego.jugadorX : juego.jugadorO;
                 delete botState.juegos[chatId];
-                const subio = await db.sumarXP(ganador, 15).catch(() => false);
-                await db.sumarMonedas(ganador, 30).catch(() => {});
+                const subio = await db.sumarXP(ganador, 20).catch(() => false);
+                await db.sumarMonedas(ganador, 50).catch(() => {});
                 return sock.sendMessage(chatId, {
-                    text: `🏆 *¡${nom(ganador)} GANA!*\n━━━━━━━━━━━━━━\n${pintarTTT(juego.tablero)}\n💰 +30 diky | ✨ +15 XP${subio ? '\n🆙 ¡SUBIÓ DE NIVEL!' : ''}`,
+                    text: `🏆 *¡${nom(ganador)} GANA!*\n━━━━━━━━━━━━━━\n${pintarTTT(juego.tablero)}\n💰 +50 diky | ✨ +20 XP${subio ? '\n🆙 ¡SUBIÓ DE NIVEL!' : ''}`,
                     mentions: [ganador]
                 });
             }

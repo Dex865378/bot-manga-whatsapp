@@ -337,9 +337,9 @@ module.exports = {
                     return sock.sendMessage(chatId, { text: final, mentions: [juego.retador, juego.oponente] }, { quoted: msg });
                 }
                 const win = g === 1 ? juego.retador : juego.oponente;
-                const subio = await db.sumarXP(win, 10).catch(() => false);
-                await db.sumarMonedas(win, 20).catch(() => {});
-                final += `🏆 ¡GANA ${nom(win)}!${subio ? '\n🆙 ¡SUBIÓ DE NIVEL!' : ''}\n💰 +20 diky | +10 XP`;
+                const subio = await db.sumarXP(win, 20).catch(() => false);
+                await db.sumarMonedas(win, 40).catch(() => {});
+                final += `🏆 ¡GANA ${nom(win)}!${subio ? '\n🆙 ¡SUBIÓ DE NIVEL!' : ''}\n💰 +40 diky | +20 XP`;
                 return sock.sendMessage(chatId, { text: final, mentions: [juego.retador, juego.oponente] }, { quoted: msg });
             }
 
@@ -402,10 +402,10 @@ module.exports = {
                 delete botState.juegos[chatId];
                 if (g === 'E') return sock.sendMessage(chatId, { text: `🤝 *¡EMPATE!*\n━━━━━━━━━━━━━━\n${pintarC4(juego.tablero)}\nBuena partida.` });
                 const win = g === 'R' ? juego.jugadorR : juego.jugadorA;
-                const subio = await db.sumarXP(win, 15).catch(() => false);
-                await db.sumarMonedas(win, 30).catch(() => {});
+                const subio = await db.sumarXP(win, 20).catch(() => false);
+                await db.sumarMonedas(win, 50).catch(() => {});
                 return sock.sendMessage(chatId, {
-                    text: `🏆 *¡${nom(win)} CONECTA 4!*\n━━━━━━━━━━━━━━\n${pintarC4(juego.tablero)}\n💰 +30 diky | +15 XP${subio ? '\n🆙 ¡SUBIÓ DE NIVEL!' : ''}`,
+                    text: `🏆 *¡${nom(win)} CONECTA 4!*\n━━━━━━━━━━━━━━\n${pintarC4(juego.tablero)}\n💰 +50 diky | +20 XP${subio ? '\n🆙 ¡SUBIÓ DE NIVEL!' : ''}`,
                     mentions: [juego.jugadorR, juego.jugadorA]
                 }, { quoted: msg });
             }

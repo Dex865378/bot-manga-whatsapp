@@ -1583,6 +1583,7 @@ async function procesarMensaje(sock, msg) {
                 '!emojimix', '!ttt', '!warn', '!unwarn', '!warns', '!afk', '!encuesta', '!topactivos', '!recordar', '!recordatorios',
                 '!pptpvp', '!c4', '!quizduelo', '!bingo',
                 '!dados', '!tirar', '!numero', '!mates', '!carrera2', '!avanza', '!naval', '!fuego', '!reflejos', '!maraton', '!simon',
+                '!hongbao', '!abrir', '!mentiroso', '!apuesta', '!duda', '!cadena', '!traidor', '!soy', '!votar', '!botella', '!girar',
             ];
 
             if (FAST_COMMANDS.has(start) && (handler.commands.has(start) || comandosValidos.includes(start))) {

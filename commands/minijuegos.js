@@ -165,8 +165,8 @@ module.exports = {
             if (pR >= METAS.dados || pO >= METAS.dados) {
                 const win = pR >= METAS.dados ? juego.retador : juego.oponente;
                 delete botState.juegos[chatId];
-                await premiar(db, win, 15, 30);
-                txt += `\n━━━━━━━━━━━━━━\n🏆 *¡${nom(win)} GANA EL DUELO!*\n💰 +30 diky | +15 XP`;
+                await premiar(db, win, 20, 50);
+                txt += `\n━━━━━━━━━━━━━━\n🏆 *¡${nom(win)} GANA EL DUELO!*\n💰 +50 diky | +20 XP`;
                 return sock.sendMessage(chatId, { text: txt, mentions: [juego.retador, juego.oponente] }, { quoted: msg });
             }
             juego.ronda++; juego.tiradas = {};
@@ -203,8 +203,8 @@ module.exports = {
                 if (n === juego.secreto) {
                     const win = sender;
                     delete botState.juegos[chatId];
-                    await premiar(db, win, 10, 20);
-                    return sock.sendMessage(chatId, { text: `🎯 *¡${nom(win)} LO ADIVINÓ!* Era el *${juego.secreto}*.\n💰 +20 diky | +10 XP`, mentions: [win] }, { quoted: msg });
+                    await premiar(db, win, 15, 40);
+                    return sock.sendMessage(chatId, { text: `🎯 *¡${nom(win)} LO ADIVINÓ!* Era el *${juego.secreto}*.\n💰 +40 diky | +15 XP`, mentions: [win] }, { quoted: msg });
                 }
                 juego.turno = sender === juego.retador ? juego.oponente : juego.retador;
                 const pista = n < juego.secreto ? '📈 Más ALTO' : '📉 Más BAJO';
@@ -266,8 +266,8 @@ module.exports = {
             if (juego.pos[sender] >= METAS.carrera2) {
                 const win = sender;
                 delete botState.juegos[chatId];
-                await premiar(db, win, 15, 30);
-                txt += `\n━━━━━━━━━━━━━━\n🏆 *¡${nom(win)} CRUZA LA META!*\n💰 +30 diky | +15 XP`;
+                await premiar(db, win, 20, 50);
+                txt += `\n━━━━━━━━━━━━━━\n🏆 *¡${nom(win)} CRUZA LA META!*\n💰 +50 diky | +20 XP`;
                 return sock.sendMessage(chatId, { text: txt, mentions: [juego.retador, juego.oponente] }, { quoted: msg });
             }
             juego.turno = sender === juego.retador ? juego.oponente : juego.retador;
@@ -319,8 +319,8 @@ module.exports = {
             if (hits >= total) {
                 const win = sender;
                 delete botState.juegos[chatId];
-                await premiar(db, win, 20, 40);
-                txt += `\n━━━━━━━━━━━━━━\n🏆 *¡${nom(win)} HUNDE TODA LA FLOTA!*\n💰 +40 diky | +20 XP`;
+                await premiar(db, win, 30, 60);
+                txt += `\n━━━━━━━━━━━━━━\n🏆 *¡${nom(win)} HUNDE TODA LA FLOTA!*\n💰 +60 diky | +30 XP`;
                 return sock.sendMessage(chatId, { text: txt, mentions: [win] }, { quoted: msg });
             }
             juego.turno = rival;

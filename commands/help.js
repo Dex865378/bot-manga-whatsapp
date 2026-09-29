@@ -318,6 +318,41 @@ const helpData = {
         args: 'Ninguno para empezar, emojis en orden para repetir',
         cooldown: 'Ninguno'
     },
+    '!hongbao': {
+        desc: 'Sobre rojo: reparte diky al azar entre los mencionados (máx 5).',
+        usage: '!hongbao @ana @luis\n!abrir',
+        ejemplo: '!hongbao @ana @luis',
+        args: 'De 1 a 5 menciones; !abrir para reclamar tu parte',
+        cooldown: 'Ninguno'
+    },
+    '!mentiroso': {
+        desc: 'Dados mentirosos contra alguien: apuesta, duda y el 1 es comodín.',
+        usage: '!mentiroso @usuario\n!apuesta <cant> <valor>\n!duda',
+        ejemplo: '!mentiroso @juan\n!apuesta 3 4',
+        args: 'Mención para retar (30 diky de apuesta c/u)',
+        cooldown: 'Ninguno'
+    },
+    '!cadena': {
+        desc: 'Encadena palabras por sus 2 últimas letras. 3 vidas, último en pie gana.',
+        usage: '!cadena\n!cadena <palabra>',
+        ejemplo: '!cadena\n!cadena mesa',
+        args: 'Ninguno para empezar, palabra para encadenar',
+        cooldown: 'Ninguno'
+    },
+    '!traidor': {
+        desc: 'Descubre al traidor: roles secretos, excusas con !soy y votación con !votar.',
+        usage: '!traidor\n!traidor yo\n!traidor empezar\n!soy <excusa>\n!votar @usuario',
+        ejemplo: '!traidor\n!traidor yo',
+        args: 'De 4 a 8 jugadores en el lobby',
+        cooldown: 'Ninguno'
+    },
+    '!botella': {
+        desc: 'La botella elimina uno por uno con retos. El último en pie gana.',
+        usage: '!botella @ana @luis\n!girar',
+        ejemplo: '!botella @ana @luis',
+        args: 'Menciones de los que juegan; !girar para girar',
+        cooldown: 'Ninguno'
+    },
     '!emojimix': {
         desc: 'Mezcla 2 emojis en un sticker (cocina de emojis).',
         usage: '!emojimix <emoji1><emoji2>',

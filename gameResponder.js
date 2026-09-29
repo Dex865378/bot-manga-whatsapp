@@ -18,7 +18,7 @@ async function handleGameResponse(sock, msg, context) {
     // Juegos por comando (!ttt, !pptpvp, !c4, !bingo): todo se juega con el
     // comando. Aquí solo se refresca el TTL si habla un jugador y se deja
     // pasar al resto del pipeline.
-    if (['ttt', 'pptpvp', 'c4', 'bingo', 'dados', 'numero', 'carrera2', 'naval'].includes(juego.tipo)) {
+    if (['ttt', 'pptpvp', 'c4', 'bingo', 'dados', 'numero', 'carrera2', 'naval', 'hongbao', 'mentiroso', 'cadena', 'traidor', 'botella'].includes(juego.tipo)) {
         const norm = (j) => (j || '').split('@')[0].replace(/\D/g, '');
         const js = [juego.jugadorX, juego.jugadorO, juego.retador, juego.oponente, juego.jugadorR, juego.jugadorA, juego.creador, ...Object.keys(juego.jugadores || {})].map(norm);
         if (js.includes(norm(sender))) juego._ts = Date.now();
@@ -41,9 +41,9 @@ async function handleGameResponse(sock, msg, context) {
         if (juego.puntos[sender] >= 5) {
             const win = sender;
             delete botState.juegos[chatId];
-            await db.sumarXP(win, 15).catch(() => {});
-            await db.sumarMonedas(win, 30).catch(() => {});
-            await sock.sendMessage(chatId, { text: `➗ *¡${nomM(win)} GANA LA CARRERA!* 🏁 ${Math.max(pR, pO)} puntos.\n💰 +30 diky | +15 XP`, mentions: [juego.responder, juego.pareja] }, { quoted: msg });
+            await db.sumarXP(win, 20).catch(() => {});
+            await db.sumarMonedas(win, 50).catch(() => {});
+            await sock.sendMessage(chatId, { text: `➗ *¡${nomM(win)} GANA LA CARRERA!* 🏁 ${Math.max(pR, pO)} puntos.\n💰 +50 diky | +20 XP`, mentions: [juego.responder, juego.pareja] }, { quoted: msg });
             return true;
         }
         juego.nivel++;
@@ -98,11 +98,11 @@ async function handleGameResponse(sock, msg, context) {
         if (respuestasEquivalentes(txt, juego.respuesta)) {
             const win = sender, lose = sender === juego.responder ? juego.pareja : juego.responder;
             delete botState.juegos[chatId];
-            const subio = await db.sumarXP(win, 20).catch(() => false);
-            await db.sumarMonedas(win, 40).catch(() => {});
+            const subio = await db.sumarXP(win, 30).catch(() => false);
+            await db.sumarMonedas(win, 60).catch(() => {});
             const nom = (jid) => `@${(jid || '').split('@')[0]}`;
             await sock.sendMessage(chatId, {
-                text: `🧠⚡ *¡${nom(win)} RESPONDIÓ PRIMERO!*\n━━━━━━━━━━━━━━\n❓ ${juego.pregunta}\n✅ Respuesta: *${juego.respuesta}*\n\n🏆 ${nom(win)} gana: 💰 +40 diky | +20 XP${subio ? '\n🆙 ¡SUBIÓ DE NIVEL!' : ''}\n😅 ${nom(lose)}, más suerte la próxima.`,
+                text: `🧠⚡ *¡${nom(win)} RESPONDIÓ PRIMERO!*\n━━━━━━━━━━━━━━\n❓ ${juego.pregunta}\n✅ Respuesta: *${juego.respuesta}*\n\n🏆 ${nom(win)} gana: 💰 +60 diky | +30 XP${subio ? '\n🆙 ¡SUBIÓ DE NIVEL!' : ''}\n😅 ${nom(lose)}, más suerte la próxima.`,
                 mentions: [win, lose]
             }, { quoted: msg });
             return true;
