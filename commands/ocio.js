@@ -173,9 +173,9 @@ module.exports = {
                 const ganador = g === 'X' ? juego.jugadorX : juego.jugadorO;
                 delete botState.juegos[chatId];
                 const subio = await db.sumarXP(ganador, 20).catch(() => false);
-                await db.sumarMonedas(ganador, 50).catch(() => {});
+                const pagado = await db.premiarConLimite(ganador, 50, 0).catch(() => true);
                 return sock.sendMessage(chatId, {
-                    text: `🏆 *¡${nom(ganador)} GANA!*\n━━━━━━━━━━━━━━\n${pintarTTT(juego.tablero)}\n💰 +50 diky | ✨ +20 XP${subio ? '\n🆙 ¡SUBIÓ DE NIVEL!' : ''}`,
+                    text: `🏆 *¡${nom(ganador)} GANA!*\n━━━━━━━━━━━━━━\n${pintarTTT(juego.tablero)}\n💰 +50 diky | ✨ +20 XP${subio ? '\n🆙 ¡SUBIÓ DE NIVEL!' : ''}${pagado ? '' : db.NOTA_ANTIFARMA}`,
                     mentions: [ganador]
                 });
             }

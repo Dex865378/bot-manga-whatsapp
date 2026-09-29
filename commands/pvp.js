@@ -338,8 +338,8 @@ module.exports = {
                 }
                 const win = g === 1 ? juego.retador : juego.oponente;
                 const subio = await db.sumarXP(win, 20).catch(() => false);
-                await db.sumarMonedas(win, 40).catch(() => {});
-                final += `🏆 ¡GANA ${nom(win)}!${subio ? '\n🆙 ¡SUBIÓ DE NIVEL!' : ''}\n💰 +40 diky | +20 XP`;
+                const pagado = await db.premiarConLimite(win, 40, 0).catch(() => true);
+                final += `🏆 ¡GANA ${nom(win)}!${subio ? '\n🆙 ¡SUBIÓ DE NIVEL!' : ''}\n💰 +40 diky | +20 XP${pagado ? '' : db.NOTA_ANTIFARMA}`;
                 return sock.sendMessage(chatId, { text: final, mentions: [juego.retador, juego.oponente] }, { quoted: msg });
             }
 
@@ -403,9 +403,9 @@ module.exports = {
                 if (g === 'E') return sock.sendMessage(chatId, { text: `🤝 *¡EMPATE!*\n━━━━━━━━━━━━━━\n${pintarC4(juego.tablero)}\nBuena partida.` });
                 const win = g === 'R' ? juego.jugadorR : juego.jugadorA;
                 const subio = await db.sumarXP(win, 20).catch(() => false);
-                await db.sumarMonedas(win, 50).catch(() => {});
+                const pagado = await db.premiarConLimite(win, 50, 0).catch(() => true);
                 return sock.sendMessage(chatId, {
-                    text: `🏆 *¡${nom(win)} CONECTA 4!*\n━━━━━━━━━━━━━━\n${pintarC4(juego.tablero)}\n💰 +50 diky | +20 XP${subio ? '\n🆙 ¡SUBIÓ DE NIVEL!' : ''}`,
+                    text: `🏆 *¡${nom(win)} CONECTA 4!*\n━━━━━━━━━━━━━━\n${pintarC4(juego.tablero)}\n💰 +50 diky | +20 XP${subio ? '\n🆙 ¡SUBIÓ DE NIVEL!' : ''}${pagado ? '' : db.NOTA_ANTIFARMA}`,
                     mentions: [juego.jugadorR, juego.jugadorA]
                 }, { quoted: msg });
             }
@@ -499,9 +499,14 @@ module.exports = {
                 }
                 if (ganadores.length > 0) {
                     delete botState.juegos[chatId];
-                    for (const g of ganadores) { await db.sumarXP(g, 50).catch(() => {}); await db.sumarMonedas(g, 100).catch(() => {}); }
+                    let algunoBloqueado = false;
+                    for (const g of ganadores) {
+                        await db.sumarXP(g, 50).catch(() => {});
+                        const pagado = await db.premiarConLimite(g, 100, 0).catch(() => true);
+                        if (!pagado) algunoBloqueado = true;
+                    }
                     return sock.sendMessage(chatId, {
-                        text: `🎱 ¡BOLA ${bola}!\n━━━━━━━━━━━━━━\n🎉🎉 *¡BINGOOO!* 🎉🎉\n🏆 ${ganadores.map(nom).join(' ')} completaron su cartón.\n💰 +100 diky | +50 XP c/u`,
+                        text: `🎱 ¡BOLA ${bola}!\n━━━━━━━━━━━━━━\n🎉🎉 *¡BINGOOO!* 🎉🎉\n🏆 ${ganadores.map(nom).join(' ')} completaron su cartón.\n💰 +100 diky | +50 XP c/u${algunoBloqueado ? db.NOTA_ANTIFARMA : ''}`,
                         mentions: ganadores
                     }, { quoted: msg });
                 }

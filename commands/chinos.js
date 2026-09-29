@@ -142,10 +142,15 @@ module.exports = {
                 return sock.sendMessage(chatId, { text: '👀 Ese sobre no era para ti.' }, { quoted: msg });
             }
             const monto = juego.sobrantes[sender];
+            // Anti-farma: si pasó el tope, su parte QUEDA guardada y puede
+            // reclamarla después (no se borra, para no romper la contabilidad).
+            const pagado = await db.premiarConLimite(sender, monto, 0).catch(() => true);
+            if (!pagado) {
+                return sock.sendMessage(chatId, { text: `🧧 ${nom(sender)}, tu parte (*${monto} diky*) sigue guardada.${db.NOTA_ANTIFARMA}\n👉 Reclama con *!abrir* en un rato.`, mentions: [sender] }, { quoted: msg });
+            }
             delete juego.sobrantes[sender];
             juego.reclamados[sender] = monto;
             juego._ts = Date.now();
-            await db.sumarMonedas(sender, monto).catch(() => {});
             const quedan = Object.keys(juego.sobrantes).length;
             if (quedan > 0) {
                 return sock.sendMessage(chatId, { text: `🧧 ${nom(sender)} abrió su parte: *${monto} diky*.\n⏳ Faltan ${quedan}: *!abrir*`, mentions: [sender] }, { quoted: msg });
@@ -250,7 +255,7 @@ module.exports = {
             if (!vivos.includes(sender)) return sock.sendMessage(chatId, { text: `💀 ${nom(sender)}, ya estás eliminado. Mira y aprende.` }, { quoted: msg });
             juego._ts = Date.now();
             const debe = juego.ultima.slice(-2);
-            const fail = (motivo) => {
+            const fail = async (motivo) => {
                 juego.fallos[sender] = (juego.fallos[sender] || 0) + 1;
                 const quedan = 3 - juego.fallos[sender];
                 if (quedan <= 0) {
@@ -260,16 +265,16 @@ module.exports = {
                         const win = aun[0];
                         delete botState.juegos[chatId];
                         db.sumarXP(win, 20).catch(() => {});
-                        db.sumarMonedas(win, 60).catch(() => {});
-                        txt += `\n━━━━━━━━━━━━━━\n🏆 *¡${nom(win)} GANA LA CADENA!*\n💰 +60 diky | +20 XP`;
+                        const pagado = await db.premiarConLimite(win, 60, 0).catch(() => true);
+                        txt += `\n━━━━━━━━━━━━━━\n🏆 *¡${nom(win)} GANA LA CADENA!*\n💰 +60 diky | +20 XP${pagado ? '' : db.NOTA_ANTIFARMA}`;
                         return sock.sendMessage(chatId, { text: txt, mentions: [sender, win] }, { quoted: msg });
                     }
                     return sock.sendMessage(chatId, { text: txt, mentions: [sender] }, { quoted: msg });
                 }
                 return sock.sendMessage(chatId, { text: `💥 ${nom(sender)}: *${motivo}*. ${pick(BURLA_CADENA)}\n❤️ Te quedan *${quedan}* vidas. La palabra sigue siendo *${juego.ultima.toUpperCase()}* (busca *"${debe.toUpperCase()}"*)`, mentions: [sender] }, { quoted: msg });
             };
-            if (!palabra.startsWith(debe)) return fail(`"${palabra.toUpperCase()}" no empieza con "${debe.toUpperCase()}"`);
-            if (juego.usadas.has(palabra)) return fail(`"${palabra.toUpperCase()}" ya se usó`);
+            if (!palabra.startsWith(debe)) return await fail(`"${palabra.toUpperCase()}" no empieza con "${debe.toUpperCase()}"`);
+            if (juego.usadas.has(palabra)) return await fail(`"${palabra.toUpperCase()}" ya se usó`);
             juego.usadas.add(palabra); juego.ultima = palabra;
             return sock.sendMessage(chatId, { text: `🔗 ${nom(sender)}: *${palabra.toUpperCase()}* ✅\n👉 Siguiente con *"${palabra.slice(-2).toUpperCase()}"*: *!cadena <palabra>*`, mentions: [sender] }, { quoted: msg });
         }
@@ -352,17 +357,21 @@ module.exports = {
             const traidor = juego.traidor;
             delete botState.juegos[chatId];
             if (top.length > 1) {
-                await db.sumarMonedas(traidor, 120).catch(() => {});
-                return sock.sendMessage(chatId, { text: `🗳️ *¡EMPATE!* ${top.map(nom).join(' vs ')}.\nEntre la duda, el traidor se escapa por la ventana 🪟💨\n🗡️ El traidor era ${nom(traidor)} y se lleva *120 diky*.\n😅 Inocentes: se los bailaron sabroso.`, mentions: [...top, traidor] }, { quoted: msg });
+                const pagado = await db.premiarConLimite(traidor, 120, 0).catch(() => true);
+                return sock.sendMessage(chatId, { text: `🗳️ *¡EMPATE!* ${top.map(nom).join(' vs ')}.\nEntre la duda, el traidor se escapa por la ventana 🪟💨\n🗡️ El traidor era ${nom(traidor)} y se lleva *120 diky*.${pagado ? '' : db.NOTA_ANTIFARMA}\n😅 Inocentes: se los bailaron sabroso.`, mentions: [...top, traidor] }, { quoted: msg });
             }
             const acusado = top[0];
             if (acusado === traidor) {
                 const inocentes = juego.apuntados.filter(j => j !== traidor);
-                for (const j of inocentes) await db.sumarMonedas(j, 40).catch(() => {});
-                return sock.sendMessage(chatId, { text: `🗳️ Con *${orden[0][1]} votos* acusan a ${nom(acusado)}...\n━━━━━━━━━━━━━━\n🎯 *¡ERA EL TRAIDOR!* 🗡️😱\nCada inocente gana *40 diky*. ¡Buen olfato! 👃\n${nom(traidor)}, más suerte disimulando la próxima 🤡`, mentions: [...inocentes, traidor] }, { quoted: msg });
+                let algunoBloqueado = false;
+                for (const j of inocentes) {
+                    const pagado = await db.premiarConLimite(j, 40, 0).catch(() => true);
+                    if (!pagado) algunoBloqueado = true;
+                }
+                return sock.sendMessage(chatId, { text: `🗳️ Con *${orden[0][1]} votos* acusan a ${nom(acusado)}...\n━━━━━━━━━━━━━━\n🎯 *¡ERA EL TRAIDOR!* 🗡️😱\nCada inocente gana *40 diky*. ¡Buen olfato! 👃${algunoBloqueado ? db.NOTA_ANTIFARMA : ''}\n${nom(traidor)}, más suerte disimulando la próxima 🤡`, mentions: [...inocentes, traidor] }, { quoted: msg });
             }
-            await db.sumarMonedas(traidor, 120).catch(() => {});
-            return sock.sendMessage(chatId, { text: `🗳️ Con *${orden[0][1]} votos* acusan a ${nom(acusado)}...\n━━━━━━━━━━━━━━\n😇 *¡ERA INOCENTE!* Lo lincharon de gratis.\n🗡️ El verdadero traidor era ${nom(traidor)} y se lleva *120 diky*.\n${nom(acusado)}, pide indemnización 😭`, mentions: [acusado, traidor] }, { quoted: msg });
+            const pagado = await db.premiarConLimite(traidor, 120, 0).catch(() => true);
+            return sock.sendMessage(chatId, { text: `🗳️ Con *${orden[0][1]} votos* acusan a ${nom(acusado)}...\n━━━━━━━━━━━━━━\n😇 *¡ERA INOCENTE!* Lo lincharon de gratis.\n🗡️ El verdadero traidor era ${nom(traidor)} y se lleva *120 diky*.${pagado ? '' : db.NOTA_ANTIFARMA}\n${nom(acusado)}, pide indemnización 😭`, mentions: [acusado, traidor] }, { quoted: msg });
         }
 
         // ==========================================
@@ -397,9 +406,9 @@ module.exports = {
                 const win = juego.vivos[0];
                 delete botState.juegos[chatId];
                 const subio = await db.sumarXP(win, 20).catch(() => false);
-                await db.sumarMonedas(win, 60).catch(() => {});
+                const pagado = await db.premiarConLimite(win, 60, 0).catch(() => true);
                 return sock.sendMessage(chatId, {
-                    text: `🍾 *¡GIRA LA BOTELLA!* 🌀\nLa botella apunta a... ${nom(victima)} 😱\n🎲 Reto final: _${pick(RETOS_BOTELLA)}_\n${pick(BURLA_ELIM)}\n━━━━━━━━━━━━━━\n🏆 *¡${nom(win)} ES EL ÚLTIMO EN PIE!*\n💰 +60 diky | +20 XP${subio ? '\n🆙 ¡SUBIÓ DE NIVEL!' : ''}`,
+                    text: `🍾 *¡GIRA LA BOTELLA!* 🌀\nLa botella apunta a... ${nom(victima)} 😱\n🎲 Reto final: _${pick(RETOS_BOTELLA)}_\n${pick(BURLA_ELIM)}\n━━━━━━━━━━━━━━\n🏆 *¡${nom(win)} ES EL ÚLTIMO EN PIE!*\n💰 +60 diky | +20 XP${subio ? '\n🆙 ¡SUBIÓ DE NIVEL!' : ''}${pagado ? '' : db.NOTA_ANTIFARMA}`,
                     mentions: [victima, win]
                 }, { quoted: msg });
             }

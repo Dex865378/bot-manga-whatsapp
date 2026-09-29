@@ -43,6 +43,7 @@ async function crearTablas() {
         `CREATE TABLE IF NOT EXISTS grupos_despedida (chat_id TEXT PRIMARY KEY, mensaje TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
         `CREATE TABLE IF NOT EXISTS portadas (clave TEXT PRIMARY KEY, imagen BLOB, mime TEXT DEFAULT 'image/jpeg', updated_at BIGINT)`,
         `CREATE TABLE IF NOT EXISTS portadas_grupo (chat_id TEXT NOT NULL, clave TEXT NOT NULL, imagen BLOB, mime TEXT DEFAULT 'image/jpeg', updated_at BIGINT, PRIMARY KEY (chat_id, clave))`,
+        `CREATE TABLE IF NOT EXISTS premios_log (user_id TEXT NOT NULL, ts BIGINT NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS warns (chat_id TEXT NOT NULL, user_id TEXT NOT NULL, count INTEGER DEFAULT 0, updated_at BIGINT, PRIMARY KEY (chat_id, user_id))`,
         `CREATE TABLE IF NOT EXISTS afk (user_id TEXT PRIMARY KEY, motivo TEXT DEFAULT '', ts BIGINT)`,
         `CREATE TABLE IF NOT EXISTS actividad (chat_id TEXT NOT NULL, user_id TEXT NOT NULL, total INTEGER DEFAULT 0, PRIMARY KEY (chat_id, user_id))`,
@@ -345,17 +346,49 @@ async function incrementarCampo(userId, campo, valor) {
     }
 }
 
+// Mutex por usuario: encadena operaciones de saldo/XP del mismo user_id para
+// que dos premios concurrentes no lean el mismo valor viejo y se pisen
+// (eso borraba diky: caché decía 1000, real 5000, +50 → escribía 1050).
+const userMutex = new Map(); // userId -> Promise (cola)
+function conMutex(userId, fn) {
+    const prev = userMutex.get(userId) || Promise.resolve();
+    const next = prev.catch(() => {}).then(fn);
+    const tracked = next.catch(() => {});
+    userMutex.set(userId, tracked);
+    // Limpieza: si nadie más se encoló detrás, borrar la llave
+    next.finally(() => {
+        if (userMutex.get(userId) === tracked) userMutex.delete(userId);
+    }).catch(() => {});
+    return next;
+}
+
 async function sumarMonedas(userId, cantidad) {
-    const u = await obtenerUsuario(userId);
-    if (!u) return false;
-    
-    // El multiplicador de prestigio solo debe aplicar a las GANANCIAS, no a las pérdidas/restas.
-    const mult = cantidad > 0 ? (1 + ((u.prestigio || 0) * 0.1)) : 1;
-    const final = Math.floor(cantidad * mult);
-    
-    // Asegurar que el balance nunca baje de 0
-    const nuevas = Math.max(0, (u.monedas || 0) + final);
-    return await actualizarUsuario(userId, { monedas: nuevas });
+    if (!connected) return false;
+    // Asegurar que la fila exista (obtenerUsuario la crea si falta). El valor
+    // leído NO se usa: el UPDATE de abajo es atómico en SQL.
+    await obtenerUsuario(userId);
+    try {
+        // UPDATE atómico en SQL: lee y escribe en la misma sentencia, así dos
+        // premios al mismo tiempo ya no se pisan. El multiplicador de
+        // prestigio (+10% por nivel, solo ganancias) se calcula en SQL.
+        // El balance nunca baja de 0.
+        if (cantidad > 0) {
+            await dbClient.execute({
+                sql: `UPDATE usuarios SET monedas = max(0, monedas + CAST(? * (1 + COALESCE(prestigio,0)*0.1) AS INTEGER)) WHERE user_id = ?`,
+                args: [cantidad, userId]
+            });
+        } else {
+            await dbClient.execute({
+                sql: `UPDATE usuarios SET monedas = max(0, monedas + ?) WHERE user_id = ?`,
+                args: [cantidad, userId]
+            });
+        }
+        userCache.delete(userId);
+        return true;
+    } catch (e) {
+        console.error(`❌ [DB] Error sumarMonedas:`, e.message);
+        return false;
+    }
 }
 
 async function obtenerBalance(userId) {
@@ -369,7 +402,10 @@ async function obtenerBalance(userId) {
     return total;
 }
 
-async function deducirMonedas(userId, cantidad) {
+function deducirMonedas(userId, cantidad) {
+    // Serializado por usuario: el chequeo de saldo y el descuento ocurren sin
+    // que otro descuento/premio se meta en medio (evita sobregiros y pisadas).
+    return conMutex(userId, async () => {
     const u = await obtenerUsuario(userId);
     if (!u) return false;
 
@@ -401,9 +437,13 @@ async function deducirMonedas(userId, cantidad) {
         }
     }
     return false;
+    });
 }
 
-async function sumarXP(userId, cantidad) {
+function sumarXP(userId, cantidad) {
+    // Serializado por usuario: evita que dos XP concurrentes lean el mismo
+    // valor viejo y uno borre el avance del otro.
+    return conMutex(userId, async () => {
     const u = await obtenerUsuario(userId);
     if (!u) return false;
 
@@ -436,6 +476,7 @@ async function sumarXP(userId, cantidad) {
 
     await actualizarUsuario(userId, { xp: nx, nivel: nl });
     return subio; // true si subió de nivel
+    });
 }
 
 async function registrarVictoriaDuelo(userId) {
@@ -750,6 +791,56 @@ function limpiarCachePortada(clave, chatId) {
     }
     else portadaCache.clear();
 }
+
+// --- Anti-farma: tope de premios FIJOS por hora y por usuario ---
+// Evita que dos compinches se turnen ganando 100 partidas seguidas para
+// farmear diky gratis (ej: 100 x !ttt = 5000). NO aplica a devolución de
+// apuestas (mentiroso, !apostar) ni a juegos de un jugador contra el bot.
+// Límite: 5 premios por hora. Fail-open: si la DB falla, permite el premio.
+const MAX_PREMIOS_POR_HORA = 5;
+const VENTANA_PREMIOS_MS = 60 * 60 * 1000;
+
+async function puedePremiar(userId) {
+    if (!connected) return true;
+    try {
+        const desde = Date.now() - VENTANA_PREMIOS_MS;
+        // Podar entradas viejas (barato: tabla chica, corre solo al premiar)
+        await dbClient.execute({ sql: 'DELETE FROM premios_log WHERE ts < ?', args: [desde] }).catch(() => {});
+        const rs = await dbClient.execute({
+            sql: 'SELECT COUNT(*) AS n FROM premios_log WHERE user_id = ? AND ts >= ?',
+            args: [userId, desde]
+        });
+        const n = rs.rows[0]?.n ?? 0;
+        if (n >= MAX_PREMIOS_POR_HORA) return false;
+        await dbClient.execute({
+            sql: 'INSERT INTO premios_log (user_id, ts) VALUES (?, ?)',
+            args: [userId, Date.now()]
+        });
+        return true;
+    } catch (e) {
+        return true; // fail-open: mejor regalar que romper el juego
+    }
+}
+
+// Premio con tope anti-farma: el XP siempre se paga; los diky pasan por
+// puedePremiar (5 premios/hora). Devuelve true si los diky se pagaron.
+// Las restas/devoluciones (monedas <= 0) no pasan por el gate.
+async function premiarConLimite(userId, monedas, xp) {
+    if (xp) { try { await sumarXP(userId, xp); } catch (_) {} }
+    if (!monedas || monedas <= 0) {
+        if (monedas < 0) { try { await sumarMonedas(userId, monedas); } catch (_) {} }
+        return true;
+    }
+    try {
+        if (await puedePremiar(userId)) {
+            await sumarMonedas(userId, monedas);
+            return true;
+        }
+    } catch (_) {}
+    return false;
+}
+
+const NOTA_ANTIFARMA = '\n⏳ _Límite anti-farma (5 premios/hora): los diky de este premio quedan pendientes._';
 
 async function obtenerTopMonedas(limit = 10) {
     if (!connected) await init();
@@ -1165,7 +1256,7 @@ module.exports = {
     tieneBienvenida, activarBienvenida, desactivarBienvenida, setMensajeBienvenida,
     tieneDespedida, activarDespedida, desactivarDespedida, setMensajeDespedida,
     getPortada, setPortada, limpiarCachePortada, PORTADAS_VALIDAS,
-    obtenerUsuario, obtenerUsuariosBatch, actualizarUsuario, incrementarCampo, sumarMonedas, sumarXP, obtenerBalance, deducirMonedas,
+    obtenerUsuario, obtenerUsuariosBatch, actualizarUsuario, incrementarCampo, sumarMonedas, sumarXP, obtenerBalance, deducirMonedas, puedePremiar, premiarConLimite, NOTA_ANTIFARMA,
     registrarVictoriaDuelo, registrarDerrotaDuelo, registrarComando, actualizarRacha,
     agregarItem, removerItem,
     sumarKarma, obtenerTopMonedas, obtenerTopNivel, registrarHistorial,

@@ -662,12 +662,14 @@ module.exports = {
             const cleanNumber = (n) => (n || '').split('@')[0].replace(/\D/g, '');
             const adminClean = cleanNumber(ADMIN_NUM);
 
-            // Filtrar al admin del ranking (para que no aparezca)
+            // Filtrar al admin del ranking (para que no aparezca).
+            // Comparación EXACTA de dígitos: includes() en ambos sentidos
+            // borraba a medio mundo (ej: admin '...12' sacaba a todo el que
+            // tuviera '12' en su número; y con ADMIN_NUM vacío, ''.includes
+            // devolvía true para TODOS y el ranking salía vacío).
             const filtrarAdmin = (lista) => {
-                return lista.filter(u => {
-                    const userClean = cleanNumber(u.user_id);
-                    return !userClean.includes(adminClean) && !adminClean.includes(userClean);
-                });
+                if (!adminClean) return lista;
+                return lista.filter(u => cleanNumber(u.user_id) !== adminClean);
             };
 
             const topNFiltered = filtrarAdmin(topN);

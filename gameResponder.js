@@ -41,9 +41,8 @@ async function handleGameResponse(sock, msg, context) {
         if (juego.puntos[sender] >= 5) {
             const win = sender;
             delete botState.juegos[chatId];
-            await db.sumarXP(win, 20).catch(() => {});
-            await db.sumarMonedas(win, 50).catch(() => {});
-            await sock.sendMessage(chatId, { text: `➗ *¡${nomM(win)} GANA LA CARRERA!* 🏁 ${Math.max(pR, pO)} puntos.\n💰 +50 diky | +20 XP`, mentions: [juego.responder, juego.pareja] }, { quoted: msg });
+            const pagado = await db.premiarConLimite(win, 50, 20).catch(() => true);
+            await sock.sendMessage(chatId, { text: `➗ *¡${nomM(win)} GANA LA CARRERA!* 🏁 ${Math.max(pR, pO)} puntos.\n💰 +50 diky | +20 XP${pagado ? '' : db.NOTA_ANTIFARMA}`, mentions: [juego.responder, juego.pareja] }, { quoted: msg });
             return true;
         }
         juego.nivel++;
@@ -99,10 +98,10 @@ async function handleGameResponse(sock, msg, context) {
             const win = sender, lose = sender === juego.responder ? juego.pareja : juego.responder;
             delete botState.juegos[chatId];
             const subio = await db.sumarXP(win, 30).catch(() => false);
-            await db.sumarMonedas(win, 60).catch(() => {});
+            const pagado = await db.premiarConLimite(win, 60, 0).catch(() => true);
             const nom = (jid) => `@${(jid || '').split('@')[0]}`;
             await sock.sendMessage(chatId, {
-                text: `🧠⚡ *¡${nom(win)} RESPONDIÓ PRIMERO!*\n━━━━━━━━━━━━━━\n❓ ${juego.pregunta}\n✅ Respuesta: *${juego.respuesta}*\n\n🏆 ${nom(win)} gana: 💰 +60 diky | +30 XP${subio ? '\n🆙 ¡SUBIÓ DE NIVEL!' : ''}\n😅 ${nom(lose)}, más suerte la próxima.`,
+                text: `🧠⚡ *¡${nom(win)} RESPONDIÓ PRIMERO!*\n━━━━━━━━━━━━━━\n❓ ${juego.pregunta}\n✅ Respuesta: *${juego.respuesta}*\n\n🏆 ${nom(win)} gana: 💰 +60 diky | +30 XP${subio ? '\n🆙 ¡SUBIÓ DE NIVEL!' : ''}${pagado ? '' : db.NOTA_ANTIFARMA}\n😅 ${nom(lose)}, más suerte la próxima.`,
                 mentions: [win, lose]
             }, { quoted: msg });
             return true;
@@ -133,10 +132,14 @@ async function handleGameResponse(sock, msg, context) {
         const tAns = norm(juego.respuesta);
         if (uAns === tAns || uAns.includes(`la${tAns}`) || (uAns.length === 1 && uAns === tAns)) {
             delete botState.juegos[chatId];
-            const premio = (juego.apuesta > 0) ? Math.min(juego.apuesta * 2, 2000000) : 50;
+            const esApuesta = juego.apuesta > 0;
+            const premio = esApuesta ? Math.min(juego.apuesta * 2, 2000000) : 50;
             const subio = await db.sumarXP(sender, 25);
-            await db.sumarMonedas(sender, premio);
-            let rxt = `🎉 ¡CORRECTO! Ganaste *${premio}* diky y *25* XP.${juego.apuesta > 0 ? '\n💰 ¡Apuesta duplicada (x2)!' : ''}`;
+            // La devolución de apuesta (x2) NO pasa por el gate anti-farma
+            // (es su propio dinero); el premio fijo sí.
+            const pagado = esApuesta ? true : await db.premiarConLimite(sender, premio, 0).catch(() => true);
+            if (esApuesta) await db.sumarMonedas(sender, premio).catch(() => {});
+            let rxt = `🎉 ¡CORRECTO! Ganaste *${premio}* diky y *25* XP.${esApuesta ? '\n💰 ¡Apuesta duplicada (x2)!' : (pagado ? '' : db.NOTA_ANTIFARMA)}`;
             if (subio) rxt += `\n🆙 ¡SUBISTE DE NIVEL!`;
             await sock.sendMessage(chatId, { text: rxt }, { quoted: msg });
             return true;
@@ -161,10 +164,12 @@ async function handleGameResponse(sock, msg, context) {
         const tAns = norm(juego.palabra);
         if (uAns.includes(tAns) || tAns.includes(uAns)) {
             delete botState.juegos[chatId];
-            const premio = (juego.apuesta > 0) ? Math.min(juego.apuesta * 2, 2000000) : 100;
+            const esApuesta = juego.apuesta > 0;
+            const premio = esApuesta ? Math.min(juego.apuesta * 2, 2000000) : 100;
             const subio = await db.sumarXP(sender, 50);
-            await db.sumarMonedas(sender, premio);
-            await sock.sendMessage(chatId, { text: `🎉 ¡SI! Era *${juego.palabra}*.\n💰 +${premio} diky | *50* XP${juego.apuesta > 0 ? '\n💰 ¡Apuesta duplicada (x2)!' : ''}` }, { quoted: msg });
+            const pagado = esApuesta ? true : await db.premiarConLimite(sender, premio, 0).catch(() => true);
+            if (esApuesta) await db.sumarMonedas(sender, premio).catch(() => {});
+            await sock.sendMessage(chatId, { text: `🎉 ¡SI! Era *${juego.palabra}*.\n💰 +${premio} diky | *50* XP${esApuesta ? '\n💰 ¡Apuesta duplicada (x2)!' : (pagado ? '' : db.NOTA_ANTIFARMA)}` }, { quoted: msg });
             return true;
         } else {
             juego.vidas--;
@@ -184,11 +189,13 @@ async function handleGameResponse(sock, msg, context) {
         const userNum = parseInt(input.trim());
         if (!isNaN(userNum) && userNum === juego.resultado) {
             delete botState.juegos[chatId];
-            const premio = (juego.apuesta > 0) ? Math.min(juego.apuesta * 2, 2000000) : (juego.premio || 30);
+            const esApuesta = juego.apuesta > 0;
+            const premio = esApuesta ? Math.min(juego.apuesta * 2, 2000000) : (juego.premio || 30);
             const xp = juego.xp || 15;
             await db.sumarXP(sender, xp);
-            await db.sumarMonedas(sender, premio);
-            await sock.sendMessage(chatId, { text: `✅ ¡CORRECTO!\n💰 +${premio} diky | ✨ +${xp} XP${juego.apuesta > 0 ? '\n💰 ¡Apuesta duplicada (x2)!' : ''}` }, { quoted: msg });
+            const pagado = esApuesta ? true : await db.premiarConLimite(sender, premio, 0).catch(() => true);
+            if (esApuesta) await db.sumarMonedas(sender, premio).catch(() => {});
+            await sock.sendMessage(chatId, { text: `✅ ¡CORRECTO!\n💰 +${premio} diky | ✨ +${xp} XP${esApuesta ? '\n💰 ¡Apuesta duplicada (x2)!' : (pagado ? '' : db.NOTA_ANTIFARMA)}` }, { quoted: msg });
             return true;
         } else {
             // Solo contar fallo si lo que envió parece un número
@@ -240,8 +247,10 @@ async function handleGameResponse(sock, msg, context) {
             }
 
             await db.sumarXP(sender, xpBase);
-            await db.sumarMonedas(sender, premioTotal);
-            await sock.sendMessage(chatId, { text: `🎉 ¡CORRECTO! Es la ${subtipo}: *${juego.pais?.toUpperCase() || juego.respuesta?.toUpperCase()}*.\n💰 +${premioTotal} diky | ✨ +${xpBase} XP` }, { quoted: msg });
+            const esApuestaB = juego.apuesta > 0;
+            const pagadoB = esApuestaB ? true : await db.premiarConLimite(sender, premioTotal, 0).catch(() => true);
+            if (esApuestaB) await db.sumarMonedas(sender, premioTotal).catch(() => {});
+            await sock.sendMessage(chatId, { text: `🎉 ¡CORRECTO! Es la ${subtipo}: *${juego.pais?.toUpperCase() || juego.respuesta?.toUpperCase()}*.\n💰 +${premioTotal} diky | ✨ +${xpBase} XP${esApuestaB ? '\n💰 ¡Apuesta duplicada (x2)!' : (pagadoB ? '' : db.NOTA_ANTIFARMA)}` }, { quoted: msg });
             return true;
         } else {
             // Sin vidas: Respuesta incorrecta = Pérdida inmediata
@@ -257,9 +266,12 @@ async function handleGameResponse(sock, msg, context) {
         const letra = cmd.substring(0, 1).toLowerCase();
         if (cmd.toLowerCase() === juego.palabra.toLowerCase()) {
             delete botState.juegos[chatId];
-            const premioH = (juego.apuesta > 0) ? Math.min(juego.apuesta * 2, 2000000) : 100;
-            await db.sumarMonedas(sender, premioH); await db.sumarXP(sender, 50);
-            await sock.sendMessage(chatId, { text: `🎉 ¡GANASTE! Era *${juego.palabra.toUpperCase()}*\n💰 +${premioH} diky | ✨ +50 XP${juego.apuesta > 0 ? '\n💰 ¡Apuesta duplicada (x2)!' : ''}` }, { quoted: msg });
+            const esApuestaH = juego.apuesta > 0;
+            const premioH = esApuestaH ? Math.min(juego.apuesta * 2, 2000000) : 100;
+            await db.sumarXP(sender, 50);
+            const pagadoH = esApuestaH ? true : await db.premiarConLimite(sender, premioH, 0).catch(() => true);
+            if (esApuestaH) await db.sumarMonedas(sender, premioH).catch(() => {});
+            await sock.sendMessage(chatId, { text: `🎉 ¡GANASTE! Era *${juego.palabra.toUpperCase()}*\n💰 +${premioH} diky | ✨ +50 XP${esApuestaH ? '\n💰 ¡Apuesta duplicada (x2)!' : (pagadoH ? '' : db.NOTA_ANTIFARMA)}` }, { quoted: msg });
             return true;
         }
         if (juego.palabra.includes(letra)) {
@@ -270,9 +282,12 @@ async function handleGameResponse(sock, msg, context) {
             juego.oculto = nuevo;
             if (juego.oculto === juego.palabra) {
                 delete botState.juegos[chatId];
-                const premioH2 = (juego.apuesta > 0) ? Math.min(juego.apuesta * 2, 2000000) : 100;
-                await db.sumarMonedas(sender, premioH2); await db.sumarXP(sender, 50);
-                await sock.sendMessage(chatId, { text: `🎉 ¡GANASTE! Era *${juego.palabra.toUpperCase()}*\n💰 +${premioH2} diky | ✨ +50 XP${juego.apuesta > 0 ? '\n💰 ¡Apuesta duplicada (x2)!' : ''}` }, { quoted: msg });
+                const esApuestaH2 = juego.apuesta > 0;
+                const premioH2 = esApuestaH2 ? Math.min(juego.apuesta * 2, 2000000) : 100;
+                await db.sumarXP(sender, 50);
+                const pagadoH2 = esApuestaH2 ? true : await db.premiarConLimite(sender, premioH2, 0).catch(() => true);
+                if (esApuestaH2) await db.sumarMonedas(sender, premioH2).catch(() => {});
+                await sock.sendMessage(chatId, { text: `🎉 ¡GANASTE! Era *${juego.palabra.toUpperCase()}*\n💰 +${premioH2} diky | ✨ +50 XP${esApuestaH2 ? '\n💰 ¡Apuesta duplicada (x2)!' : (pagadoH2 ? '' : db.NOTA_ANTIFARMA)}` }, { quoted: msg });
             } else {
                 await sock.sendMessage(chatId, { text: `✅ ¡Letra correcta!\n\nPalabra: \`${juego.oculto.toUpperCase()}\`` });
             }
