@@ -103,8 +103,169 @@ const DUELO_Q = [
     ['¿Droide azul de Star Wars?', 'r2d2'], ['¿Espada de luz de Star Wars?', 'sable'],
     ['¿Superhéroe murciélago?', 'batman'], ['¿Metal del escudo del Capitán América?', 'vibranium'],
     ['¿Guantelete de Thanos?', 'infinito'], ['¿Planeta de Superman?', 'kripton'],
-    ['¿Héroe arácnido de Marvel?', 'spiderman'], ['¿Alter ego de Iron Man?', 'tony stark']
+    ['¿Héroe arácnido de Marvel?', 'spiderman'], ['¿Alter ego de Iron Man?', 'tony stark'],
+    // ── Capitales del mundo ──
+    ['¿Capital de Guatemala?', 'guatemala'], ['¿Capital de El Salvador?', 'san salvador'], ['¿Capital de Honduras?', 'tegucigalpa'],
+    ['¿Capital de Nicaragua?', 'managua'], ['¿Capital de Costa Rica?', 'san jose'], ['¿Capital de Panamá?', 'panama'],
+    ['¿Capital de Cuba?', 'la habana'], ['¿Capital de Venezuela?', 'caracas'], ['¿Capital de Ecuador?', 'quito'],
+    ['¿Capital de Bolivia?', 'sucre'], ['¿Capital de Paraguay?', 'asuncion'], ['¿Capital de Uruguay?', 'montevideo'],
+    ['¿Capital de Portugal?', 'lisboa'], ['¿Capital de Alemania?', 'berlin'], ['¿Capital de Reino Unido?', 'londres'],
+    ['¿Capital de Irlanda?', 'dublin'], ['¿Capital de Países Bajos?', 'amsterdam'], ['¿Capital de Bélgica?', 'bruselas'],
+    ['¿Capital de Suiza?', 'berna'], ['¿Capital de Austria?', 'viena'], ['¿Capital de Grecia?', 'atenas'],
+    ['¿Capital de Turquía?', 'ankara'], ['¿Capital de Polonia?', 'varsovia'], ['¿Capital de Noruega?', 'oslo'],
+    ['¿Capital de Suecia?', 'estocolmo'], ['¿Capital de Finlandia?', 'helsinki'], ['¿Capital de Dinamarca?', 'copenhague'],
+    ['¿Capital de Ucrania?', 'kiev'], ['¿Capital de India?', 'nueva delhi'], ['¿Capital de Tailandia?', 'bangkok'],
+    ['¿Capital de Vietnam?', 'hanoi'], ['¿Capital de Corea del Sur?', 'seul'], ['¿Capital de Indonesia?', 'yakarta'],
+    ['¿Capital de Filipinas?', 'manila'], ['¿Capital de Arabia Saudita?', 'riad'], ['¿Capital de Israel?', 'jerusalen'],
+    ['¿Capital de Marruecos?', 'rabat'], ['¿Capital de Argelia?', 'argel'], ['¿Capital de Nigeria?', 'abuya'],
+    ['¿Capital de Sudáfrica?', 'pretoria'], ['¿Capital de Kenia?', 'nairobi'], ['¿Capital de Australia?', 'canberra'],
+    ['¿Capital de Nueva Zelanda?', 'wellington'], ['¿Capital de República Dominicana?', 'santo domingo'], ['¿Capital de Jamaica?', 'kingston'],
+    // ── Geografía física ──
+    ['¿Desierto más grande del mundo?', 'sahara'], ['¿Montaña más alta del mundo?', 'everest'], ['¿Cordillera más larga del mundo?', 'andes'],
+    ['¿Isla más grande del mundo?', 'groenlandia'], ['¿Río que pasa por Egipto?', 'nilo'], ['¿Montaña sagrada de Japón?', 'fuji'],
+    ['¿Río que pasa por París?', 'sena'], ['¿Río que pasa por Londres?', 'tamesis'], ['¿Cataratas entre EE.UU. y Canadá?', 'niagara'],
+    ['¿Estrecho entre España y Marruecos?', 'gibraltar'], ['¿Mar entre Europa y África?', 'mediterraneo'], ['¿Océano más pequeño?', 'artico'],
+    ['¿Continente más pequeño?', 'oceania'], ['¿Desierto famoso de Chile?', 'atacama'], ['¿Volcán famoso de Italia?', 'vesubio'],
+    ['¿Lago navegable más alto del mundo?', 'titicaca'], ['¿Península de España y Portugal?', 'iberica'], ['¿Cordillera que cruza México?', 'sierra madre'],
+    ['¿País con forma de bota?', 'italia'], ['¿País del sol naciente?', 'japon'], ['¿País de los canguros?' , 'australia'],
+    ['¿País de los tulipanes?', 'holanda'], ['¿Ciudad de los canales?', 'venecia'], ['¿Ciudad que nunca duerme?', 'nueva york'],
+    ['¿Muro famoso de China?', 'muralla china'], ['¿Torre inclinada famosa?', 'pisa'], ['¿Estatua regalada a EE.UU. por Francia?', 'libertad'],
+    ['¿Ópera famosa de Australia?', 'sidney'], ['¿Cristo gigante de Brasil?', 'corcovado'], ['¿Pirámides famosas de México?', 'teotihuacan'],
+    // ── Historia ──
+    ['¿Año de la caída de Tenochtitlan?', '1521'], ['¿Quién conquistó México?', 'cortes'], ['¿Padre de la patria mexicana?', 'hidalgo'],
+    ['¿Año del Grito de Independencia?', '1810'], ['¿Benemérito de las Américas?', 'juarez'], ['¿Dictador 30 años en México?', 'porfirio diaz'],
+    ['¿Año de la Revolución Mexicana?', '1910'], ['¿Asesinado en Chinameca?', 'zapata'], ['¿Centauro del Norte?', 'villa'],
+    ['¿Castillo de los Niños Héroes?', 'chapultepec'], ['¿Capital del imperio azteca?', 'tenochtitlan'], ['¿Dios mexica de la guerra?', 'huitzilopochtli'],
+    ['¿Calendario famoso mexica?', 'piedra del sol'], ['¿Batalla del 5 de mayo?', 'puebla'], ['¿Constitución mexicana de qué año?', '1917'],
+    ['¿Presidente que expropió el petróleo?', 'cardenas'], ['¿Último emperador azteca?', 'cuauhtemoc'], ['¿Primera guerra mundial empezó en?', '1914'],
+    ['¿Segunda guerra mundial terminó en?', '1945'], ['¿Muro de Berlín cayó en?', '1989'], ['¿Revolución Francesa en qué año?', '1789'],
+    ['¿Llegada a América en qué año?', '1492'], ['¿Faraona famosa de Egipto?', 'cleopatra'], ['¿Emperador francés famoso?', 'napoleon'],
+    ['¿Primer hombre en el espacio?', 'gagarin'], ['¿Titanic se hundió en?', '1912'], ['¿Ciudad de la bomba atómica?', 'hiroshima'],
+    ['¿Imperio que construyó Machu Picchu?', 'inca'], ['¿Ciudad de los 300 guerreros?', 'esparta'], ['¿Caballo gigante de Troya?', 'troya'],
+    ['¿Olimpiadas nacieron dónde?', 'grecia'], ['¿Independencia de EE.UU. en?', '1776'], ['¿Inventor de la imprenta?', 'gutenberg'],
+    ['¿Teoría de la evolución quién?', 'darwin'], ['¿Pintó la Capilla Sixtina?', 'miguel angel'], ['¿Escribió La Odisea?', 'homero'],
+    ['¿Filósofo del mito de la caverna?', 'platon'], ['¿Maestro de Alejandro Magno?', 'aristoteles'], ['¿Libertador de Sudamérica?', 'bolivar'],
+    ['¿Gladiador tracio famoso?', 'espartaco'], ['¿Quién mató a Julio César?', 'bruto'], ['¿Cárcel tomada en la Revolución Francesa?', 'bastilla'],
+    ['¿Guerreros del norte con barcos?', 'vikingos'], ['¿Reina de Inglaterra por 70 años?', 'isabel'], ['¿Che famoso de la revolución cubana?', 'guevara'],
+    ['¿Siglo de la peste negra?', '14'],
+    // ── Ciencia ──
+    ['¿Fórmula de la sal de mesa?', 'nacl'], ['¿Gas de los globos que flotan?', 'helio'], ['¿Metal de las latas?', 'aluminio'],
+    ['¿Parte positiva del átomo?', 'proton'], ['¿Parte negativa del átomo?', 'electron'], ['¿Centro del átomo?', 'nucleo'],
+    ['¿Proceso con que las plantas comen luz?', 'fotosintesis'], ['¿Ley de la gravedad quién?', 'newton'], ['¿E=mc2 quién?', 'einstein'],
+    ['¿Forma del ADN?', 'helice'], ['¿Unidad básica de la vida?', 'celula'], ['¿Células del cerebro?', 'neuronas'],
+    ['¿Vacuna contra la rabia quién?', 'pasteur'], ['¿Descubrió la penicilina?', 'fleming'], ['¿Galaxia donde vivimos?', 'via lactea'],
+    ['¿Agujero que traga la luz?', 'agujero negro'], ['¿Satélite natural de la Tierra?', 'luna'], ['¿Planeta enano famoso?', 'pluton'],
+    ['¿Estrella más cercana a la Tierra?', 'sol'], ['¿Estrellas fugaces qué son?', 'meteoros'], ['¿Hueso más largo del cuerpo?', 'femur'],
+    ['¿Músculo que bombea sangre?', 'corazon'], ['¿Órganos para respirar?', 'pulmones'], ['¿Líquido rojo del cuerpo?', 'sangre'],
+    ['¿Órgano que piensa?', 'cerebro'], ['¿Cuántos sentidos tenemos?', '5'], ['¿Dientes tiene un adulto?', '32'],
+    ['¿Qué miden los años luz?', 'distancia'], ['¿Capa que protege de rayos UV?', 'ozono'], ['¿Elemento de los diamantes?', 'carbono'],
+    // ── Mates extra ──
+    ['¿7 x 7?', '49'], ['¿8 x 9?', '72'], ['¿6 x 6?', '36'],
+    ['¿11 x 11?', '121'], ['¿200 - 87?', '113'], ['¿45 + 55?', '100'],
+    ['¿10 al cubo?', '1000'], ['¿Raíz cuadrada de 144?', '12'], ['¿25% de 200?', '50'],
+    ['¿Doble de 75?', '150'], ['¿Triple de 30?', '90'], ['¿1000 / 4?', '250'],
+    ['¿4 x 4 x 4?', '64'], ['¿Primo después del 7?', '11'], ['¿14 x 2?', '28'],
+    ['¿99 + 1?', '100'], ['¿500 - 250?', '250'], ['¿3 al cubo?', '27'],
+    // ── Anime extra ──
+    ['¿Técnica de clones de Naruto?', 'kage bunshin'], ['¿Demonio dentro de Naruto?', 'kurama'], ['¿Organización de capas negras con nubes?', 'akatsuki'],
+    ['¿Hermano mayor de Sasuke?', 'itachi'], ['¿Maestro pervertido de Naruto?', 'jiraiya'], ['¿Aldea de la arena?', 'suna'],
+    ['¿Kazekage amigo de Naruto?', 'gaara'], ['¿Compañera de equipo de Naruto?', 'sakura'], ['¿Cocinero de los mugiwara?', 'sanji'],
+    ['¿Esqueleto músico de One Piece?', 'brook'], ['¿Reno doctor de One Piece?', 'chopper'], ['¿Francotirador mentiroso?', 'usopp'],
+    ['¿Arqueóloga de One Piece?', 'robin'], ['¿Isla del cielo?', 'skypiea'], ['¿Carpintero cyborg?', 'franky'],
+    ['¿Hijo de Goku?', 'gohan'], ['¿Fusión de Goku y Vegeta?', 'gogeta'], ['¿Dios destructor gato?', 'bills'],
+    ['¿Ángel asistente de Bills?', 'whis'], ['¿Namekusein verde?', 'piccolo'], ['¿Transformación de pelo rubio?', 'super saiyajin'],
+    ['¿Raza guerrera de Goku?', 'saiyajin'], ['¿Shinigami amigo de Light?', 'ryuk'], ['¿Novia con death note?', 'misa'],
+    ['¿Hermano menor de Eren?', 'zeke'], ['¿Soldado más fuerte de la humanidad?', 'levi'], ['¿Titán hembra?', 'annie'],
+    ['¿Compañera fan de la papa?', 'sasha'], ['¿Isla de los eldianos?', 'paradis'], ['¿Cazador con máscara de jabalí?', 'inosuke'],
+    ['¿Cazador dormilón del trueno?', 'zenitsu'], ['¿Pilar del fuego?', 'rengoku'], ['¿Jefe de los demonios?', 'muzan'],
+    ['¿Pilar del sonido?', 'uzui'], ['¿Pilar del amor?', 'mitsuri'], ['¿Rey de las maldiciones?', 'sukuna'],
+    ['¿Chica del martillo en Jujutsu?', 'nobara'], ['¿Protagonista sin quirk?', 'deku'], ['¿Símbolo de la paz?', 'all might'],
+    ['¿Rival explosivo de Deku?', 'bakugo'], ['¿Chica de gravedad cero?', 'uraraka'], ['¿Villano lleno de manos?', 'shigaraki'],
+    ['¿Protagonista pelinaranja de Bleach?', 'ichigo'], ['¿Monstruo con máscara blanca?', 'hollow'], ['¿Protagonista del examen de cazador?', 'gon'],
+    ['¿Amigo asesino de Gon?', 'killua'], ['¿Payaso de Hunter x Hunter?', 'hisoka'], ['¿Alquimista de acero?', 'edward'],
+    ['¿Hermano armadura de Edward?', 'alphonse'], ['¿Militar de fuego?', 'mustang'], ['¿Espía papá de Anya?', 'loid'],
+    ['¿Niña que lee mentes?', 'anya'], ['¿Mamá asesina de Anya?', 'yor'], ['¿Protagonista motosierra?', 'denji'],
+    ['¿Demonio perrito de Denji?', 'pochita'], ['¿Jefa manipuladora de Denji?', 'makima'], ['¿Prota que viaja al pasado?', 'takemichi'],
+    ['¿Científico despetrificado?', 'senku'], ['¿Calvo de un solo golpe?', 'saitama'], ['¿Cyborg discípulo de Saitama?', 'genos'],
+    ['¿Prota sin magia de Black Clover?', 'asta'], ['¿Rival talentoso de Asta?', 'yuno'], ['¿Mago de fuego de Fairy Tail?', 'natsu'],
+    ['¿Rata eléctrica amarilla?', 'pikachu'], ['¿Entrenador de Pikachu?', 'ash'], ['¿Equipo villano de Pokémon?', 'team rocket'],
+    ['¿Gato robot del futuro?', 'doraemon'], ['¿Medio demonio del pasado?', 'inuyasha'], ['¿Caballero de Pegaso?', 'seiya'],
+    ['¿Diosa de los caballeros?', 'atenea'], ['¿Pelirrojo del básquet?', 'hanamichi'], ['¿Prota chiquito del vóley?', 'hinata'],
+    ['¿Dragón blanco de Kaiba?', 'blue eyes'], ['¿Enmascarado de Akatsuki?', 'obito'], ['¿Brujita del delivery?', 'kiki'],
+    ['¿Espíritu gris del bosque?', 'totoro'], ['¿Piloto tímido del Eva?', 'shinji'], ['¿Gata consejera lunar?' , 'luna'],
+    // ── Deportes ──
+    ['¿Mundial 2022 dónde fue?', 'qatar'], ['¿Balón de Oro 8 veces?', 'messi'], ['¿CR7 de qué país es?', 'portugal'],
+    ['¿Club de joven Messi?', 'barcelona'], ['¿Portero famoso de México?', 'ochoa'], ['¿Nombre del Canelo?', 'saul'],
+    ['¿Deporte del Super Bowl?', 'futbol americano'], ['¿Maratón cuántos km?', '42'], ['¿Nadador con más oros?', 'phelps'],
+    ['¿Jamaicano más rápido?', 'bolt'], ['¿Deporte de Serena Williams?', 'tenis'], ['¿Juego de tablero con reinas?', 'ajedrez'],
+    ['¿Carrera de F1 famosa?', 'monaco'], ['¿Piloto mexicano de F1?', 'checo'], ['¿Deporte de guantes?', 'box'],
+    ['¿Deporte de canasta?', 'basquetbol'], ['¿Hoyo en uno en qué deporte?', 'golf'], ['¿Deporte con red alta?', 'voleibol'],
+    // ── Animales ──
+    ['¿Rey de la selva?', 'leon'], ['¿Trompa larga y orejas grandes?', 'elefante'], ['¿Cuello más largo?', 'jirafa'],
+    ['¿Rayas blancas y negras?', 'cebra'], ['¿Bebé en la bolsa?', 'canguro'], ['¿Cambia de color?', 'camaleon'],
+    ['¿Salta y croa?', 'rana'], ['¿Caparazón lento?', 'tortuga'], ['¿8 brazos que echa tinta?', 'pulpo'],
+    ['¿Da lana suave?', 'oveja'], ['¿Da leche y hace muu?', 'vaca'], ['¿Relincha?', 'caballo'],
+    ['¿Rebuzna?', 'burro'], ['¿Cacarea?', 'gallina'], ['¿Ladra?', 'perro'],
+    ['¿Pájaro que repite palabras?', 'loro'], ['¿Animal más grande del mundo?', 'ballena'], ['¿Dinosaurio famoso cazador?', 'tiranosaurio'],
+    // ── Cine y series ──
+    ['¿Mago del anillo único?', 'gandalf'], ['¿Enano que lleva el anillo?', 'frodo'], ['¿Pirata de la brújula?', 'jack sparrow'],
+    ['¿Payaso asesino de la alcantarilla?', 'pennywise'], ['¿Tiburón de Spielberg?', 'jaws'], ['¿Juguete vaquero?', 'woody'],
+    ['¿Princesa de hielo?', 'elsa'], ['¿Muñeco de nieve amigo?', 'olaf'], ['¿Hijo rey león?', 'simba'],
+    ['¿Rata chef de París?', 'remy'], ['¿Pez payaso perdido?', 'nemo'], ['¿Vecinos amarillos?', 'simpson'],
+    ['¿Vecindad famosa del Chavo?', 'vecindad'], ['¿Chapulín de qué color?', 'rojo'], ['¿Nombre de un dragón de Daenerys?', 'drogon'],
+    // ── Música ──
+    ['¿Rey del pop?', 'michael jackson'], ['¿Reina del pop?', 'madonna'], ['¿4 de Liverpool?', 'beatles'],
+    ['¿Banda de Freddie Mercury?', 'queen'], ['¿Reguetonero de la gasolina?', 'daddy yankee'], ['¿Colombiana de las caderas?', 'shakira'],
+    ['¿Cantante de Imagine?', 'lennon'], ['¿Mariachi más famoso?', 'vicente fernandez'],
+    // ── Videojuegos y tecnología ──
+    ['¿Fontanero bigotón?', 'mario'], ['¿Erizo azul rápido?', 'sonic'], ['¿Espada maestra de quién?', 'link'],
+    ['¿Princesa en otro castillo?', 'peach'], ['¿Creeper explota en qué juego?', 'minecraft'], ['¿Battle royale de la isla?', 'fortnite'],
+    ['¿Terror con cámaras y animatrónicos?', 'fnaf'], ['¿Jefe maestro de qué saga?', 'halo'], ['¿Brujo de pelo blanco Geralt?', 'witcher'],
+    ['¿Dios de la guerra calvo?', 'kratos'], ['¿Manzana mordida qué marca?', 'apple'], ['¿Sistema de ventanas?', 'windows'],
+    ['¿Buscador más famoso?', 'google'], ['¿Pajarito azul qué red?', 'twitter'], ['¿Videos qué plataforma roja?', 'youtube'],
+    ['¿Fotos y reels dónde?', 'instagram'], ['¿Fundó Microsoft?', 'gates'],
+    // ── Comida y literatura ──
+    ['¿Queso fundido en tortilla?', 'quesadilla'], ['¿Salsa de aguacate?', 'guacamole'], ['¿Arroz típico de España?', 'paella'],
+    ['¿Postre frío de verano?', 'helado'], ['¿Pan dulce de noviembre?', 'pan de muerto'], ['¿Caballero de los molinos?', 'quijote'],
+    ['¿Ballena blanca del libro?', 'moby dick'], ['¿Niño de otro planeta con bufanda?', 'principito'], ['¿Muñeco de madera mentirosillo?', 'pinocho'],
+    // ── Más capitales ──
+    ['¿Capital de Rumania?', 'bucarest'], ['¿Capital de Hungría?', 'budapest'], ['¿Capital de Chequia?', 'praga'],
+    ['¿Capital de Croacia?', 'zagreb'], ['¿Capital de Serbia?', 'belgrado'], ['¿Capital de Islandia?', 'reikiavik'],
+    ['¿Capital de Luxemburgo?', 'luxemburgo'], ['¿Capital de Mónaco?', 'monaco'], ['¿Capital de Eslovenia?', 'liubliana'],
+    ['¿Capital de Bosnia?', 'sarajevo'], ['¿Capital de Albania?', 'tirana'], ['¿Capital de Chipre?', 'nicosia'],
+    // ── Más ciencia ──
+    ['¿Metal precioso amarillo?', 'oro'], ['¿Símbolo químico de la plata?', 'ag'], ['¿Gas que usan las plantas?', 'co2'],
+    ['¿Ácido del limón?', 'citrico'], ['¿A cuántos grados hierve el agua?', '100'], ['¿A cuántos grados se congela?', '0'],
+    ['¿Instrumento que mide terremotos?', 'sismografo'], ['¿Ciencia que estudia las estrellas?', 'astronomia'], ['¿Ciencia de los insectos?', 'entomologia'],
+    ['¿Animal de sangre fría?', 'reptil'], ['¿Cría de la rana?', 'renacuajo'],
+    // ── Más anime ──
+    ['¿Ojos rojos copiadores?', 'sharingan'], ['¿Villano serpiente de Naruto?', 'orochimaru'], ['¿Rey de los piratas?', 'roger'],
+    ['¿Emperador de pelo rojo?', 'shanks'], ['¿Hombre pez de la tripulación?', 'jinbe'], ['¿Esposa de Goku?', 'milk'],
+    ['¿Hijo de Vegeta?', 'trunks'], ['¿Nombre real de L?', 'lawliet'], ['¿Quinto Hokage?', 'tsunade'],
+    ['¿Papá de Gon?', 'ging'], ['¿Chica de papel de Akatsuki?', 'konan'], ['¿Títere rubio explosivo?', 'deidara'],
+    // ── Misceláneo ──
+    ['¿Animal de la bandera mexicana?', 'aguila'], ['¿Serpiente de la bandera?', 'serpiente'], ['¿Día de Muertos cuándo?', '2 de noviembre'],
+    ['¿Piñata en qué fiesta?', 'posadas'], ['¿Rosca de qué mes?', 'enero'], ['¿Idioma oficial de México?', 'espanol'],
+    ['¿Moneda de EE.UU.?', 'dolar'], ['¿Moneda de Europa?', 'euro'], ['¿Manecillas tiene un reloj?', '3'],
+    ['¿Caras tiene una moneda?', '2'], ['¿Minutos dura un partido?', '90'], ['¿Días tiene febrero normal?', '28'],
+    ['¿Días tiene abril?', '30'], ['¿Semanas tiene un año?', '52'], ['¿Meses tienen 31 días?', '7'],
+    ['¿Horas tiene un día?', '24'], ['¿Minutos hay en 2 horas?', '120'], ['¿Dientes de leche tenemos?', '20'],
+    ['¿Sangre roja por qué metal?', 'hierro'], ['¿Vitamina que da el sol?', 'd'], ['¿Órgano que filtra la sangre?', 'rinon'],
+    ['¿Músculo del hipo?', 'diafragma'], ['¿Colores de la bandera mexicana?', 'verde blanco rojo'],
+    ['¿Animal que pone huevos y da leche?', 'ornitorrinco'], ['¿Pájaro símbolo de la paz?', 'paloma'], ['¿Flor símbolo de Holanda?', 'tulipan'], ['¿Fruta de la pasión?' , 'maracuya']
 ];
+
+const dueloUsadas = new Map(); // chatId -> Set de índices ya salidos (no repetir hasta agotar el banco)
+function elegirPreguntaDuelo(chatId) {
+    let usadas = dueloUsadas.get(chatId);
+    if (!usadas) { usadas = new Set(); dueloUsadas.set(chatId, usadas); }
+    if (usadas.size >= DUELO_Q.length) usadas.clear(); // banco agotado: se reinicia
+    let idx;
+    do { idx = Math.floor(Math.random() * DUELO_Q.length); } while (usadas.has(idx));
+    usadas.add(idx);
+    if (dueloUsadas.size > 200) dueloUsadas.delete(dueloUsadas.keys().next().value); // tope de chats
+    return DUELO_Q[idx];
+}
 
 function normDuelo(s) {
     return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, '').trim();
@@ -115,6 +276,7 @@ module.exports = {
     isMultiple: true,
     names: ['!pptpvp', '!c4', '!quizduelo', '!bingo'],
     category: 'Juegos',
+    elegirPreguntaDuelo, // expuesto para pruebas (no es comando)
     async execute(sock, chatId, msg, args, extras) {
         const { start, sender, isGroup, db, botState } = extras;
         const nom = (jid) => `@${(jid || '').split('@')[0]}`;
@@ -263,7 +425,7 @@ module.exports = {
             if (mencionados.length > 0 && (!juego)) {
                 const rival = mencionados[0];
                 if (rival === sender) return sock.sendMessage(chatId, { text: '😅 No puedes retarte a ti mismo.' }, { quoted: msg });
-                const [pregunta, respuesta] = DUELO_Q[Math.floor(Math.random() * DUELO_Q.length)];
+                const [pregunta, respuesta] = elegirPreguntaDuelo(chatId);
                 const sent = await sock.sendMessage(chatId, {
                     text: `🧠⚡ *¡DUELO DE PREGUNTAS!*\n━━━━━━━━━━━━━━\n${nom(sender)}  vs  ${nom(rival)}\n\n❓ *${pregunta}*\n\nEl primero en responder bien gana. ¡Rápido!\n💡 Responde CITANDO este mensaje con tu respuesta.`,
                     mentions: [sender, rival]
