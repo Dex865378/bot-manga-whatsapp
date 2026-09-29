@@ -19,17 +19,21 @@ async function handleGameResponse(sock, msg, context) {
     // comando. Aquí solo se refresca el TTL si habla un jugador y se deja
     // pasar al resto del pipeline.
     if (['ttt', 'pptpvp', 'c4', 'bingo'].includes(juego.tipo)) {
-        const js = [juego.jugadorX, juego.jugadorO, juego.retador, juego.oponente, juego.jugadorR, juego.jugadorA, juego.creador, ...Object.keys(juego.jugadores || {})];
-        if (js.includes(sender)) juego._ts = Date.now();
+        const norm = (j) => (j || '').split('@')[0].replace(/\D/g, '');
+        const js = [juego.jugadorX, juego.jugadorO, juego.retador, juego.oponente, juego.jugadorR, juego.jugadorA, juego.creador, ...Object.keys(juego.jugadores || {})].map(norm);
+        if (js.includes(norm(sender))) juego._ts = Date.now();
         return false;
     }
     const normDuelo = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, '').trim();
     // Duelo de preguntas: responden con texto normal (no comando). El
-    // primero de los dos en acertar gana; los errores se ignoran en
-    // silencio para no spamear el grupo.
+    // primero de los dos en acertar gana; si fallan se les avisa para que
+    // sigan intentando. Se compara por número normalizado porque el JID de
+    // la mención y el del remitente pueden venir en distinto formato.
     if (juego.tipo === 'quizduelo') {
         if (isCommand) return false;
-        if (sender !== juego.responder && sender !== juego.pareja) return false;
+        const normSender = (sender || '').split('@')[0].replace(/\D/g, '');
+        const esDuelista = [juego.responder, juego.pareja].some(j => j && (j.split('@')[0].replace(/\D/g, '') === normSender));
+        if (!esDuelista) return false;
         juego._ts = Date.now();
         if (normDuelo(txt) === normDuelo(juego.respuesta) && normDuelo(txt).length > 0) {
             const win = sender, lose = sender === juego.responder ? juego.pareja : juego.responder;
@@ -43,7 +47,9 @@ async function handleGameResponse(sock, msg, context) {
             }, { quoted: msg });
             return true;
         }
-        return true; // error ignorado en silencio (pero consume el mensaje)
+        const quien = `@${(sender || '').split('@')[0]}`;
+        await sock.sendMessage(chatId, { text: `❌ ${quien}, esa no es. ¡Sigue intentando!` }, { quoted: msg });
+        return true;
     }
     const esUsuarioDelJuego = (juego.responder === sender || juego.pareja === sender || juego.solicitante === sender || juego.tipo === 'ahorcado');
     const citaMensajeCorrecto = (quotedMsgId === juego.msgId);

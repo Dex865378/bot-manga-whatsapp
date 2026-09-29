@@ -331,6 +331,11 @@ setInterval(flushStatsBatch, 1 * 60 * 1000);
 process.on('SIGTERM', async () => { await flushStatsBatch(); process.exit(0); });
 process.on('SIGINT', async () => { await flushStatsBatch(); process.exit(0); });
 
+// Normaliza un JID a solo dígitos para comparar (el formato varía: el JID
+// de una mención puede venir como s.whatsapp.net y el del remitente como
+// LID, o viceversa; comparar el string crudo falla y el mensaje se pierde).
+function normJid(j) { return (j || '').split('@')[0].replace(/\D/g, ''); }
+
 // Helper para prevenir saturación (Cooldown)
 function verificarCooldown(userId, comando, ms = 3000) {
     const key = `${userId}-${comando}`;
@@ -1247,9 +1252,9 @@ async function startBot() {
             }
             const participaEnJuego = tieneMangaSesionUpsert || tieneNovelaSesionUpsert || (juegoActivo && (
                 juegoActivo.tipo === 'ahorcado' ||
-                juegoActivo.responder === sender ||
-                juegoActivo.pareja === sender ||
-                juegoActivo.solicitante === sender
+                (juegoActivo.responder && normJid(juegoActivo.responder) === normJid(sender)) ||
+                (juegoActivo.pareja && normJid(juegoActivo.pareja) === normJid(sender)) ||
+                (juegoActivo.solicitante && normJid(juegoActivo.solicitante) === normJid(sender))
             ));
             const isCommand = texto.trim().startsWith('!');
             const botBare = (sock.user?.id || '').split(':')[0];
@@ -1458,10 +1463,10 @@ async function procesarMensaje(sock, msg) {
         }
 
         const participaEnJuego = tieneMangaSesion || tieneNovelaSesion || (juegoActivo && (
-            juegoActivo.responder === sender ||
-            juegoActivo.pareja === sender ||
-            juegoActivo.solicitante === sender ||
-            juegoActivo.tipo === 'ahorcado'
+            juegoActivo.tipo === 'ahorcado' ||
+            (juegoActivo.responder && normJid(juegoActivo.responder) === normJid(sender)) ||
+            (juegoActivo.pareja && normJid(juegoActivo.pareja) === normJid(sender)) ||
+            (juegoActivo.solicitante && normJid(juegoActivo.solicitante) === normJid(sender))
         ));
 
         if (!isCommand && !participaEnJuego && !isGroup) return;
