@@ -259,28 +259,22 @@ module.exports = {
             if (modoProvincia) { lista = provincias; subtipo = 'provincia'; }
             else if (modoCapital) { lista = capitales; subtipo = 'capital'; }
 
-            const alphabet = "abcdefghijklmnopqrstuvwxyz".split("");
-            if (botState.triviaIndex === undefined) botState.triviaIndex = 0;
-
-            let filtered = [];
-            let item;
-            let attempts = 0;
-
-            while (filtered.length === 0 && attempts < 26) {
-                const currentLetter = alphabet[botState.triviaIndex % alphabet.length];
-                filtered = lista.filter(x => x.p.toLowerCase().startsWith(currentLetter));
-
-                if (filtered.length > 0) {
-                    item = filtered[Math.floor(Math.random() * filtered.length)];
-                    botState.triviaIndex++; // Avanzar para la próxima vez
-                } else {
-                    botState.triviaIndex++;
-                    attempts++;
+            // Mazo barajado por modo: garantiza que TODOS los países salgan
+            // exactamente una vez por ciclo (antes se recorría letra por letra
+            // con índice global, así que los países de letras con muchos
+            // países casi nunca salían y se sentía que 'nunca salen').
+            if (!botState.banderaDecks) botState.banderaDecks = {};
+            const deckKey = subtipo;
+            let deck = botState.banderaDecks[deckKey];
+            if (!deck || deck.length === 0) {
+                deck = lista.map((_, i) => i);
+                for (let i = deck.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [deck[i], deck[j]] = [deck[j], deck[i]];
                 }
+                botState.banderaDecks[deckKey] = deck;
             }
-
-            // Fallback si no hay nada con ninguna letra (raro)
-            if (!item) item = lista[Math.floor(Math.random() * lista.length)];
+            const item = lista[deck.pop()];
 
             // Temporizador de 1 minuto (60 segundos)
             const timeoutJuego = setTimeout(async () => {
