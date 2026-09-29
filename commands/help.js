@@ -368,31 +368,31 @@ const helpData = {
         cooldown: 'Ninguno'
     },
     '!trivia': {
-        desc: 'Inicia un juego de trivia/preguntas.',
-        usage: '!trivia',
-        ejemplo: '!trivia',
-        args: 'Ninguno',
+        desc: 'Inicia un juego de trivia/preguntas. Puedes apostar diky: si ganas te devuelve el doble, si pierdes se descuenta.',
+        usage: '!trivia [apuesta]',
+        ejemplo: '!trivia\n!trivia 200',
+        args: 'Apuesta (opcional)',
         cooldown: '30 segundos'
     },
     '!quiz': {
-        desc: 'Alias de !trivia - Inicia un quiz.',
-        usage: '!quiz',
-        ejemplo: '!quiz',
-        args: 'Ninguno',
+        desc: 'Alias de !trivia - Inicia un quiz. Puedes apostar diky: si ganas te devuelve el doble, si pierdes se descuenta.',
+        usage: '!quiz [apuesta]',
+        ejemplo: '!quiz\n!quiz 200',
+        args: 'Apuesta (opcional)',
         cooldown: '30 segundos'
     },
     '!quizanime': {
-        desc: 'Trivia específica de anime.',
-        usage: '!quizanime',
-        ejemplo: '!quizanime',
-        args: 'Ninguno',
+        desc: 'Trivia específica de anime. Puedes apostar diky: si ganas te devuelve el doble, si pierdes se descuenta.',
+        usage: '!quizanime [apuesta]',
+        ejemplo: '!quizanime\n!quizanime 200',
+        args: 'Apuesta (opcional)',
         cooldown: '30 segundos'
     },
     '!ahorcado': {
-        desc: 'Juega al ahorcado.',
-        usage: '!ahorcado [dificultad]',
-        ejemplo: '!ahorcado\n!ahorcado dificil',
-        args: 'Dificultad (opcional: facil, medio, dificil)',
+        desc: 'Juega al ahorcado. Puedes apostar diky: si ganas te devuelve el doble, si pierdes se descuenta.',
+        usage: '!ahorcado [apuesta]',
+        ejemplo: '!ahorcado\n!ahorcado 200',
+        args: 'Apuesta (opcional)',
         cooldown: '30 segundos'
     },
     '!slot': {

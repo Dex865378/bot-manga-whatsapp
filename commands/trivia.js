@@ -11,6 +11,29 @@ module.exports = {
 
         if (botState.juegos[chatId]) return sock.sendMessage(chatId, { text: '⚠️ Ya hay un juego activo en este grupo.' }, { quoted: msg });
 
+        // Apuesta opcional para juegos de conocimiento: se descuenta al inicio,
+        // si ganas te devuelve el DOBLE, si pierdes ya la perdiste.
+        const MAX_APUESTA_TRIVIA = 1000000;
+        async function cobrarApuestaTrivia(monto) {
+            if (!monto || monto <= 0) return { apuesta: 0 };
+            if (monto > MAX_APUESTA_TRIVIA) {
+                await sock.sendMessage(chatId, { text: `🚫 *Apuesta demasiado alta.*\nEl límite máximo es *1,000,000 diky* por partida.` }, { quoted: msg });
+                return null;
+            }
+            const bal = await db.obtenerBalance(sender);
+            if (bal < monto) {
+                await sock.sendMessage(chatId, { text: '💸 No tienes suficientes diky para esta apuesta.' }, { quoted: msg });
+                return null;
+            }
+            const ok = await db.deducirMonedas(sender, monto);
+            if (!ok) {
+                await sock.sendMessage(chatId, { text: '❌ Error al procesar la apuesta.' }, { quoted: msg });
+                return null;
+            }
+            return { apuesta: monto };
+        }
+        const lineaApuesta = (ap) => ap > 0 ? `\n💰 Apuesta: *${ap}* diky (Ganas x2)` : '';
+
         // !quiz (Cultura General)
         if (start === '!quiz' || start === '!trivia') {
             const quizes = [
@@ -76,8 +99,10 @@ module.exports = {
                 { q: '¿Cuántos huesos tiene la mano humana?', a: '27' }
             ];
             const quiz = quizes[Math.floor(Math.random() * quizes.length)];
-            botState.juegos[chatId] = { tipo: 'quiz', respuesta: quiz.a, vidas: 2, msgId: msg.key.id, responder: sender };
-            return sock.sendMessage(chatId, { text: `❓ *QUIZ DE CULTURA GENERAL* ❓\n\n*Pregunta:* ${quiz.q}\n\n❤️ Vidas: 2\n👉 _Responde a este mensaje con tu respuesta._` }, { quoted: msg });
+            const cobroQ = await cobrarApuestaTrivia(parseInt(args[0]) || 0);
+            if (!cobroQ) return;
+            botState.juegos[chatId] = { tipo: 'quiz', respuesta: quiz.a, vidas: 2, msgId: msg.key.id, responder: sender, apuesta: cobroQ.apuesta };
+            return sock.sendMessage(chatId, { text: `❓ *QUIZ DE CULTURA GENERAL* ❓\n\n*Pregunta:* ${quiz.q}\n\n❤️ Vidas: 2${lineaApuesta(cobroQ.apuesta)}\n👉 _Responde a este mensaje con tu respuesta._` }, { quoted: msg });
         }
 
         // !quizanime
@@ -140,8 +165,10 @@ module.exports = {
                 { q: '¿Cómo se llama la técnica insignia de Goku para atacar?', a: 'kamehameha' }
             ];
             const quiz = quizes[Math.floor(Math.random() * quizes.length)];
-            botState.juegos[chatId] = { tipo: 'quizanime', respuesta: quiz.a, vidas: 2, msgId: msg.key.id, responder: sender };
-            return sock.sendMessage(chatId, { text: `⛩️ *QUIZ ANIME* ⛩️\n\n*Pregunta:* ${quiz.q}\n\n❤️ Vidas: 2\n👉 _Responde a este mensaje con tu respuesta._` }, { quoted: msg });
+            const cobroQA = await cobrarApuestaTrivia(parseInt(args[0]) || 0);
+            if (!cobroQA) return;
+            botState.juegos[chatId] = { tipo: 'quizanime', respuesta: quiz.a, vidas: 2, msgId: msg.key.id, responder: sender, apuesta: cobroQA.apuesta };
+            return sock.sendMessage(chatId, { text: `⛩️ *QUIZ ANIME* ⛩️\n\n*Pregunta:* ${quiz.q}\n\n❤️ Vidas: 2${lineaApuesta(cobroQA.apuesta)}\n👉 _Responde a este mensaje con tu respuesta._` }, { quoted: msg });
         }
 
         // !adivina
@@ -157,8 +184,10 @@ module.exports = {
             ];
             const p = palabras[Math.floor(Math.random() * palabras.length)];
             const des = p.split('').sort(() => 0.5 - Math.random()).join('');
-            botState.juegos[chatId] = { tipo: 'adivina', palabra: p, vidas: 2, msgId: msg.key.id, responder: sender };
-            return sock.sendMessage(chatId, { text: `🧩 *ADIVINA LA PALABRA* 🧩\n\nPalabra desordenada: *${des.toUpperCase()}*\n\n❤️ Vidas: 2\n👉 _Escribe la palabra correcta._` }, { quoted: msg });
+            const cobroA = await cobrarApuestaTrivia(parseInt(args[0]) || 0);
+            if (!cobroA) return;
+            botState.juegos[chatId] = { tipo: 'adivina', palabra: p, vidas: 2, msgId: msg.key.id, responder: sender, apuesta: cobroA.apuesta };
+            return sock.sendMessage(chatId, { text: `🧩 *ADIVINA LA PALABRA* 🧩\n\nPalabra desordenada: *${des.toUpperCase()}*\n\n❤️ Vidas: 2${lineaApuesta(cobroA.apuesta)}\n👉 _Escribe la palabra correcta._` }, { quoted: msg });
         }
 
         // !matematicas (1:facil, 2:medio, 3:dificil, 4:extremo, 5:ingenieria)
@@ -197,8 +226,12 @@ module.exports = {
                     break;
             }
 
-            botState.juegos[chatId] = { tipo: 'matematicas', resultado: res, vidas: 2, msgId: msg.key.id, responder: sender, premio, xp };
-            return sock.sendMessage(chatId, { text: `🧮 **DESAFÍO DIKY: ${nivel.toUpperCase()}** 🧮\n━━━━━━━━━━━━━━\n¿Cuánto es: **${qText}**?\n\n💰 Premio: *${premio}* diky\n✨ XP: *${xp}*\n❤️ Vidas: 2\n━━━━━━━━━━━━━━\n👉 _Responde con el número exacto._` }, { quoted: msg });
+            botState.juegos[chatId] = { tipo: 'matematicas', resultado: res, vidas: 2, msgId: msg.key.id, responder: sender, premio, xp, apuesta: 0 };
+            // Apuesta opcional como 2do argumento: !matematicas 3 500
+            const cobroM = await cobrarApuestaTrivia(parseInt(args[1]) || 0);
+            if (!cobroM) return;
+            botState.juegos[chatId].apuesta = cobroM.apuesta;
+            return sock.sendMessage(chatId, { text: `🧮 **DESAFÍO DIKY: ${nivel.toUpperCase()}** 🧮\n━━━━━━━━━━━━━━\n¿Cuánto es: **${qText}**?\n\n💰 Premio: *${premio}* diky\n✨ XP: *${xp}*\n❤️ Vidas: 2${lineaApuesta(cobroM.apuesta)}\n━━━━━━━━━━━━━━\n👉 _Responde con el número exacto._` }, { quoted: msg });
         }
 
         // !bandera [pais/provincia/capitales] [apuesta]
@@ -272,7 +305,7 @@ module.exports = {
 
             let m = `🗺️ **ADIVINA LA ${subtipo.toUpperCase()}** 🗺️\n━━━━━━━━━━━━━━\n`;
             m += `${labels[subtipo]}: ${item.f}\n💡 Pista: *${item.h}*\n`;
-            if (apuesta > 0) m += `💰 Apuesta: *${apuesta}* diky (Ganas x1.5)\n`;
+            if (apuesta > 0) m += `💰 Apuesta: *${apuesta}* diky (Ganas x2)\n`;
             m += `━━━━━━━━━━━━━━\n⏳ Tiempo: *1 minuto*\n👉 _¿Cómo se llama esta ${subtipo}?_`;
 
             return sock.sendMessage(chatId, { text: m }, { quoted: msg });
@@ -291,8 +324,10 @@ module.exports = {
             ];
             const p = palabras[Math.floor(Math.random() * palabras.length)];
             const oculto = '_'.repeat(p.length);
-            botState.juegos[chatId] = { tipo: 'ahorcado', palabra: p, oculto, vidas: 4, msgId: msg.key.id, responder: sender };
-            return sock.sendMessage(chatId, { text: `🪑 *AHORCADO DIKY* 🪑\n\nPalabra: \`${oculto}\` (${p.length} letras)\n\n❤️ Vidas: 4\n👉 _Escribe una letra o la palabra completa._` }, { quoted: msg });
+            const cobroH = await cobrarApuestaTrivia(parseInt(args[0]) || 0);
+            if (!cobroH) return;
+            botState.juegos[chatId] = { tipo: 'ahorcado', palabra: p, oculto, vidas: 4, msgId: msg.key.id, responder: sender, apuesta: cobroH.apuesta };
+            return sock.sendMessage(chatId, { text: `🪑 *AHORCADO DIKY* 🪑\n\nPalabra: \`${oculto}\` (${p.length} letras)\n\n❤️ Vidas: 4${lineaApuesta(cobroH.apuesta)}\n👉 _Escribe una letra o la palabra completa._` }, { quoted: msg });
         }
     }
 };
