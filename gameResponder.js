@@ -15,12 +15,35 @@ async function handleGameResponse(sock, msg, context) {
         delete botState.juegos[chatId];
         return false;
     }
-    // Tres en raya: todo se juega con el comando !ttt (reto/turnos por
-    // mensaje de comando). Aquí solo se refresca el TTL si habla un jugador
-    // y se deja pasar al resto del pipeline.
-    if (juego.tipo === 'ttt') {
-        if (sender === juego.jugadorX || sender === juego.jugadorO) juego._ts = Date.now();
+    // Juegos por comando (!ttt, !pptpvp, !c4, !bingo): todo se juega con el
+    // comando. Aquí solo se refresca el TTL si habla un jugador y se deja
+    // pasar al resto del pipeline.
+    if (['ttt', 'pptpvp', 'c4', 'bingo'].includes(juego.tipo)) {
+        const js = [juego.jugadorX, juego.jugadorO, juego.retador, juego.oponente, juego.jugadorR, juego.jugadorA, juego.creador, ...Object.keys(juego.jugadores || {})];
+        if (js.includes(sender)) juego._ts = Date.now();
         return false;
+    }
+    const normDuelo = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, '').trim();
+    // Duelo de preguntas: responden con texto normal (no comando). El
+    // primero de los dos en acertar gana; los errores se ignoran en
+    // silencio para no spamear el grupo.
+    if (juego.tipo === 'quizduelo') {
+        if (isCommand) return false;
+        if (sender !== juego.responder && sender !== juego.pareja) return false;
+        juego._ts = Date.now();
+        if (normDuelo(txt) === normDuelo(juego.respuesta) && normDuelo(txt).length > 0) {
+            const win = sender, lose = sender === juego.responder ? juego.pareja : juego.responder;
+            delete botState.juegos[chatId];
+            const subio = await db.sumarXP(win, 20).catch(() => false);
+            await db.sumarMonedas(win, 40).catch(() => {});
+            const nom = (jid) => `@${(jid || '').split('@')[0]}`;
+            await sock.sendMessage(chatId, {
+                text: `🧠⚡ *¡${nom(win)} RESPONDIÓ PRIMERO!*\n━━━━━━━━━━━━━━\n❓ ${juego.pregunta}\n✅ Respuesta: *${juego.respuesta}*\n\n🏆 ${nom(win)} gana: 💰 +40 diky | +20 XP${subio ? '\n🆙 ¡SUBIÓ DE NIVEL!' : ''}\n😅 ${nom(lose)}, más suerte la próxima.`,
+                mentions: [win, lose]
+            }, { quoted: msg });
+            return true;
+        }
+        return true; // error ignorado en silencio (pero consume el mensaje)
     }
     const esUsuarioDelJuego = (juego.responder === sender || juego.pareja === sender || juego.solicitante === sender || juego.tipo === 'ahorcado');
     const citaMensajeCorrecto = (quotedMsgId === juego.msgId);

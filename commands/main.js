@@ -284,6 +284,14 @@ module.exports = {
             mText += `└ _Carreras del grupo._\n`;
             mText += `• *!ttt @usuario*\n`;
             mText += `└ _Tres en raya contra alguien._\n`;
+            mText += `• *!pptpvp @usuario*\n`;
+            mText += `└ _Piedra-papel-tijera con mapas secretos._\n`;
+            mText += `• *!c4 @usuario*\n`;
+            mText += `└ _Conecta 4 contra alguien._\n`;
+            mText += `• *!quizduelo @usuario*\n`;
+            mText += `└ _Duelo de preguntas, el más rápido gana._\n`;
+            mText += `• *!bingo*\n`;
+            mText += `└ _Bingo grupal con cartones._\n`;
             mText += `• *!emojimix 😂❤️*\n`;
             mText += `└ _Sticker mezclando 2 emojis._\n\n`;
 

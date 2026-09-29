@@ -234,6 +234,34 @@ const helpData = {
         args: 'Mención para retar, número de casilla para jugar',
         cooldown: 'Ninguno'
     },
+    '!pptpvp': {
+        desc: 'Piedra-papel-tijera contra otra persona con mapas secretos revueltos.',
+        usage: '!pptpvp @usuario\n!pptpvp <1-3>',
+        ejemplo: '!pptpvp @juan\n!pptpvp 2',
+        args: 'Mención para retar, número de tu mapa secreto para elegir',
+        cooldown: 'Ninguno'
+    },
+    '!c4': {
+        desc: 'Conecta 4 contra otro miembro del grupo.',
+        usage: '!c4 @usuario\n!c4 si / !c4 no\n!c4 <1-7>',
+        ejemplo: '!c4 @juan\n!c4 4',
+        args: 'Mención para retar, número de columna para jugar',
+        cooldown: 'Ninguno'
+    },
+    '!quizduelo': {
+        desc: 'Duelo de preguntas para dos, el primero en responder gana.',
+        usage: '!quizduelo @usuario',
+        ejemplo: '!quizduelo @juan',
+        args: 'Mención del oponente (requerido)',
+        cooldown: 'Ninguno'
+    },
+    '!bingo': {
+        desc: 'Bingo grupal con cartones de 12 números.',
+        usage: '!bingo\n!bingo yo\n!bingo empezar\n!bingo cantar\n!bingo carton',
+        ejemplo: '!bingo\n!bingo yo',
+        args: 'Subcomando según la fase del juego',
+        cooldown: 'Ninguno'
+    },
     '!emojimix': {
         desc: 'Mezcla 2 emojis en un sticker (cocina de emojis).',
         usage: '!emojimix <emoji1><emoji2>',
