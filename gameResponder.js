@@ -15,6 +15,13 @@ async function handleGameResponse(sock, msg, context) {
         delete botState.juegos[chatId];
         return false;
     }
+    // Tres en raya: todo se juega con el comando !ttt (reto/turnos por
+    // mensaje de comando). Aquí solo se refresca el TTL si habla un jugador
+    // y se deja pasar al resto del pipeline.
+    if (juego.tipo === 'ttt') {
+        if (sender === juego.jugadorX || sender === juego.jugadorO) juego._ts = Date.now();
+        return false;
+    }
     const esUsuarioDelJuego = (juego.responder === sender || juego.pareja === sender || juego.solicitante === sender || juego.tipo === 'ahorcado');
     const citaMensajeCorrecto = (quotedMsgId === juego.msgId);
     const esDueño = (juego.responder === sender || juego.pareja === sender || juego.solicitante === sender);

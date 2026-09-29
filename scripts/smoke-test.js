@@ -19,7 +19,7 @@ function check(cond, msg) {
 const handler = require(path.join(ROOT, 'commandHandler.js'));
 handler.loadCommands();
 const names = [...handler.commands.keys()];
-check(names.length >= 168, `Comandos registrados: ${names.length} (esperado >= 168)`);
+check(names.length >= 182, `Comandos registrados: ${names.length} (esperado >= 182)`);
 check(!names.includes('__help_data__'), 'Sin entrada basura __help_data__ en el Map');
 check(!names.some(n => n.startsWith('__')), 'Sin comandos internos __* en el Map');
 
@@ -46,7 +46,8 @@ check(inesperadas.length === 0, `Sin colisiones inesperadas${inesperadas.length 
 // 3. Comandos críticos existen
 for (const c of ['!ping', '!menu', '!leer', '!manga', '!modomanga', '!recomanga', '!parar',
     '!setmanga', '!sincronizar', '!reconovela', '!comprar_mascota', '!rechazar',
-    '!broadcast', '!anuncio', '!news', '!aceptar_lucha', '!rechazar_lucha', '!waifus', '!setdecir']) {
+    '!broadcast', '!anuncio', '!news', '!aceptar_lucha', '!rechazar_lucha', '!waifus', '!setdecir',
+    '!emojimix', '!ttt', '!warn', '!unwarn', '!warns', '!afk', '!encuesta', '!topactivos', '!recordar', '!recordatorios']) {
     check(handler.commands.has(c), `Existe ${c}`);
 }
 

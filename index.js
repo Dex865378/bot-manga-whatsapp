@@ -274,6 +274,16 @@ function batchActualizarRacha(userId) {
     statsBatch.dirty = true;
 }
 
+// --- Actividad por grupo (para !topactivos): conteo en RAM + flush en lote.
+// Mapa acotado a 5000 entradas (chat::user) para no crecer sin control.
+const actividadBatch = new Map();
+function batchActividad(chatId, userId) {
+    const k = `${chatId}::${userId}`;
+    actividadBatch.set(k, (actividadBatch.get(k) || 0) + 1);
+    if (actividadBatch.size > 5000) actividadBatch.delete(actividadBatch.keys().next().value);
+    statsBatch.dirty = true;
+}
+
 async function flushStatsBatch() {
     if (!statsBatch.dirty) return;
     const comandosCopy = new Map(statsBatch.comandos);
@@ -296,6 +306,19 @@ async function flushStatsBatch() {
     const rachas = [...rachasCopy];
     for (let i = 0; i < rachas.length; i += 5) {
         await Promise.allSettled(rachas.slice(i, i + 5).map((userId) => db.actualizarRacha(userId)));
+    }
+
+    // Flush actividad (!topactivos): insert/upsert directo, de 20 en 20
+    if (actividadBatch.size > 0) {
+        const acts = [...actividadBatch.entries()];
+        actividadBatch.clear();
+        for (let i = 0; i < acts.length; i += 20) {
+            const lote = acts.slice(i, i + 20).map(([k, n]) => {
+                const sep = k.lastIndexOf('::');
+                return [k.slice(0, sep), k.slice(sep + 2), n];
+            });
+            await db.sumarActividadBatch(lote).catch(() => {});
+        }
     }
 
     if (comandosCopy.size > 0) console.log(`📊 [Batch] Sincronizados ${comandosCopy.size} usuarios, ${rachasCopy.size} rachas.`);
@@ -453,6 +476,7 @@ const botState = {
     juegos: {},       // Para trivias y ahorcado (se limpian al terminar)
     duelos: {},       // Retos de duelo pendientes { targetJid: { retador, apuesta, expira } }
     propuestasBodas: {}, // Propuestas de matrimonio pendientes { targetJid: { de, expira } }
+    afkCache: new Map(), // userId → { motivo, ts } (espejo RAM de la tabla afk, se pierde en reinicio)
     modoAdmin: {},    // Grupos con modo solo-admins activo
     
     // 🧠 Cachés LRU con límites desde CONFIG (anti memory-leak)
@@ -971,6 +995,22 @@ async function startBot() {
                 } catch (e) { console.error('Error en intervalo subastas:', e); }
             }, 60000);
 
+            // --- RECORDATORIOS (!recordar): revisa vencidos cada 30s ---
+            // Liviano: 1 query con LIMIT 10, solo envía los vencidos.
+            onceInterval('recordatorios', async () => {
+                try {
+                    if (!db.isConnected()) return;
+                    const vencidos = await db.recordatoriosVencidos(Date.now(), 10);
+                    for (const r of vencidos) {
+                        if (!r.chat_id) continue;
+                        await sock.sendMessage(r.chat_id, {
+                            text: `⏰ *¡RECORDATORIO!*\n━━━━━━━━━━━━━━\n@${(r.user_id || '').split('@')[0]}: ${r.texto}`,
+                            mentions: r.user_id ? [r.user_id] : []
+                        }).catch(() => { });
+                    }
+                } catch (e) { console.error('Error en intervalo recordatorios:', e.message); }
+            }, 30000);
+
             // Sincronización automática de mangas (Silenciosa)
             const local = cargarMangasLocal();
             if (local.length > 0 && db.isConnected()) {
@@ -1342,6 +1382,45 @@ async function procesarMensaje(sock, msg) {
         const isCommand = cmd.startsWith('!');
         const juegoActivo = botState.juegos[chatId];
 
+        // --- AFK + ACTIVIDAD (solo grupos, sin costo por mensaje) ---
+        if (isGroup) {
+            // 1. Quien escribe deja de estar AFK (aviso de vuelta, sin bloquear)
+            if (botState.afkCache.has(sender)) {
+                botState.afkCache.delete(sender);
+                db.clearAFK(sender).catch(() => {});
+                sock.sendMessage(chatId, {
+                    text: `👋 @${sender.split('@')[0]} volvió. ¡Ya no está AFK!`,
+                    mentions: [sender]
+                }).catch(() => {});
+            }
+            // 2. Conteo para !topactivos (se guarda en Turso con el batch de 1 min)
+            batchActividad(chatId, sender);
+            // 3. Si mencionan a alguien AFK, avisar con su motivo
+            const mencs = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid
+                || msg.message?.imageMessage?.contextInfo?.mentionedJid || [];
+            const ausentes = mencs.filter(j => j && j !== sender && botState.afkCache.has(j));
+            if (ausentes.length > 0) {
+                (async () => {
+                    const lineas = [];
+                    for (const j of ausentes.slice(0, 3)) {
+                        const mem = botState.afkCache.get(j);
+                        let motivo = mem?.motivo, ts = mem?.ts;
+                        if (!motivo) {
+                            const row = await db.getAFK(j).catch(() => null);
+                            if (!row) { botState.afkCache.delete(j); continue; }
+                            motivo = row.motivo; ts = row.ts;
+                            botState.afkCache.set(j, { motivo, ts });
+                        }
+                        const mins = Math.max(1, Math.round((Date.now() - (ts || Date.now())) / 60000));
+                        lineas.push(`💤 @${j.split('@')[0]} está AFK (hace ~${mins} min).\n📌 ${motivo || 'sin motivo'}`);
+                    }
+                    if (lineas.length > 0) {
+                        await sock.sendMessage(chatId, { text: lineas.join('\n\n'), mentions: ausentes });
+                    }
+                })().catch(() => {});
+            }
+        }
+
         // --- REGISTRO INTELIGENTE DE NOMBRE (WhatsApp Nickname) ---
         if (pushName && isCommand) {
             db.obtenerUsuario(sender)
@@ -1496,6 +1575,7 @@ async function procesarMensaje(sock, msg) {
                 '!dinosaurios', '!aves', '!dragones', '!acuaticos', '!salvajes', '!miticos',
                 '!parque', '!principal', '!lucha', '!escudo',
                 '!aceptar_lucha', '!rechazar_lucha', '!comprar_mascota', '!rechazar',
+                '!emojimix', '!ttt', '!warn', '!unwarn', '!warns', '!afk', '!encuesta', '!topactivos', '!recordar', '!recordatorios',
             ];
 
             if (FAST_COMMANDS.has(start) && (handler.commands.has(start) || comandosValidos.includes(start))) {

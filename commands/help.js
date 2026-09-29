@@ -148,6 +148,62 @@ const helpData = {
         args: 'Tipo de ranking (opcional)',
         cooldown: 'Ninguno'
     },
+    '!topactivos': {
+        desc: 'Ranking de los que más hablan en este grupo.',
+        usage: '!topactivos',
+        ejemplo: '!topactivos',
+        args: 'Ninguno',
+        cooldown: 'Ninguno'
+    },
+    '!warn': {
+        desc: 'Advertir a un miembro (admin). A las 3 es expulsado.',
+        usage: '!warn @usuario [motivo]',
+        ejemplo: '!warn @juan spam',
+        args: 'Mención (requerida), motivo (opcional)',
+        cooldown: 'Ninguno'
+    },
+    '!unwarn': {
+        desc: 'Quitar las advertencias de un miembro (admin).',
+        usage: '!unwarn @usuario',
+        ejemplo: '!unwarn @juan',
+        args: 'Mención (requerida)',
+        cooldown: 'Ninguno'
+    },
+    '!warns': {
+        desc: 'Ver cuántas advertencias tiene alguien.',
+        usage: '!warns [@usuario]',
+        ejemplo: '!warns @juan',
+        args: 'Mención (opcional, sin ella ves las tuyas)',
+        cooldown: 'Ninguno'
+    },
+    '!afk': {
+        desc: 'Marcarte como ausente. Se quita solo al volver a escribir.',
+        usage: '!afk [motivo]',
+        ejemplo: '!afk almorzando',
+        args: 'Motivo (opcional)',
+        cooldown: 'Ninguno'
+    },
+    '!encuesta': {
+        desc: 'Crear una encuesta nativa de WhatsApp en el grupo.',
+        usage: '!encuesta <pregunta> | <opción1> | <opción2> [| ...]',
+        ejemplo: '!encuesta ¿Película? | Terror | Comedia',
+        args: 'Pregunta y 2-12 opciones separadas por |',
+        cooldown: 'Ninguno'
+    },
+    '!recordar': {
+        desc: 'El bot te avisa con un texto en el futuro.',
+        usage: '!recordar <tiempo> <texto>',
+        ejemplo: '!recordar 2h Tomar la medicina\n!recordar 10m Llamar a mamá',
+        args: 'Tiempo: número + s/m/h/d (máx 720). Máx 10 por usuario.',
+        cooldown: 'Ninguno'
+    },
+    '!recordatorios': {
+        desc: 'Ver o borrar tus recordatorios de este chat.',
+        usage: '!recordatorios\n!recordatorios borrar <número>',
+        ejemplo: '!recordatorios\n!recordatorios borrar 3',
+        args: 'Ninguno / número del recordatorio',
+        cooldown: 'Ninguno'
+    },
     '!tienda': {
         desc: 'Muestra la tienda de items.',
         usage: '!tienda',
@@ -171,6 +227,20 @@ const helpData = {
     },
     
     // JUEGOS
+    '!ttt': {
+        desc: 'Tres en raya contra otro miembro del grupo.',
+        usage: '!ttt @usuario\n!ttt si / !ttt no\n!ttt <1-9>',
+        ejemplo: '!ttt @juan\n!ttt 5',
+        args: 'Mención para retar, número de casilla para jugar',
+        cooldown: 'Ninguno'
+    },
+    '!emojimix': {
+        desc: 'Mezcla 2 emojis en un sticker (cocina de emojis).',
+        usage: '!emojimix <emoji1><emoji2>',
+        ejemplo: '!emojimix 😂❤️',
+        args: '2 emojis (requerido)',
+        cooldown: 'Ninguno'
+    },
     '!duelo': {
         desc: 'Reta a otro usuario a un duelo.',
         usage: '!duelo @usuario [apuesta]',

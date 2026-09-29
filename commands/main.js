@@ -171,7 +171,19 @@ module.exports = {
             mText += `• *!reglas*\n`;
             mText += `└ _Ver o configurar reglas del grupo._\n`;
             mText += `• *!sorteo*\n`;
-            mText += `└ _Elegir un miembro random del grupo._\n\n`;
+            mText += `└ _Elegir un miembro random del grupo._\n`;
+            mText += `• *!encuesta <preg> | <op1> | <op2>*\n`;
+            mText += `└ _Crear encuesta de WhatsApp._\n`;
+            mText += `• *!warn @usuario [motivo]*\n`;
+            mText += `└ _Advertir (3 = expulsión)._\n`;
+            mText += `• *!unwarn / !warns @usuario*\n`;
+            mText += `└ _Quitar o ver advertencias._\n`;
+            mText += `• *!afk [motivo]*\n`;
+            mText += `└ _Marcarse ausente._\n`;
+            mText += `• *!topactivos*\n`;
+            mText += `└ _Ranking de los que más hablan._\n`;
+            mText += `• *!recordar <tiempo> <texto>*\n`;
+            mText += `└ _Aviso futuro (s/m/h/d)._\n\n`;
 
             mText += `👤 *[ PERFIL Y SOCIAL ]*\n`;
             mText += `• *!perfil*\n`;
@@ -269,7 +281,11 @@ module.exports = {
             mText += `• *!ahorcado*\n`;
             mText += `└ _Juego del ahorcado._\n`;
             mText += `• *!carrera / !suelten*\n`;
-            mText += `└ _Carreras del grupo._\n\n`;
+            mText += `└ _Carreras del grupo._\n`;
+            mText += `• *!ttt @usuario*\n`;
+            mText += `└ _Tres en raya contra alguien._\n`;
+            mText += `• *!emojimix 😂❤️*\n`;
+            mText += `└ _Sticker mezclando 2 emojis._\n\n`;
 
             mText += `🎬 *[ ANIME Y MEDIA ]*\n`;
             mText += `• *!manga <nombre> / !leer*\n`;

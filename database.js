@@ -43,6 +43,10 @@ async function crearTablas() {
         `CREATE TABLE IF NOT EXISTS grupos_despedida (chat_id TEXT PRIMARY KEY, mensaje TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
         `CREATE TABLE IF NOT EXISTS portadas (clave TEXT PRIMARY KEY, imagen BLOB, mime TEXT DEFAULT 'image/jpeg', updated_at BIGINT)`,
         `CREATE TABLE IF NOT EXISTS portadas_grupo (chat_id TEXT NOT NULL, clave TEXT NOT NULL, imagen BLOB, mime TEXT DEFAULT 'image/jpeg', updated_at BIGINT, PRIMARY KEY (chat_id, clave))`,
+        `CREATE TABLE IF NOT EXISTS warns (chat_id TEXT NOT NULL, user_id TEXT NOT NULL, count INTEGER DEFAULT 0, updated_at BIGINT, PRIMARY KEY (chat_id, user_id))`,
+        `CREATE TABLE IF NOT EXISTS afk (user_id TEXT PRIMARY KEY, motivo TEXT DEFAULT '', ts BIGINT)`,
+        `CREATE TABLE IF NOT EXISTS actividad (chat_id TEXT NOT NULL, user_id TEXT NOT NULL, total INTEGER DEFAULT 0, PRIMARY KEY (chat_id, user_id))`,
+        `CREATE TABLE IF NOT EXISTS recordatorios (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT, user_id TEXT, texto TEXT, execute_at BIGINT, creado BIGINT)`,
         `CREATE TABLE IF NOT EXISTS usuarios (
             user_id TEXT PRIMARY KEY, nombre TEXT, edad INTEGER, nacimiento TEXT, altura TEXT, descripcion TEXT, superpoder TEXT, 
             manga_fav TEXT, anime_fav TEXT, waifu_husbando TEXT, pareja TEXT, titulo TEXT, 
@@ -756,6 +760,121 @@ async function obtenerTopNivel(limit = 10) {
     try { const rs = await dbClient.execute({ sql: `SELECT user_id, nombre, nombre_wa, nivel, xp FROM usuarios ORDER BY nivel DESC, xp DESC LIMIT ?`, args: [limit] }); return rs.rows; } catch (e) { return []; }
 }
 
+// --- Warns (advertencias por grupo, 3 = expulsión) ---
+async function addWarn(chatId, userId) {
+    if (!connected) await init();
+    try {
+        const cur = await dbClient.execute({ sql: 'SELECT count FROM warns WHERE chat_id = ? AND user_id = ?', args: [chatId, userId] });
+        const n = ((cur.rows[0]?.count) || 0) + 1;
+        await dbClient.execute({
+            sql: 'INSERT INTO warns (chat_id, user_id, count, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(chat_id, user_id) DO UPDATE SET count = ?, updated_at = ?',
+            args: [chatId, userId, n, Date.now(), n, Date.now()]
+        });
+        return n;
+    } catch (e) { return 0; }
+}
+
+async function getWarns(chatId, userId) {
+    if (!connected) await init();
+    try {
+        const rs = await dbClient.execute({ sql: 'SELECT count FROM warns WHERE chat_id = ? AND user_id = ?', args: [chatId, userId] });
+        return (rs.rows[0]?.count) || 0;
+    } catch (e) { return 0; }
+}
+
+async function resetWarns(chatId, userId) {
+    if (!connected) await init();
+    try { await dbClient.execute({ sql: 'DELETE FROM warns WHERE chat_id = ? AND user_id = ?', args: [chatId, userId] }); } catch (e) {}
+}
+
+// --- AFK ---
+async function setAFK(userId, motivo) {
+    if (!connected) await init();
+    try {
+        await dbClient.execute({
+            sql: 'INSERT INTO afk (user_id, motivo, ts) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET motivo = ?, ts = ?',
+            args: [userId, motivo || '', Date.now(), motivo || '', Date.now()]
+        });
+        return true;
+    } catch (e) { return false; }
+}
+
+async function getAFK(userId) {
+    if (!connected) await init();
+    try {
+        const rs = await dbClient.execute({ sql: 'SELECT motivo, ts FROM afk WHERE user_id = ?', args: [userId] });
+        return rs.rows[0] || null;
+    } catch (e) { return null; }
+}
+
+async function clearAFK(userId) {
+    if (!connected) await init();
+    try { await dbClient.execute({ sql: 'DELETE FROM afk WHERE user_id = ?', args: [userId] }); } catch (e) {}
+}
+
+// --- Actividad (ranking de más activos por grupo, con flush en lote) ---
+async function sumarActividadBatch(items) {
+    if (!connected || !items || items.length === 0) return;
+    try {
+        for (const [chatId, userId, n] of items) {
+            await dbClient.execute({
+                sql: 'INSERT INTO actividad (chat_id, user_id, total) VALUES (?, ?, ?) ON CONFLICT(chat_id, user_id) DO UPDATE SET total = actividad.total + ?',
+                args: [chatId, userId, n, n]
+            });
+        }
+    } catch (e) {}
+}
+
+async function topActivos(chatId, limit = 10) {
+    if (!connected) await init();
+    try {
+        const rs = await dbClient.execute({ sql: 'SELECT user_id, total FROM actividad WHERE chat_id = ? ORDER BY total DESC LIMIT ?', args: [chatId, limit] });
+        return rs.rows;
+    } catch (e) { return []; }
+}
+
+// --- Recordatorios ---
+async function crearRecordatorio(chatId, userId, texto, executeAt) {
+    if (!connected) await init();
+    try {
+        const c = await dbClient.execute({ sql: 'SELECT COUNT(*) AS n FROM recordatorios WHERE user_id = ?', args: [userId] });
+        if ((c.rows[0]?.n || 0) >= 10) return { ok: false, error: 'límite' };
+        await dbClient.execute({
+            sql: 'INSERT INTO recordatorios (chat_id, user_id, texto, execute_at, creado) VALUES (?, ?, ?, ?, ?)',
+            args: [chatId, userId, texto, executeAt, Date.now()]
+        });
+        return { ok: true };
+    } catch (e) { return { ok: false, error: e.message }; }
+}
+
+async function misRecordatorios(chatId, userId) {
+    if (!connected) await init();
+    try {
+        const rs = await dbClient.execute({ sql: 'SELECT id, texto, execute_at FROM recordatorios WHERE chat_id = ? AND user_id = ? ORDER BY execute_at LIMIT 20', args: [chatId, userId] });
+        return rs.rows;
+    } catch (e) { return []; }
+}
+
+async function borrarRecordatorio(id, userId) {
+    if (!connected) await init();
+    try {
+        const rs = await dbClient.execute({ sql: 'DELETE FROM recordatorios WHERE id = ? AND user_id = ?', args: [id, userId] });
+        return (rs.rowsAffected || 0) > 0;
+    } catch (e) { return false; }
+}
+
+async function recordatoriosVencidos(ahora, limit = 10) {
+    if (!connected) return [];
+    try {
+        const rs = await dbClient.execute({ sql: 'SELECT id, chat_id, user_id, texto FROM recordatorios WHERE execute_at <= ? ORDER BY execute_at LIMIT ?', args: [ahora, limit] });
+        const rows = rs.rows || [];
+        for (const r of rows) {
+            await dbClient.execute({ sql: 'DELETE FROM recordatorios WHERE id = ?', args: [r.id] });
+        }
+        return rows;
+    } catch (e) { return []; }
+}
+
 async function activarAntiSpam(chatId) {
     if (!connected) await init();
     try {
@@ -1025,6 +1144,10 @@ module.exports = {
     registrarVictoriaDuelo, registrarDerrotaDuelo, registrarComando, actualizarRacha,
     agregarItem, removerItem,
     sumarKarma, obtenerTopMonedas, obtenerTopNivel, registrarHistorial,
+    addWarn, getWarns, resetWarns,
+    setAFK, getAFK, clearAFK,
+    sumarActividadBatch, topActivos,
+    crearRecordatorio, misRecordatorios, borrarRecordatorio, recordatoriosVencidos,
     crearSubasta, obtenerSubastasActivas, pujarSubasta, finalizarSubasta, obtenerSubasta,
     activarAntiSpam, desactivarAntiSpam, activarModoAdmin, desactivarModoAdmin,
     activarModoManga, desactivarModoManga,
