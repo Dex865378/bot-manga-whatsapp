@@ -13,11 +13,12 @@ module.exports = {
 
         // Apuesta opcional para juegos de conocimiento: se descuenta al inicio,
         // si ganas te devuelve el DOBLE, si pierdes ya la perdiste.
-        const MAX_APUESTA_TRIVIA = 1000000;
+        // Tope 500K de apuesta = nadie recibe más de 1M por partida.
+        const MAX_APUESTA_TRIVIA = 500000;
         async function cobrarApuestaTrivia(monto) {
             if (!monto || monto <= 0) return { apuesta: 0 };
             if (monto > MAX_APUESTA_TRIVIA) {
-                await sock.sendMessage(chatId, { text: `🚫 *Apuesta demasiado alta.*\nEl límite máximo es *1,000,000 diky* por partida.` }, { quoted: msg });
+                await sock.sendMessage(chatId, { text: `🚫 *Apuesta demasiado alta.*\nEl límite máximo es *500,000 diky* por partida.` }, { quoted: msg });
                 return null;
             }
             const bal = await db.obtenerBalance(sender);
@@ -32,7 +33,7 @@ module.exports = {
             }
             return { apuesta: monto };
         }
-        const lineaApuesta = (ap) => ap > 0 ? `\n💰 Apuesta: *${ap}* diky (Ganas x2)` : '';
+        const lineaApuesta = (ap) => ap > 0 ? `\n💰 Apuesta: *${ap}* diky (Ganas x2 · máx 500K)` : '';
 
         // !quiz (Cultura General)
         if (start === '!quiz' || start === '!trivia') {
@@ -240,10 +241,10 @@ module.exports = {
             const sub = args[0]?.toLowerCase();
             const apuesta = parseInt(args[1]) || 0;
 
-            const MAX_APUESTA = 1000000;
+            const MAX_APUESTA = 500000;
             if (apuesta > 0) {
                 if (apuesta > MAX_APUESTA) {
-                    return sock.sendMessage(chatId, { text: `🚫 *Apuesta demasiado alta.*\nEl límite máximo es *1,000,000 diky* por partida.` }, { quoted: msg });
+                    return sock.sendMessage(chatId, { text: `🚫 *Apuesta demasiado alta.*\nEl límite máximo es *500,000 diky* por partida.` }, { quoted: msg });
                 }
                 const bal = await db.obtenerBalance(sender);
                 if (bal < apuesta) return sock.sendMessage(chatId, { text: '💸 No tienes suficientes diky para esta apuesta.' }, { quoted: msg });

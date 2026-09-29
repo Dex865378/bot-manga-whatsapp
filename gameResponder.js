@@ -169,7 +169,7 @@ async function handleGameResponse(sock, msg, context) {
         if (uAns === tAns || uAns.includes(`la${tAns}`) || (uAns.length === 1 && uAns === tAns)) {
             delete botState.juegos[chatId];
             const esApuesta = juego.apuesta > 0;
-            const premio = esApuesta ? Math.min(juego.apuesta * 2, 2000000) : 50;
+            const premio = esApuesta ? Math.min(juego.apuesta * 2, 1000000) : 50;
             const subio = await db.sumarXP(sender, 25);
             // La devolución de apuesta (x2) NO pasa por el gate anti-farma
             // (es su propio dinero); el premio fijo sí.
@@ -201,7 +201,7 @@ async function handleGameResponse(sock, msg, context) {
         if (uAns.includes(tAns) || tAns.includes(uAns)) {
             delete botState.juegos[chatId];
             const esApuesta = juego.apuesta > 0;
-            const premio = esApuesta ? Math.min(juego.apuesta * 2, 2000000) : 100;
+            const premio = esApuesta ? Math.min(juego.apuesta * 2, 1000000) : 100;
             const subio = await db.sumarXP(sender, 50);
             const pagado = esApuesta ? true : await db.premiarConLimite(sender, premio, 0, chatId).catch(() => true);
             if (esApuesta) await db.sumarMonedas(sender, premio).catch(() => {});
@@ -226,7 +226,7 @@ async function handleGameResponse(sock, msg, context) {
         if (!isNaN(userNum) && userNum === juego.resultado) {
             delete botState.juegos[chatId];
             const esApuesta = juego.apuesta > 0;
-            const premio = esApuesta ? Math.min(juego.apuesta * 2, 2000000) : (juego.premio || 30);
+            const premio = esApuesta ? Math.min(juego.apuesta * 2, 1000000) : (juego.premio || 30);
             const xp = juego.xp || 15;
             await db.sumarXP(sender, xp);
             const pagado = esApuesta ? true : await db.premiarConLimite(sender, premio, 0, chatId).catch(() => true);
@@ -279,7 +279,7 @@ async function handleGameResponse(sock, msg, context) {
             let premioTotal = premioBase;
 
             if (juego.apuesta > 0) {
-                premioTotal = Math.min(juego.apuesta * 2, 2000000);
+                premioTotal = Math.min(juego.apuesta * 2, 1000000);
             }
 
             await db.sumarXP(sender, xpBase);
@@ -303,7 +303,7 @@ async function handleGameResponse(sock, msg, context) {
         if (cmd.toLowerCase() === juego.palabra.toLowerCase()) {
             delete botState.juegos[chatId];
             const esApuestaH = juego.apuesta > 0;
-            const premioH = esApuestaH ? Math.min(juego.apuesta * 2, 2000000) : 100;
+            const premioH = esApuestaH ? Math.min(juego.apuesta * 2, 1000000) : 100;
             await db.sumarXP(sender, 50);
             const pagadoH = esApuestaH ? true : await db.premiarConLimite(sender, premioH, 0, chatId).catch(() => true);
             if (esApuestaH) await db.sumarMonedas(sender, premioH).catch(() => {});
@@ -319,7 +319,7 @@ async function handleGameResponse(sock, msg, context) {
             if (juego.oculto === juego.palabra) {
                 delete botState.juegos[chatId];
                 const esApuestaH2 = juego.apuesta > 0;
-                const premioH2 = esApuestaH2 ? Math.min(juego.apuesta * 2, 2000000) : 100;
+                const premioH2 = esApuestaH2 ? Math.min(juego.apuesta * 2, 1000000) : 100;
                 await db.sumarXP(sender, 50);
                 const pagadoH2 = esApuestaH2 ? true : await db.premiarConLimite(sender, premioH2, 0, chatId).catch(() => true);
                 if (esApuestaH2) await db.sumarMonedas(sender, premioH2).catch(() => {});
