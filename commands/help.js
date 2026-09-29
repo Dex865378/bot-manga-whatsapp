@@ -353,6 +353,118 @@ const helpData = {
         args: 'Menciones de los que juegan; !girar para girar',
         cooldown: 'Ninguno'
     },
+    '!pares': {
+        desc: 'Memorama 4x4 contra alguien: por turnos, si haces par sigues tirando.',
+        usage: '!pares @usuario\n!voltea <A1> <B2>',
+        ejemplo: '!pares @juan\n!voltea A1 B2',
+        args: 'Mención para retar; 2 casillas distintas por turno',
+        cooldown: 'Ninguno'
+    },
+    '!ahorcado2': {
+        desc: 'Ahorcado 1v1: uno pone la palabra por privado y el otro adivina (6 fallos).',
+        usage: '!ahorcado2 @usuario\n!palabra <palabra> (por privado)\n!ahorcado2 <letra>',
+        ejemplo: '!ahorcado2 @juan',
+        args: 'Mención para retar; letra o palabra completa para adivinar',
+        cooldown: 'Ninguno'
+    },
+    '!palabron': {
+        desc: 'Palabra más larga con las mismas 6 letras. 3 rondas, mínimo 4 letras.',
+        usage: '!palabron @usuario\n!palabron <palabra>',
+        ejemplo: '!palabron @juan\n!palabron respeto',
+        args: 'Mención para retar; palabra con solo las letras dadas',
+        cooldown: 'Ninguno'
+    },
+    '!esgrima': {
+        desc: 'Duelo de esgrima: atacar > finta > bloquear > atacar. Primero en 3 toques.',
+        usage: '!esgrima @usuario\n!tira <atacar|bloquear|finta>',
+        ejemplo: '!esgrima @juan\n!tira atacar',
+        args: 'Mención para retar; movimiento secreto por ronda',
+        cooldown: 'Ninguno'
+    },
+    '!puja': {
+        desc: 'Adivina el precio secreto sin pasarte. El más cercano gana.',
+        usage: '!puja @usuario\n!puja <número>',
+        ejemplo: '!puja @juan\n!puja 350',
+        args: 'Mención para retar; una oferta por jugador',
+        cooldown: 'Ninguno'
+    },
+    '!miento': {
+        desc: '2 verdades + 1 mentira: escribe tu trío (o auto) y el rival descubre la mentira.',
+        usage: '!miento @usuario\n!miento 1..|2..|3.. (o auto)\n!cual <1-3>',
+        ejemplo: '!miento @juan\n!miento auto\n!cual 2',
+        args: 'Mención para retar; trío con | o auto',
+        cooldown: 'Ninguno'
+    },
+    '!globo': {
+        desc: 'Inflen el globo por turnos (1-3 de aire). Al que le explota, pierde.',
+        usage: '!globo @usuario\n!inflar [1-3]',
+        ejemplo: '!globo @juan\n!inflar 2',
+        args: 'Mención para retar; 1 a 3 de aire por turno',
+        cooldown: 'Ninguno'
+    },
+    '!anagrama': {
+        desc: 'Palabra revuelta: el primero en escribirla bien gana la ronda (5 rondas).',
+        usage: '!anagrama @usuario',
+        ejemplo: '!anagrama @juan',
+        args: 'Mención para retar; se responde en texto libre',
+        cooldown: 'Ninguno'
+    },
+    '!rima': {
+        desc: 'Batalla de rimas por turnos con la terminación dada. 5 turnos cada uno.',
+        usage: '!rima @usuario\n!rima <palabra>',
+        ejemplo: '!rima @juan\n!rima corazon',
+        args: 'Mención para retar; palabra que rime y no repetida',
+        cooldown: 'Ninguno'
+    },
+    '!wordle': {
+        desc: 'Adivina la palabra de 5 letras en 6 intentos (guarda tu récord).',
+        usage: '!wordle\n!wordle <palabra>',
+        ejemplo: '!wordle\n!wordle playa',
+        args: 'Ninguno para empezar, palabra de 5 letras para probar',
+        cooldown: 'Ninguno'
+    },
+    '!intruso': {
+        desc: 'Encuentra la palabra infiltrada entre 4. 5 rondas (guarda tu récord).',
+        usage: '!intruso\n!intruso <1-4>',
+        ejemplo: '!intruso\n!intruso 3',
+        args: 'Ninguno para empezar, número del infiltrado',
+        cooldown: 'Ninguno'
+    },
+    '!supervivencia': {
+        desc: '7 retos mezclados con 3 vidas (guarda tu mejor puntaje).',
+        usage: '!supervivencia\n!supervivencia <respuesta>',
+        ejemplo: '!supervivencia\n!supervivencia lima',
+        args: 'Ninguno para empezar, respuesta al reto',
+        cooldown: 'Ninguno'
+    },
+    '!cazatesoros': {
+        desc: 'Encuentra el número del 1 al 50 con pistas de frío/caliente (récord).',
+        usage: '!cazatesoros\n!cazatesoros <número>',
+        ejemplo: '!cazatesoros\n!cazatesoros 25',
+        args: 'Ninguno para empezar, número del 1 al 50',
+        cooldown: 'Ninguno'
+    },
+    '!ruleta2': {
+        desc: 'Di una palabra de la categoría con esa letra. 5 rondas (récord de racha).',
+        usage: '!ruleta2\n!ruleta2 <palabra>',
+        ejemplo: '!ruleta2\n!ruleta2 perro',
+        args: 'Ninguno para empezar, palabra válida y no repetida',
+        cooldown: 'Ninguno'
+    },
+    '!escalera': {
+        desc: 'Serpientes y escaleras: llega al 50 en 15 turnos (récord).',
+        usage: '!escalera\n!escalera lanza',
+        ejemplo: '!escalera\n!escalera lanza',
+        args: 'Ninguno para empezar, lanza para tirar el dado',
+        cooldown: 'Ninguno'
+    },
+    '!caja': {
+        desc: 'Abre la caja fuerte de 3 dígitos en 8 intentos (récord).',
+        usage: '!caja\n!caja <3 dígitos>',
+        ejemplo: '!caja\n!caja 123',
+        args: 'Ninguno para empezar, 3 dígitos por intento',
+        cooldown: 'Ninguno'
+    },
     '!emojimix': {
         desc: 'Mezcla 2 emojis en un sticker (cocina de emojis).',
         usage: '!emojimix <emoji1><emoji2>',

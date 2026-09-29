@@ -18,7 +18,7 @@ async function handleGameResponse(sock, msg, context) {
     // Juegos por comando (!ttt, !pptpvp, !c4, !bingo): todo se juega con el
     // comando. Aquí solo se refresca el TTL si habla un jugador y se deja
     // pasar al resto del pipeline.
-    if (['ttt', 'pptpvp', 'c4', 'bingo', 'dados', 'numero', 'carrera2', 'naval', 'hongbao', 'mentiroso', 'cadena', 'traidor', 'botella'].includes(juego.tipo)) {
+    if (['ttt', 'pptpvp', 'c4', 'bingo', 'dados', 'numero', 'carrera2', 'naval', 'hongbao', 'mentiroso', 'cadena', 'traidor', 'botella', 'pares', 'ahorcado2', 'palabron', 'esgrima', 'puja', 'miento', 'globo', 'rima', 'wordle', 'intruso', 'supervivencia', 'cazatesoros', 'ruleta2', 'escalera', 'caja'].includes(juego.tipo)) {
         const norm = (j) => (j || '').split('@')[0].replace(/\D/g, '');
         const js = [juego.jugadorX, juego.jugadorO, juego.retador, juego.oponente, juego.jugadorR, juego.jugadorA, juego.creador, ...Object.keys(juego.jugadores || {})].map(norm);
         if (js.includes(norm(sender))) juego._ts = Date.now();
@@ -59,6 +59,42 @@ async function handleGameResponse(sock, msg, context) {
             return { texto: `${a} ${op} ${b}`, resp: r };
         })();
         await sock.sendMessage(chatId, { text: `⚡ ¡${nomM(sender)} suma! 📊 ${Math.max(pR, pO)}-${Math.min(pR, pO)}\n❓ *${juego.op.texto} = ?*`, mentions: [juego.responder, juego.pareja] }, { quoted: msg });
+        return true;
+    }
+    // Anagrama veloz: el primero de los dos en escribir la palabra bien
+    // (texto libre, sin comando) gana la ronda. 5 rondas, más puntos gana.
+    if (juego.tipo === 'anagrama') {
+        if (isCommand) return false;
+        const normSender = (sender || '').split('@')[0].replace(/\D/g, '');
+        const esDuelista = [juego.responder, juego.pareja].some(j => j && (j.split('@')[0].replace(/\D/g, '') === normSender));
+        if (!esDuelista) return false;
+        if (normDuelo(txt) !== normDuelo(juego.palabra)) return true; // fallo en silencio (es carrera)
+        juego._ts = Date.now();
+        juego.puntos[sender] = (juego.puntos[sender] || 0) + 1;
+        const pR = juego.puntos[juego.responder] || 0, pO = juego.puntos[juego.pareja] || 0;
+        const nom = (jid) => `@${(jid || '').split('@')[0]}`;
+        if (juego.ronda >= 5) {
+            const win = pR === pO ? null : (pR > pO ? juego.responder : juego.pareja);
+            delete botState.juegos[chatId];
+            if (!win) {
+                await sock.sendMessage(chatId, { text: `🔀 *¡EMPATE ${Math.max(pR, pO)}-${Math.min(pR, pO)}!* Los dos deletrean igual de rápido.` }, { quoted: msg });
+                return true;
+            }
+            const pagado = await db.premiarConLimite(win, 50, 20, chatId).catch(() => true);
+            const lose = win === juego.responder ? juego.pareja : juego.responder;
+            await sock.sendMessage(chatId, { text: `🔀⚡ *¡${nom(win)} DESORDENÓ PRIMERO!* Era *${juego.palabra.toUpperCase()}*.\n📊 ${Math.max(pR, pO)}-${Math.min(pR, pO)}\n💰 +50 diky | +20 XP${pagado ? '' : db.NOTA_ANTIFARMA}\n${nom(lose)}, hasta el diccionario te ganó. 😂`, mentions: [win, lose] }, { quoted: msg });
+            return true;
+        }
+        juego.ronda++;
+        const era = juego.palabra;
+        const bancoA = ['guitarra', 'elefante', 'mariposa', 'chocolate', 'montaña', 'tiburón', 'castillo', 'linterna', 'pingüino', 'sombrero', 'ballena', 'dinosaurio', 'estrella', 'serpiente', 'dragón', 'fantasma', 'jirafa', 'murciélago', 'robot', 'tigre', 'volcán', 'cactus', 'trompeta', 'ventana', 'bicicleta', 'delfín', 'gorila', 'lagarto', 'pulpo', 'caracol'];
+        let pal = bancoA[Math.floor(Math.random() * bancoA.length)];
+        if (juego.usadasA.has(pal)) pal = bancoA.find(w => !juego.usadasA.has(w)) || pal;
+        juego.usadasA.add(pal);
+        juego.palabra = pal;
+        let rev = [...pal].sort(() => Math.random() - 0.5).join('');
+        if (rev === pal) rev = [...pal].reverse().join('');
+        await sock.sendMessage(chatId, { text: `🔀 *¡${nom(sender)} suma!* Era *${era.toUpperCase()}* 📊 ${Math.max(pR, pO)}-${Math.min(pR, pO)}\n*RONDA ${juego.ronda}/5:* → *${rev.toUpperCase().split('').join(' ')}*`, mentions: [juego.responder, juego.pareja] }, { quoted: msg });
         return true;
     }
     // Palabras genéricas que se ignoran al comparar ("océano pacífico" vale
