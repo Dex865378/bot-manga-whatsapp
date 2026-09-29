@@ -34,9 +34,20 @@ function ganadorTTT(t) {
     return t.every(x => x) ? 'E' : null; // E = empate
 }
 
-// Extrae hasta 2 emojis del texto (por codepoint, sin VS16)
+// Extrae hasta 2 emojis del texto (por grafema: banderas, familias ZWJ,
+// tonos de piel y ❤️ quedan enteros, no partidos a la mitad)
 function extraerEmojis(texto) {
     const fuera = [];
+    try {
+        const seg = new Intl.Segmenter('en', { granularity: 'grapheme' });
+        for (const { segment } of seg.segment(texto || '')) {
+            if (/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}]/u.test(segment)) {
+                fuera.push(segment);
+                if (fuera.length === 2) break;
+            }
+        }
+        if (fuera.length > 0) return fuera;
+    } catch (_) {}
     for (const ch of Array.from(texto || '')) {
         if (ch === '️' || ch.trim() === '') continue;
         fuera.push(ch);
@@ -44,7 +55,49 @@ function extraerEmojis(texto) {
     }
     return fuera;
 }
-const cpHex = (ch) => ch.codePointAt(0).toString(16);
+// Secuencia completa estilo Emoji Kitchen: sin FE0F, codepoints unidos con '-'
+// (antes solo tomaba el PRIMER codepoint y los compuestos daban 404)
+const cpHex = (ch) => Array.from((ch || '').replace(/\uFE0F/g, ''))
+    .map(c => c.codePointAt(0).toString(16)).join('-');
+
+// Caché RAM de mezclas ya pedidas (las populares salen al instante,
+// sin depender del proxy). Máx 100 entradas.
+const emojimixCache = new Map();
+function emojimixCacheSet(key, buf) {
+    emojimixCache.set(key, buf);
+    if (emojimixCache.size > 100) emojimixCache.delete(emojimixCache.keys().next().value);
+}
+
+// Descarga una mezcla probando ambos órdenes + 1 reintento extra.
+// El proxy es gratis y se duerme (cold start de Vercel): el primer intento
+// suele dar timeout y el segundo sí responde. Sin este reintento "a veces
+// lo da y otras no".
+async function descargarEmojimix(a, b, axios) {
+    const pares = [`${a}_${b}`, `${b}_${a}`];
+    for (const par of pares) {
+        if (emojimixCache.has(par)) return { buf: emojimixCache.get(par), par };
+    }
+    const intentos = [pares[0], pares[1], pares[0]]; // orden1, orden2, reintento orden1
+    const timeouts = [15000, 15000, 20000];
+    for (let i = 0; i < intentos.length; i++) {
+        try {
+            const res = await axios.get(`https://emojik.vercel.app/s/${intentos[i]}?size=256`, {
+                responseType: 'arraybuffer',
+                timeout: timeouts[i],
+                maxContentLength: 3 * 1024 * 1024,
+                maxBodyLength: 3 * 1024 * 1024,
+                headers: { 'User-Agent': 'DikybotWA/1.0' }
+            });
+            if (res.data && res.data.length > 4000) {
+                const buf = Buffer.from(res.data);
+                emojimixCacheSet(intentos[i], buf);
+                return { buf, par: intentos[i] };
+            }
+        } catch (_) {}
+        if (i < intentos.length - 1) await new Promise(r => setTimeout(r, 2000));
+    }
+    return { buf: null, par: null };
+}
 
 function parseDuracion(s) {
     const m = /^(\d+)(s|m|h|d)$/.exec((s || '').toLowerCase());
@@ -86,18 +139,9 @@ module.exports = {
             }
             const a = cpHex(emojis[0]), b = cpHex(emojis[1]);
             await sock.sendMessage(chatId, { text: '⏳ Cocinando tu emoji...' }, { quoted: msg });
-            // La cocina es direccional: probar ambos órdenes
-            const urls = [
-                `https://emojik.vercel.app/s/${a}_${b}?size=256`,
-                `https://emojik.vercel.app/s/${b}_${a}?size=256`
-            ];
-            let img = null;
-            for (const url of urls) {
-                try {
-                    const res = await axios.get(url, { responseType: 'arraybuffer', timeout: 12000, maxContentLength: 3 * 1024 * 1024, maxBodyLength: 3 * 1024 * 1024 });
-                    if (res.data && res.data.length > 1000) { img = Buffer.from(res.data); break; }
-                } catch (_) {}
-            }
+            // La cocina es direccional: ambos órdenes + reintento (el proxy
+            // gratis se duerme y el primer intento suele dar timeout)
+            const { buf: img } = await descargarEmojimix(a, b, axios);
             if (!img) {
                 return sock.sendMessage(chatId, { text: `❌ Esa combinación no existe en la cocina. Prueba con otros emojis.\n💡 Tip: *!emojimix* 😎🔥` }, { quoted: msg });
             }
