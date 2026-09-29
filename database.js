@@ -44,6 +44,7 @@ async function crearTablas() {
         `CREATE TABLE IF NOT EXISTS portadas (clave TEXT PRIMARY KEY, imagen BLOB, mime TEXT DEFAULT 'image/jpeg', updated_at BIGINT)`,
         `CREATE TABLE IF NOT EXISTS portadas_grupo (chat_id TEXT NOT NULL, clave TEXT NOT NULL, imagen BLOB, mime TEXT DEFAULT 'image/jpeg', updated_at BIGINT, PRIMARY KEY (chat_id, clave))`,
         `CREATE TABLE IF NOT EXISTS premios_log (user_id TEXT NOT NULL, ts BIGINT NOT NULL)`,
+        `CREATE TABLE IF NOT EXISTS antifarma_off (chat_id TEXT PRIMARY KEY, desactivado_por TEXT, updated_at BIGINT)`,
         `CREATE TABLE IF NOT EXISTS warns (chat_id TEXT NOT NULL, user_id TEXT NOT NULL, count INTEGER DEFAULT 0, updated_at BIGINT, PRIMARY KEY (chat_id, user_id))`,
         `CREATE TABLE IF NOT EXISTS afk (user_id TEXT PRIMARY KEY, motivo TEXT DEFAULT '', ts BIGINT)`,
         `CREATE TABLE IF NOT EXISTS actividad (chat_id TEXT NOT NULL, user_id TEXT NOT NULL, total INTEGER DEFAULT 0, PRIMARY KEY (chat_id, user_id))`,
@@ -825,19 +826,54 @@ async function puedePremiar(userId) {
 // Premio con tope anti-farma: el XP siempre se paga; los diky pasan por
 // puedePremiar (5 premios/hora). Devuelve true si los diky se pagaron.
 // Las restas/devoluciones (monedas <= 0) no pasan por el gate.
-async function premiarConLimite(userId, monedas, xp) {
+// chatId (opcional): si el grupo tiene el anti-farma DESACTIVADO con
+// !antifarma off (grupo 100% juego), los diky se pagan directo sin gate.
+async function premiarConLimite(userId, monedas, xp, chatId = null) {
     if (xp) { try { await sumarXP(userId, xp); } catch (_) {} }
     if (!monedas || monedas <= 0) {
         if (monedas < 0) { try { await sumarMonedas(userId, monedas); } catch (_) {} }
         return true;
     }
     try {
+        if (chatId && !(await antifarmaActivo(chatId))) {
+            await sumarMonedas(userId, monedas);
+            return true;
+        }
         if (await puedePremiar(userId)) {
             await sumarMonedas(userId, monedas);
             return true;
         }
     } catch (_) {}
     return false;
+}
+
+// --- Anti-farma por grupo: !antifarma off exime al grupo del tope ---
+// Por defecto el anti-farma está ACTIVO en todos los grupos; la tabla solo
+// guarda los grupos exentos (opt-out). Caché RAM con TTL 5 min, fail-open.
+const antifarmaOffCache = new Map(); // chatId -> { off: bool, ts }
+const TTL_ANTIFARMA_CACHE = 5 * 60 * 1000;
+
+async function antifarmaActivo(chatId) {
+    if (!chatId) return true;
+    const c = antifarmaOffCache.get(chatId);
+    if (c && Date.now() - c.ts < TTL_ANTIFARMA_CACHE) return !c.off;
+    try {
+        if (!connected) await init();
+        const rs = await dbClient.execute({ sql: 'SELECT chat_id FROM antifarma_off WHERE chat_id = ?', args: [chatId] });
+        const off = rs.rows.length > 0;
+        antifarmaOffCache.set(chatId, { off, ts: Date.now() });
+        return !off;
+    } catch (_) { return true; }
+}
+
+async function setAntifarma(chatId, on, por = '') {
+    try {
+        if (!connected) await init();
+        if (on) await dbClient.execute({ sql: 'DELETE FROM antifarma_off WHERE chat_id = ?', args: [chatId] });
+        else await dbClient.execute({ sql: 'INSERT OR REPLACE INTO antifarma_off (chat_id, desactivado_por, updated_at) VALUES (?, ?, ?)', args: [chatId, por, Date.now()] });
+        antifarmaOffCache.set(chatId, { off: !on, ts: Date.now() });
+        return { ok: true };
+    } catch (e) { return { ok: false, error: e.message }; }
 }
 
 const NOTA_ANTIFARMA = '\n⏳ _Límite anti-farma (5 premios/hora): los diky de este premio quedan pendientes._';
@@ -1256,7 +1292,7 @@ module.exports = {
     tieneBienvenida, activarBienvenida, desactivarBienvenida, setMensajeBienvenida,
     tieneDespedida, activarDespedida, desactivarDespedida, setMensajeDespedida,
     getPortada, setPortada, limpiarCachePortada, PORTADAS_VALIDAS,
-    obtenerUsuario, obtenerUsuariosBatch, actualizarUsuario, incrementarCampo, sumarMonedas, sumarXP, obtenerBalance, deducirMonedas, puedePremiar, premiarConLimite, NOTA_ANTIFARMA,
+    obtenerUsuario, obtenerUsuariosBatch, actualizarUsuario, incrementarCampo, sumarMonedas, sumarXP, obtenerBalance, deducirMonedas, puedePremiar, premiarConLimite, NOTA_ANTIFARMA, antifarmaActivo, setAntifarma,
     registrarVictoriaDuelo, registrarDerrotaDuelo, registrarComando, actualizarRacha,
     agregarItem, removerItem,
     sumarKarma, obtenerTopMonedas, obtenerTopNivel, registrarHistorial,

@@ -154,6 +154,12 @@ module.exports = {
             mText += `└ _Solo admins pueden usar comandos._\n`;
             mText += `• *!antispam <on/off>*\n`;
             mText += `└ _Activar protección anti-spam._\n`;
+            mText += `• *!antifarma <on/off>*\n`;
+            mText += `└ _Tope 5 premios/hora. Off = grupo 100% juego._\n`;
+            mText += `• *!autoadmin*\n`;
+            mText += `└ _El bot intenta hacerse admin solo._\n`;
+            mText += `• *!remoto <id-grupo> bot/adm on/off*\n`;
+            mText += `└ _Control del dueño por privado (antitrampa)._\n`;
             mText += `• *!tag*\n`;
             mText += `└ _Mencionar a todos los miembros._\n`;
             mText += `• *!kick*\n`;

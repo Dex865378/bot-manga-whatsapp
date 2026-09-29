@@ -455,6 +455,27 @@ const helpData = {
         args: 'Estado (opcional)',
         cooldown: 'Ninguno (solo admins)'
     },
+    '!remoto': {
+        desc: 'Control remoto del dueño por privado: apaga el bot o pone modo admin en un grupo sin entrar a él. Solo el dueño.',
+        usage: '!remoto id\n!remoto <id-grupo> bot [on|off]\n!remoto <id-grupo> adm [on|off]',
+        ejemplo: '!remoto id\n!remoto 123456-789@g.us bot off\n!remoto 123456-789@g.us adm on',
+        args: 'ID de grupo + acción',
+        cooldown: 'Ninguno (solo dueño)'
+    },
+    '!autoadmin': {
+        desc: 'El bot intenta hacerse admin a sí mismo. Solo funciona si WhatsApp lo permite; si no, un admin debe promoverlo a mano una vez.',
+        usage: '!autoadmin',
+        ejemplo: '!autoadmin',
+        args: 'Ninguno',
+        cooldown: 'Ninguno (solo admins)'
+    },
+    '!antifarma': {
+        desc: 'Tope de 5 premios/hora del grupo. Con off el grupo es 100% juego y todos reciben recompensas sin tope.',
+        usage: '!antifarma [on|off]',
+        ejemplo: '!antifarma off\n!antifarma on',
+        args: 'Estado (opcional)',
+        cooldown: 'Ninguno (solo admins)'
+    },
     '!bienvenida': {
         desc: 'Gestiona mensajes de bienvenida (el bot no necesita ser admin para saludar).',
         usage: '!bienvenida [on|off|ver|test]\n!setbienvenida <mensaje>',

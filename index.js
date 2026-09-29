@@ -1571,7 +1571,7 @@ async function procesarMensaje(sock, msg) {
                 '!patear', '!celebrar', '!aburrido', '!risa', '!smug', '!stare',
                 '!tag', '!reglas', '!kick', '!adm', '!promover', '!bot', '!bienvenida', '!setbienvenida', '!despedida', '!setdespedida', '!setportada', '!news', '!broadcast', '!anuncio', '!sorteo', '!rifa',
                 '!tienda', '!comprar', '!vender', '!inventario', '!mejor', '!bounty', '!regalar', '!regalaritem', '!dar',
-                '!antispam', '!mododios',
+                '!antispam', '!mododios', '!remoto', '!autoadmin', '!antifarma',
                 '!prestigio', '!loteria', '!clase', '!pedir', '!plantarse', '!pl', '!trivia', '!daily', '!w', '!slut', '!robar', '!canjear',
                 '!subastar', '!subastas', '!ofertar',
                 '!waifus', '!mascotas', '!alimentar', '!casar', '!proponer', '!logros', '!tareas',

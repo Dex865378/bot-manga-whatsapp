@@ -14,10 +14,53 @@ async function refreshGroupCache(db, botState, chatId) {
 module.exports = {
     name: 'settings',
     isMultiple: true,
-    names: ['!bienvenida', '!setbienvenida', '!despedida', '!setdespedida', '!adm', '!bot', '!reglas', '!tag', '!antispam', '!mododios', '!sincronizar', '!modomanga', '!manga'],
+    names: ['!bienvenida', '!setbienvenida', '!despedida', '!setdespedida', '!adm', '!bot', '!reglas', '!tag', '!antispam', '!mododios', '!sincronizar', '!modomanga', '!manga', '!remoto', '!autoadmin', '!antifarma'],
     async execute(sock, chatId, msg, args, extras) {
         const { start, isGroup, isAdmin, isGlobalAdmin, db, botState, sender } = extras;
         if (!isGroup && !isGlobalAdmin) return sock.sendMessage(chatId, { text: 'Este comando solo funciona en grupos.' }, { quoted: msg });
+
+        // !remoto — control remoto del dueño POR PRIVADO (o en grupo).
+        // Si alguien hace trampa: apaga el bot o pon modo admin en ese grupo
+        // sin entrar al grupo. Solo el Administrador Maestro.
+        if (start === '!remoto') {
+            if (!isGlobalAdmin) return sock.sendMessage(chatId, { text: 'Solo el dueño puede usar el control remoto.' }, { quoted: msg });
+            const sub = (args[0] || '').toLowerCase();
+            if (sub === 'id') {
+                if (!isGroup) return sock.sendMessage(chatId, { text: 'Usa *!remoto id* dentro del grupo para ver su ID.' }, { quoted: msg });
+                return sock.sendMessage(chatId, { text: `🆔 ID de este grupo:\n\`${chatId}\`` }, { quoted: msg });
+            }
+            const uso = '📡 *CONTROL REMOTO*\nUso:\n• *!remoto id* (en el grupo, para ver su ID)\n• *!remoto <id-grupo> bot on/off*\n• *!remoto <id-grupo> adm on/off*\n\nEjemplo:\n*!remoto 123456-789@g.us bot off*';
+            let objetivo = (args[0] || '').trim();
+            const que = (args[1] || '').toLowerCase();
+            const modo = (args[2] || '').toLowerCase();
+            if (!objetivo || !que || !modo) return sock.sendMessage(chatId, { text: uso }, { quoted: msg });
+            if (!objetivo.endsWith('@g.us')) {
+                if (!/^[\d-]+$/.test(objetivo)) return sock.sendMessage(chatId, { text: `❌ ID de grupo inválido.\n\n${uso}` }, { quoted: msg });
+                objetivo += '@g.us';
+            }
+            if (que === 'bot') {
+                if (modo === 'off') {
+                    await db.desactivarGrupo(objetivo);
+                    botState.groupCache.delete(objetivo);
+                    return sock.sendMessage(chatId, { text: `🔇 Bot *desactivado* en:\n\`${objetivo}\`` }, { quoted: msg });
+                } else if (modo === 'on') {
+                    await db.activarGrupo(objetivo, sender);
+                    await refreshGroupCache(db, botState, objetivo);
+                    return sock.sendMessage(chatId, { text: `🔊 Bot *activado* en:\n\`${objetivo}\`` }, { quoted: msg });
+                }
+            } else if (que === 'adm' || que === 'admin') {
+                if (modo === 'on') {
+                    await db.activarModoAdmin(objetivo);
+                    botState.groupCache.delete(objetivo);
+                    return sock.sendMessage(chatId, { text: `🔒 Modo admin *activado* en:\n\`${objetivo}\`\n_Solo admins pueden usar comandos._` }, { quoted: msg });
+                } else if (modo === 'off') {
+                    await db.desactivarModoAdmin(objetivo);
+                    botState.groupCache.delete(objetivo);
+                    return sock.sendMessage(chatId, { text: `🔓 Modo admin *desactivado* en:\n\`${objetivo}\`` }, { quoted: msg });
+                }
+            }
+            return sock.sendMessage(chatId, { text: uso }, { quoted: msg });
+        }
 
         if (start === '!mododios') {
             if (!isGlobalAdmin) {
@@ -185,6 +228,39 @@ module.exports = {
                 return sock.sendMessage(chatId, { text: 'Bot *desactivado*.' }, { quoted: msg });
             }
             return sock.sendMessage(chatId, { text: 'Uso: *!bot on/off*' }, { quoted: msg });
+        }
+
+        // !autoadmin — el bot intenta promoverse a admin a sí mismo.
+        // OJO: WhatsApp NO deja que un no-admin se promueva solo; si el bot
+        // no es admin esto falla y hay que promoverlo a mano una vez.
+        if (start === '!autoadmin') {
+            if (!isAdmin && !isGlobalAdmin) return sock.sendMessage(chatId, { text: 'Solo admins.' }, { quoted: msg });
+            const botJid = sock.user?.id;
+            if (!botJid) return sock.sendMessage(chatId, { text: '❌ No sé cuál es mi propio número (sin conexión).' }, { quoted: msg });
+            try {
+                await sock.groupParticipantsUpdate(chatId, [botJid], 'promote');
+                return sock.sendMessage(chatId, { text: '👑 ¡Listo! Ya soy admin de este grupo.' }, { quoted: msg });
+            } catch (e) {
+                return sock.sendMessage(chatId, { text: '❌ No pude auto-promoverme: WhatsApp no deja que un no-admin se dé admin solo.\n\n👉 Un admin del grupo debe promoverme a mano UNA vez (mantén mi número → Hacer admin). Después ya puedo administrar el grupo solo.' }, { quoted: msg });
+            }
+        }
+
+        // !antifarma — tope de 5 premios/hora por grupo.
+        // !antifarma off = grupo 100% juego: premios sin tope.
+        if (start === '!antifarma') {
+            if (!isAdmin && !isGlobalAdmin) return sock.sendMessage(chatId, { text: 'Solo admins.' }, { quoted: msg });
+            const mode = (args[0] || '').toLowerCase();
+            if (mode === 'off') {
+                const r = await db.setAntifarma(chatId, false, sender);
+                if (!r.ok) return sock.sendMessage(chatId, { text: `❌ No se pudo guardar: ${r.error}` }, { quoted: msg });
+                return sock.sendMessage(chatId, { text: '🎮 *ANTI-FARMA DESACTIVADO* en este grupo.\n_Grupo 100% juego: todos reciben sus recompensas sin tope._' }, { quoted: msg });
+            } else if (mode === 'on') {
+                const r = await db.setAntifarma(chatId, true);
+                if (!r.ok) return sock.sendMessage(chatId, { text: `❌ No se pudo guardar: ${r.error}` }, { quoted: msg });
+                return sock.sendMessage(chatId, { text: '🛡️ *ANTI-FARMA ACTIVADO* en este grupo.\n_Tope: 5 premios por hora por persona._' }, { quoted: msg });
+            }
+            const activo = await db.antifarmaActivo(chatId);
+            return sock.sendMessage(chatId, { text: `🛡️ *ANTI-FARMA*\nEstado: ${activo ? '*ACTIVADO* (5 premios/hora)' : '*DESACTIVADO* (premios sin tope)'}\n\nUso: *!antifarma on/off*` }, { quoted: msg });
         }
 
         if (start === '!reglas') {

@@ -100,9 +100,9 @@ function barraCarrera(pos, meta) {
     return '🟩'.repeat(llenos) + '⬜'.repeat(10 - llenos);
 }
 
-async function premiar(db, win, xp, monedas) {
+async function premiar(db, win, xp, monedas, chatId = null) {
     // Devuelve true si los diky se pagaron (false = tope anti-farma).
-    try { return await db.premiarConLimite(win, monedas, xp); }
+    try { return await db.premiarConLimite(win, monedas, xp, chatId); }
     catch (_) { return true; }
 }
 
@@ -166,7 +166,7 @@ module.exports = {
             if (pR >= METAS.dados || pO >= METAS.dados) {
                 const win = pR >= METAS.dados ? juego.retador : juego.oponente;
                 delete botState.juegos[chatId];
-                const pagado = await premiar(db, win, 20, 50);
+                const pagado = await premiar(db, win, 20, 50, chatId);
                 txt += `\n━━━━━━━━━━━━━━\n🏆 *¡${nom(win)} GANA EL DUELO!*\n💰 +50 diky | +20 XP${pagado ? '' : db.NOTA_ANTIFARMA}`;
                 return sock.sendMessage(chatId, { text: txt, mentions: [juego.retador, juego.oponente] }, { quoted: msg });
             }
@@ -204,7 +204,7 @@ module.exports = {
                 if (n === juego.secreto) {
                     const win = sender;
                     delete botState.juegos[chatId];
-                    const pagado = await premiar(db, win, 15, 40);
+                    const pagado = await premiar(db, win, 15, 40, chatId);
                     return sock.sendMessage(chatId, { text: `🎯 *¡${nom(win)} LO ADIVINÓ!* Era el *${juego.secreto}*.\n💰 +40 diky | +15 XP${pagado ? '' : db.NOTA_ANTIFARMA}`, mentions: [win] }, { quoted: msg });
                 }
                 juego.turno = sender === juego.retador ? juego.oponente : juego.retador;
@@ -267,7 +267,7 @@ module.exports = {
             if (juego.pos[sender] >= METAS.carrera2) {
                 const win = sender;
                 delete botState.juegos[chatId];
-                const pagado = await premiar(db, win, 20, 50);
+                const pagado = await premiar(db, win, 20, 50, chatId);
                 txt += `\n━━━━━━━━━━━━━━\n🏆 *¡${nom(win)} CRUZA LA META!*\n💰 +50 diky | +20 XP${pagado ? '' : db.NOTA_ANTIFARMA}`;
                 return sock.sendMessage(chatId, { text: txt, mentions: [juego.retador, juego.oponente] }, { quoted: msg });
             }
@@ -320,7 +320,7 @@ module.exports = {
             if (hits >= total) {
                 const win = sender;
                 delete botState.juegos[chatId];
-                const pagado = await premiar(db, win, 30, 60);
+                const pagado = await premiar(db, win, 30, 60, chatId);
                 txt += `\n━━━━━━━━━━━━━━\n🏆 *¡${nom(win)} HUNDE TODA LA FLOTA!*\n💰 +60 diky | +30 XP${pagado ? '' : db.NOTA_ANTIFARMA}`;
                 return sock.sendMessage(chatId, { text: txt, mentions: [win] }, { quoted: msg });
             }
@@ -399,7 +399,7 @@ module.exports = {
                     if (r.nuevo) extra = `\n🏅 *¡NUEVO RÉCORD PERSONAL!* (antes: ${r.anterior !== null ? `${(r.anterior / 1000).toFixed(1)}s` : '—'})`;
                     else extra = `\n📊 Tu mejor: *${(r.anterior / 1000).toFixed(1)}s*`;
                 } catch (_) {}
-                await premiar(db, sender, 10, 0);
+                await premiar(db, sender, 10, 0, chatId);
                 return sock.sendMessage(chatId, { text: `🏁 *¡MARATÓN COMPLETADA!*\n━━━━━━━━━━━━━━\n⏱️ Tiempo: *${segs}s* | ❌ Fallos: ${juego.fallos}${extra}\n+10 XP`, mentions: [sender] }, { quoted: msg });
             }
             juego.op = genOp(juego.n);
@@ -431,7 +431,7 @@ module.exports = {
                     if (r.nuevo) extra = `\n🏅 *¡NUEVO RÉCORD PERSONAL!* (antes: ${r.anterior !== null ? `nivel ${r.anterior - 1}` : '—'})`;
                     else extra = `\n📊 Tu mejor: *nivel ${r.anterior - 1}*`;
                 } catch (_) {}
-                await premiar(db, sender, 10, 0);
+                await premiar(db, sender, 10, 0, chatId);
                 return sock.sendMessage(chatId, { text: `💥 *¡FALLASTE!* Era: ${juego.seq.join('  ')}\n🏁 Llegaste a *nivel ${nivel}*${extra}\n+10 XP`, mentions: [sender] }, { quoted: msg });
             }
             juego.seq.push(SIMON_EMOJIS[rnd(SIMON_EMOJIS.length)]);

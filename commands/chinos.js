@@ -144,7 +144,7 @@ module.exports = {
             const monto = juego.sobrantes[sender];
             // Anti-farma: si pasó el tope, su parte QUEDA guardada y puede
             // reclamarla después (no se borra, para no romper la contabilidad).
-            const pagado = await db.premiarConLimite(sender, monto, 0).catch(() => true);
+            const pagado = await db.premiarConLimite(sender, monto, 0, chatId).catch(() => true);
             if (!pagado) {
                 return sock.sendMessage(chatId, { text: `🧧 ${nom(sender)}, tu parte (*${monto} diky*) sigue guardada.${db.NOTA_ANTIFARMA}\n👉 Reclama con *!abrir* en un rato.`, mentions: [sender] }, { quoted: msg });
             }
@@ -265,7 +265,7 @@ module.exports = {
                         const win = aun[0];
                         delete botState.juegos[chatId];
                         db.sumarXP(win, 20).catch(() => {});
-                        const pagado = await db.premiarConLimite(win, 60, 0).catch(() => true);
+                        const pagado = await db.premiarConLimite(win, 60, 0, chatId).catch(() => true);
                         txt += `\n━━━━━━━━━━━━━━\n🏆 *¡${nom(win)} GANA LA CADENA!*\n💰 +60 diky | +20 XP${pagado ? '' : db.NOTA_ANTIFARMA}`;
                         return sock.sendMessage(chatId, { text: txt, mentions: [sender, win] }, { quoted: msg });
                     }
@@ -357,7 +357,7 @@ module.exports = {
             const traidor = juego.traidor;
             delete botState.juegos[chatId];
             if (top.length > 1) {
-                const pagado = await db.premiarConLimite(traidor, 120, 0).catch(() => true);
+                const pagado = await db.premiarConLimite(traidor, 120, 0, chatId).catch(() => true);
                 return sock.sendMessage(chatId, { text: `🗳️ *¡EMPATE!* ${top.map(nom).join(' vs ')}.\nEntre la duda, el traidor se escapa por la ventana 🪟💨\n🗡️ El traidor era ${nom(traidor)} y se lleva *120 diky*.${pagado ? '' : db.NOTA_ANTIFARMA}\n😅 Inocentes: se los bailaron sabroso.`, mentions: [...top, traidor] }, { quoted: msg });
             }
             const acusado = top[0];
@@ -365,12 +365,12 @@ module.exports = {
                 const inocentes = juego.apuntados.filter(j => j !== traidor);
                 let algunoBloqueado = false;
                 for (const j of inocentes) {
-                    const pagado = await db.premiarConLimite(j, 40, 0).catch(() => true);
+                    const pagado = await db.premiarConLimite(j, 40, 0, chatId).catch(() => true);
                     if (!pagado) algunoBloqueado = true;
                 }
                 return sock.sendMessage(chatId, { text: `🗳️ Con *${orden[0][1]} votos* acusan a ${nom(acusado)}...\n━━━━━━━━━━━━━━\n🎯 *¡ERA EL TRAIDOR!* 🗡️😱\nCada inocente gana *40 diky*. ¡Buen olfato! 👃${algunoBloqueado ? db.NOTA_ANTIFARMA : ''}\n${nom(traidor)}, más suerte disimulando la próxima 🤡`, mentions: [...inocentes, traidor] }, { quoted: msg });
             }
-            const pagado = await db.premiarConLimite(traidor, 120, 0).catch(() => true);
+            const pagado = await db.premiarConLimite(traidor, 120, 0, chatId).catch(() => true);
             return sock.sendMessage(chatId, { text: `🗳️ Con *${orden[0][1]} votos* acusan a ${nom(acusado)}...\n━━━━━━━━━━━━━━\n😇 *¡ERA INOCENTE!* Lo lincharon de gratis.\n🗡️ El verdadero traidor era ${nom(traidor)} y se lleva *120 diky*.${pagado ? '' : db.NOTA_ANTIFARMA}\n${nom(acusado)}, pide indemnización 😭`, mentions: [acusado, traidor] }, { quoted: msg });
         }
 
@@ -406,7 +406,7 @@ module.exports = {
                 const win = juego.vivos[0];
                 delete botState.juegos[chatId];
                 const subio = await db.sumarXP(win, 20).catch(() => false);
-                const pagado = await db.premiarConLimite(win, 60, 0).catch(() => true);
+                const pagado = await db.premiarConLimite(win, 60, 0, chatId).catch(() => true);
                 return sock.sendMessage(chatId, {
                     text: `🍾 *¡GIRA LA BOTELLA!* 🌀\nLa botella apunta a... ${nom(victima)} 😱\n🎲 Reto final: _${pick(RETOS_BOTELLA)}_\n${pick(BURLA_ELIM)}\n━━━━━━━━━━━━━━\n🏆 *¡${nom(win)} ES EL ÚLTIMO EN PIE!*\n💰 +60 diky | +20 XP${subio ? '\n🆙 ¡SUBIÓ DE NIVEL!' : ''}${pagado ? '' : db.NOTA_ANTIFARMA}`,
                     mentions: [victima, win]
