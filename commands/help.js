@@ -185,8 +185,8 @@ const helpData = {
     },
     '!encuesta': {
         desc: 'Crear una encuesta nativa de WhatsApp en el grupo.',
-        usage: '!encuesta <pregunta> | <opción1> | <opción2> [| ...]',
-        ejemplo: '!encuesta ¿Película? | Terror | Comedia',
+        usage: '!encuesta <pregunta>, <opción1>, <opción2> [, ...]',
+        ejemplo: '!encuesta ¿Soy hombre?, Sí, No',
         args: 'Pregunta y 2-12 opciones separadas por |',
         cooldown: 'Ninguno'
     },

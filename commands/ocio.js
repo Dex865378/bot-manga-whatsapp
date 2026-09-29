@@ -8,7 +8,7 @@
  *   !unwarn @user   → quitar advertencias
  *   !warns [@user]  → ver advertencias
  *   !afk [motivo]   → marcarse ausente (se quita al volver a escribir)
- *   !encuesta p | o1 | o2 → encuesta nativa de WhatsApp
+ *   !encuesta p, o1, o2 → encuesta nativa de WhatsApp
  *   !topactivos     → ranking de los que más hablan en el grupo
  *   !recordar 10m <texto> → aviso futuro (s/m/h/d, máx 10 por usuario)
  *   !recordatorios  → ver/borrar los propios (!recordatorios borrar <n>)
@@ -246,9 +246,9 @@ module.exports = {
         // ==========================================
         if (start === '!encuesta') {
             if (!isGroup) return sock.sendMessage(chatId, { text: '👥 Este comando solo funciona en grupos.' }, { quoted: msg });
-            const partes = args.join(' ').split('|').map(p => p.trim()).filter(Boolean);
+            const partes = args.join(' ').split(',').map(p => p.trim()).filter(Boolean);
             if (partes.length < 3) {
-                return sock.sendMessage(chatId, { text: '📊 Uso: *!encuesta* <pregunta> | <opción1> | <opción2> [| opción3...]\nEjemplo: *!encuesta* ¿Película de hoy? | Terror | Comedia' }, { quoted: msg });
+                return sock.sendMessage(chatId, { text: '📊 Uso: *!encuesta* <pregunta>, <opción1>, <opción2> [, opción3...]\nEjemplo: *!encuesta* ¿Soy hombre?, Sí, No' }, { quoted: msg });
             }
             if (partes.length > 13) {
                 return sock.sendMessage(chatId, { text: '❌ Máximo 12 opciones.' }, { quoted: msg });
