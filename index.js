@@ -1582,6 +1582,7 @@ async function procesarMensaje(sock, msg) {
                 '!aceptar_lucha', '!rechazar_lucha', '!comprar_mascota', '!rechazar',
                 '!emojimix', '!ttt', '!warn', '!unwarn', '!warns', '!afk', '!encuesta', '!topactivos', '!recordar', '!recordatorios',
                 '!pptpvp', '!c4', '!quizduelo', '!bingo',
+                '!dados', '!tirar', '!numero', '!mates', '!carrera2', '!avanza', '!naval', '!fuego', '!reflejos', '!maraton', '!simon',
             ];
 
             if (FAST_COMMANDS.has(start) && (handler.commands.has(start) || comandosValidos.includes(start))) {

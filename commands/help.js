@@ -262,6 +262,62 @@ const helpData = {
         args: 'Subcomando según la fase del juego',
         cooldown: 'Ninguno'
     },
+    '!dados': {
+        desc: 'Duelo de dados contra alguien, al mejor de 5 rondas.',
+        usage: '!dados @usuario\n!dados si / !dados no\n!tirar',
+        ejemplo: '!dados @juan\n!tirar',
+        args: 'Mención para retar, !tirar para tirar el dado',
+        cooldown: 'Ninguno'
+    },
+    '!numero': {
+        desc: 'Adivina el número secreto del 1 al 100 por turnos.',
+        usage: '!numero @usuario\n!numero si / !numero no\n!numero <n>',
+        ejemplo: '!numero @juan\n!numero 50',
+        args: 'Mención para retar, número para adivinar',
+        cooldown: 'Ninguno'
+    },
+    '!mates': {
+        desc: 'Carrera de operaciones contra alguien, el más rápido suma punto.',
+        usage: '!mates @usuario',
+        ejemplo: '!mates @juan',
+        args: 'Mención del oponente (requerido)',
+        cooldown: 'Ninguno'
+    },
+    '!carrera2': {
+        desc: 'Carrera a 30 pasos por turnos contra alguien.',
+        usage: '!carrera2 @usuario\n!carrera2 si / !carrera2 no\n!avanza',
+        ejemplo: '!carrera2 @juan\n!avanza',
+        args: 'Mención para retar, !avanza para avanzar',
+        cooldown: 'Ninguno'
+    },
+    '!naval': {
+        desc: 'Batalla naval 5x5 contra alguien, barcos escondidos al azar.',
+        usage: '!naval @usuario\n!naval si / !naval no\n!fuego B3',
+        ejemplo: '!naval @juan\n!fuego B3',
+        args: 'Mención para retar, casilla A-E + 1-5 para disparar',
+        cooldown: 'Ninguno'
+    },
+    '!reflejos': {
+        desc: 'Prueba tu velocidad de reacción contra el ¡AHORA! (guarda tu récord).',
+        usage: '!reflejos\n!reflejos ya',
+        ejemplo: '!reflejos',
+        args: 'Ninguno para empezar, !reflejos ya al ver el ¡AHORA!',
+        cooldown: 'Ninguno'
+    },
+    '!maraton': {
+        desc: '10 operaciones contra reloj (guarda tu mejor tiempo).',
+        usage: '!maraton\n!maraton <número>',
+        ejemplo: '!maraton\n!maraton 42',
+        args: 'Ninguno para empezar, número para responder',
+        cooldown: 'Ninguno'
+    },
+    '!simon': {
+        desc: 'Memoria de secuencias de emojis (guarda tu récord).',
+        usage: '!simon\n!simon <emojis en orden>',
+        ejemplo: '!simon\n!simon 🔥 🐱',
+        args: 'Ninguno para empezar, emojis en orden para repetir',
+        cooldown: 'Ninguno'
+    },
     '!emojimix': {
         desc: 'Mezcla 2 emojis en un sticker (cocina de emojis).',
         usage: '!emojimix <emoji1><emoji2>',

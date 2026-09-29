@@ -18,13 +18,50 @@ async function handleGameResponse(sock, msg, context) {
     // Juegos por comando (!ttt, !pptpvp, !c4, !bingo): todo se juega con el
     // comando. Aquí solo se refresca el TTL si habla un jugador y se deja
     // pasar al resto del pipeline.
-    if (['ttt', 'pptpvp', 'c4', 'bingo'].includes(juego.tipo)) {
+    if (['ttt', 'pptpvp', 'c4', 'bingo', 'dados', 'numero', 'carrera2', 'naval'].includes(juego.tipo)) {
         const norm = (j) => (j || '').split('@')[0].replace(/\D/g, '');
         const js = [juego.jugadorX, juego.jugadorO, juego.retador, juego.oponente, juego.jugadorR, juego.jugadorA, juego.creador, ...Object.keys(juego.jugadores || {})].map(norm);
         if (js.includes(norm(sender))) juego._ts = Date.now();
         return false;
     }
     const normDuelo = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, '').trim();
+    // Carrera de mates: el primero de los dos en escribir la respuesta
+    // exacta suma punto (sin cita, es carrera de velocidad; los fallos no
+    // avisan para no spamear). Al llegar a 5 puntos se libera el chat.
+    if (juego.tipo === 'mates') {
+        if (isCommand) return false;
+        const normSender = (sender || '').split('@')[0].replace(/\D/g, '');
+        const esDuelista = [juego.responder, juego.pareja].some(j => j && (j.split('@')[0].replace(/\D/g, '') === normSender));
+        if (!esDuelista) return false;
+        if (normDuelo(txt) !== String(juego.op.resp)) return true; // fallo en silencio
+        juego._ts = Date.now();
+        juego.puntos[sender] = (juego.puntos[sender] || 0) + 1;
+        const pR = juego.puntos[juego.responder] || 0, pO = juego.puntos[juego.pareja] || 0;
+        const nomM = (j) => `@${(j || '').split('@')[0]}`;
+        if (juego.puntos[sender] >= 5) {
+            const win = sender;
+            delete botState.juegos[chatId];
+            await db.sumarXP(win, 15).catch(() => {});
+            await db.sumarMonedas(win, 30).catch(() => {});
+            await sock.sendMessage(chatId, { text: `➗ *¡${nomM(win)} GANA LA CARRERA!* 🏁 ${Math.max(pR, pO)} puntos.\n💰 +30 diky | +15 XP`, mentions: [juego.responder, juego.pareja] }, { quoted: msg });
+            return true;
+        }
+        juego.nivel++;
+        juego.op = (() => {
+            const n = juego.nivel;
+            let a, b, op, r;
+            const rr = Math.floor(Math.random() * 3);
+            if (n <= 3) { a = 2 + Math.floor(Math.random() * 18); b = 2 + Math.floor(Math.random() * 18); op = rr === 0 ? '-' : '+'; }
+            else if (n <= 6) { a = 3 + Math.floor(Math.random() * 12); b = 3 + Math.floor(Math.random() * 12); op = ['+', '-', '×'][rr]; }
+            else { a = 6 + Math.floor(Math.random() * 25); b = 4 + Math.floor(Math.random() * 15); op = ['+', '-', '×'][rr]; }
+            if (op === '+') r = a + b;
+            else if (op === '-') { if (b > a) { const t = a; a = b; b = t; } r = a - b; }
+            else r = a * b;
+            return { texto: `${a} ${op} ${b}`, resp: r };
+        })();
+        await sock.sendMessage(chatId, { text: `⚡ ¡${nomM(sender)} suma! 📊 ${Math.max(pR, pO)}-${Math.min(pR, pO)}\n❓ *${juego.op.texto} = ?*`, mentions: [juego.responder, juego.pareja] }, { quoted: msg });
+        return true;
+    }
     // Palabras genéricas que se ignoran al comparar ("océano pacífico" vale
     // igual que "pacífico"). Solo se quitan si queda algo en AMBOS lados.
     const STOP_DUELO = new Set(['el', 'la', 'los', 'las', 'de', 'del', 'un', 'una', 'y', 'oceano', 'mar', 'rio', 'lago', 'laguna', 'monte', 'montana', 'volcan', 'ciudad', 'pais', 'isla', 'desierto']);

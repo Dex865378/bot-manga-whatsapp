@@ -47,6 +47,7 @@ async function crearTablas() {
         `CREATE TABLE IF NOT EXISTS afk (user_id TEXT PRIMARY KEY, motivo TEXT DEFAULT '', ts BIGINT)`,
         `CREATE TABLE IF NOT EXISTS actividad (chat_id TEXT NOT NULL, user_id TEXT NOT NULL, total INTEGER DEFAULT 0, PRIMARY KEY (chat_id, user_id))`,
         `CREATE TABLE IF NOT EXISTS recordatorios (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT, user_id TEXT, texto TEXT, execute_at BIGINT, creado BIGINT)`,
+        `CREATE TABLE IF NOT EXISTS records (juego TEXT NOT NULL, user_id TEXT NOT NULL, mejor INTEGER NOT NULL, updated_at BIGINT, PRIMARY KEY (juego, user_id))`,
         `CREATE TABLE IF NOT EXISTS usuarios (
             user_id TEXT PRIMARY KEY, nombre TEXT, edad INTEGER, nacimiento TEXT, altura TEXT, descripcion TEXT, superpoder TEXT, 
             manga_fav TEXT, anime_fav TEXT, waifu_husbando TEXT, pareja TEXT, titulo TEXT, 
@@ -875,6 +876,30 @@ async function recordatoriosVencidos(ahora, limit = 10) {
     } catch (e) { return []; }
 }
 
+// --- Récords de minijuegos solo (reflejos/maraton: menor es mejor; simon: mayor) ---
+async function getRecord(juego, userId) {
+    if (!connected) await init();
+    try {
+        const rs = await dbClient.execute({ sql: 'SELECT mejor FROM records WHERE juego = ? AND user_id = ?', args: [juego, userId] });
+        return rs.rows.length ? rs.rows[0].mejor : null;
+    } catch (e) { return null; }
+}
+
+async function saveRecord(juego, userId, valor, menorEsMejor = true) {
+    if (!connected) await init();
+    try {
+        const anterior = await getRecord(juego, userId);
+        const esMejor = anterior === null || (menorEsMejor ? valor < anterior : valor > anterior);
+        if (esMejor) {
+            await dbClient.execute({
+                sql: 'INSERT INTO records (juego, user_id, mejor, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(juego, user_id) DO UPDATE SET mejor = ?, updated_at = ?',
+                args: [juego, userId, valor, Date.now(), valor, Date.now()]
+            });
+        }
+        return { nuevo: esMejor, anterior };
+    } catch (e) { return { nuevo: false, anterior: null }; }
+}
+
 async function activarAntiSpam(chatId) {
     if (!connected) await init();
     try {
@@ -1148,6 +1173,7 @@ module.exports = {
     setAFK, getAFK, clearAFK,
     sumarActividadBatch, topActivos,
     crearRecordatorio, misRecordatorios, borrarRecordatorio, recordatoriosVencidos,
+    getRecord, saveRecord,
     crearSubasta, obtenerSubastasActivas, pujarSubasta, finalizarSubasta, obtenerSubasta,
     activarAntiSpam, desactivarAntiSpam, activarModoAdmin, desactivarModoAdmin,
     activarModoManga, desactivarModoManga,
