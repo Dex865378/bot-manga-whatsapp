@@ -27,6 +27,27 @@ const BURLAS = [
 ];
 const burl = () => BURLAS[rnd(BURLAS.length)];
 
+// --- Diccionario español (Datamuse API, gratis sin key) para !palabron ---
+// Si la API falla o tarda, se acepta la palabra (fail-open: mejor dejar pasar
+// un invento que tumbar el juego por internet lento).
+const dicCache = new Map(); // palabra -> true/false
+async function esPalabraReal(pal) {
+    if (dicCache.has(pal)) return dicCache.get(pal);
+    let ok = true;
+    try {
+        const ctl = new AbortController();
+        const t = setTimeout(() => ctl.abort(), 6000);
+        const r = await fetch(`https://api.datamuse.com/words?sp=${encodeURIComponent(pal)}&v=es&max=3`, { signal: ctl.signal });
+        clearTimeout(t);
+        if (!r.ok) throw new Error('http ' + r.status);
+        const arr = await r.json();
+        ok = Array.isArray(arr) && arr.some(w => normPal(w.word) === pal);
+    } catch (_) { ok = true; }
+    if (dicCache.size > 500) dicCache.clear();
+    dicCache.set(pal, ok);
+    return ok;
+}
+
 // --- Memorama: 12 emojis, se eligen 8 pares al azar ---
 const PARES_POOL = ['🍕', '🐱', '⚽', '🚀', '🍩', '🐸', '🎧', '🌮', '🐼', '⚡', '🍇', '🎲'];
 const PARES_COLS = ['A', 'B', 'C', 'D'];
@@ -292,6 +313,7 @@ module.exports = {
             const pal = normPal(sub);
             if (pal.length < 4) return sock.sendMessage(chatId, { text: '⚠️ Mínimo 4 letras, piensa en grande. 🧠' }, { quoted: msg });
             if (!sirvePalabron(pal, juego.letras, juego.usadas)) return sock.sendMessage(chatId, { text: `❌ *${pal}* no vale (usa solo las letras dadas y no repetidas). ${burl()}`, mentions: [sender] }, { quoted: msg });
+            if (!(await esPalabraReal(pal))) return sock.sendMessage(chatId, { text: `📖 *${pal.toUpperCase()}* no está en el diccionario, inventor. 😏 Busca una palabra de verdad.`, mentions: [sender] }, { quoted: msg });
             juego.resp[sender] = pal; juego.usadas.add(pal); juego._ts = Date.now();
             const otro = sender === juego.retador ? juego.oponente : juego.retador;
             if (!juego.resp[otro]) return sock.sendMessage(chatId, { text: `✅ ${nom(sender)} ya puso la suya. Falta ${nom(otro)}: *!palabron <palabra>*`, mentions: [otro] }, { quoted: msg });
@@ -421,7 +443,13 @@ module.exports = {
                 if (sender !== juego.oponente) return sock.sendMessage(chatId, { text: '👀 Ese reto no es para ti.' }, { quoted: msg });
                 if (sub === 'no') { delete botState.juegos[chatId]; return sock.sendMessage(chatId, { text: '🚫 Reto rechazado.' }, { quoted: msg }); }
                 juego.fase = 'escribeA'; juego.puntos = {}; juego._ts = Date.now();
-                return sock.sendMessage(chatId, { text: `🕵️ ${nom(juego.retador)}, escribe tus 3 frases así:\n*!miento 1.Sé nadar|2.Odio el helado|3.Tengo un gato*\n(o *!miento auto* y las invento yo por ti 😏)\n${nom(juego.oponente)} NO mires... bueno, mira, igual te van a engañar.`, mentions: [juego.retador, juego.oponente] }, { quoted: msg });
+                // La mentira se asigna AQUÍ (al aceptar), no al revelar: el escritor
+                // la conoce desde el inicio para defenderla. Si no le llega el privado,
+                // se aborta YA y no después de que escribió todo.
+                juego.mentiraA = 1 + rnd(3);
+                try { await sock.sendMessage(juego.retador, { text: `🤫 Aceptaron tu reto. Cuando escribas tu trío, la MENTIRA será la número *${juego.mentiraA}*. Defiéndela como una verdad.` }); }
+                catch (_) { delete botState.juegos[chatId]; return sock.sendMessage(chatId, { text: '❌ No pude escribirle al privado al retador. Que abra chat conmigo primero y repitan el reto.' }, { quoted: msg }); }
+                return sock.sendMessage(chatId, { text: `🕵️ ${nom(juego.retador)}, escribe tus 3 frases así:\n*!miento 1.Sé nadar|2.Odio el helado|3.Tengo un gato*\n(o *!miento auto* y las invento yo por ti 😏)\n📩 Ya te mandé al privado cuál será la mentira.\n${nom(juego.oponente)} NO mires... bueno, mira, igual te van a engañar.`, mentions: [juego.retador, juego.oponente] }, { quoted: msg });
             }
             if (start === '!miento' && juego && juego.tipo === 'miento' && (juego.fase === 'escribeA' || juego.fase === 'escribeB')) {
                 const escritor = juego.fase === 'escribeA' ? juego.retador : juego.oponente;
@@ -429,21 +457,14 @@ module.exports = {
                 let frases, mentira;
                 if (resto.toLowerCase() === 'auto') {
                     frases = MIENTO_TRIOS[rnd(MIENTO_TRIOS.length)];
-                    mentira = 1 + rnd(3);
+                    // La mentira ya se asignó al aceptar el reto (el escritor ya la conoce)
+                    mentira = juego.fase === 'escribeA' ? (juego.mentiraA || (1 + rnd(3))) : (juego.mentiraB || (1 + rnd(3)));
                 } else {
                     const partes = resto.split('|').map(s => s.trim().replace(/^[123][.)]\s*/, ''));
                     if (partes.length !== 3 || partes.some(s => s.length < 2)) return sock.sendMessage(chatId, { text: '⚠️ Formato: *!miento 1.frase|2.frase|3.frase* (o *!miento auto*).' }, { quoted: msg });
                     frases = partes;
-                    mentira = 1 + rnd(3);
-                    // Decirle al escritor cuál quedó como mentira por privado sería ideal;
-                    // aquí se le dice en el grupo pero tapado: solo él sabe que... no.
-                    // Mejor: la mentira se elige y se le avisa SOLO a él por privado.
-                    try { await sock.sendMessage(sender, { text: `🤫 En tu trío, la MENTIRA es la número *${mentira}*. Defiéndela como una verdad.` }); }
-                    catch (_) { return sock.sendMessage(chatId, { text: '❌ No pude escribirte al privado. Abre chat conmigo primero y repite.' }, { quoted: msg }); }
-                }
-                if (resto.toLowerCase() === 'auto') {
-                    try { await sock.sendMessage(escritor, { text: `🤫 Te inventé el trío. La MENTIRA es la número *${mentira}*. Defiéndela.` }); }
-                    catch (_) { return sock.sendMessage(chatId, { text: '❌ No pude escribirte al privado. Abre chat conmigo primero y repite.' }, { quoted: msg }); }
+                    // La mentira ya se asignó al aceptar el reto (el escritor ya la conoce)
+                    mentira = juego.fase === 'escribeA' ? (juego.mentiraA || (1 + rnd(3))) : (juego.mentiraB || (1 + rnd(3)));
                 }
                 juego.frases = frases; juego.mentira = mentira;
                 juego.fase = juego.fase === 'escribeA' ? 'adivinaB' : 'adivinaA';
@@ -463,7 +484,19 @@ module.exports = {
                 let txt = acierto ? `🕵️ *¡${nom(sender)} TE DESCUBRIÓ!* La mentira era la ${juego.mentira}. ¡Qué mentiroso tan malo! 😂` : `😅 ${nom(sender)} cayó redondo: la mentira era la *${juego.mentira}*. ¡Te mintieron en la cara!`;
                 if (juego.fase === 'adivinaB') {
                     juego.fase = 'escribeB';
-                    return sock.sendMessage(chatId, { text: txt + `\n━━━━━━━━━━━━━━\n🔄 Turno de ${nom(juego.oponente)}: escribe tu trío con *!miento 1..|2..|3..* o *!miento auto*`, mentions: [sender, juego.oponente] }, { quoted: msg });
+                    // La mentira del 2.º turno también se asigna ANTES de escribir
+                    juego.mentiraB = 1 + rnd(3);
+                    try { await sock.sendMessage(juego.oponente, { text: `🤫 Te toca escribir. La MENTIRA de tu trío será la número *${juego.mentiraB}*. Defiéndela como una verdad.` }); }
+                    catch (_) {
+                        const pR2 = juego.puntos[juego.retador] || 0, pO2 = juego.puntos[juego.oponente] || 0;
+                        const win2 = pR2 === pO2 ? null : (pR2 > pO2 ? juego.retador : juego.oponente);
+                        delete botState.juegos[chatId];
+                        let fin = txt + `\n━━━━━━━━━━━━━━\n❌ No pude escribirle al privado a ${nom(juego.oponente)} para la 2.ª ronda. El juego termina aquí.\n📊 ${nom(juego.retador)} ${pR2} — ${pO2} ${nom(juego.oponente)}`;
+                        if (!win2) return sock.sendMessage(chatId, { text: fin + `\n🤝 *¡EMPATE!*` }, { quoted: msg });
+                        const pagado2 = await premiar2(db, win2, 20, 50, chatId);
+                        return sock.sendMessage(chatId, { text: fin + `\n🏆 *¡${nom(win2)} GANA!*\n💰 +50 diky | +20 XP${pagado2 ? '' : db.NOTA_ANTIFARMA}`, mentions: [sender, win2] }, { quoted: msg });
+                    }
+                    return sock.sendMessage(chatId, { text: txt + `\n━━━━━━━━━━━━━━\n🔄 Turno de ${nom(juego.oponente)}: escribe tu trío con *!miento 1..|2..|3..* o *!miento auto*\n📩 Ya te mandé al privado cuál será la mentira.`, mentions: [sender, juego.oponente] }, { quoted: msg });
                 }
                 const pR = juego.puntos[juego.retador] || 0, pO = juego.puntos[juego.oponente] || 0;
                 txt += `\n📊 ${nom(juego.retador)} ${pR} — ${pO} ${nom(juego.oponente)}`;

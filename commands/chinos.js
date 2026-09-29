@@ -245,9 +245,9 @@ module.exports = {
                 const ini = pick(CADENA_BANCO);
                 botState.juegos[chatId] = {
                     tipo: 'cadena', creador: sender, categoria: ini[0], ultima: normPal(ini[1]),
-                    usadas: new Set([normPal(ini[1])]), jugadores: {}, fallos: {}, _ts: Date.now()
+                    usadas: new Set([normPal(ini[1])]), jugadores: {}, fallos: {}, total: 1, lastTs: Date.now(), _ts: Date.now()
                 };
-                return sock.sendMessage(chatId, { text: `🔗 *¡CADENA DE PALABRAS!*\n━━━━━━━━━━━━━━\n📂 Categoría libre. Empiezo yo: *${ini[1].toUpperCase()}*\n👉 Sigue con *!cadena <palabra>* que empiece con *"${normPal(ini[1]).slice(-2).toUpperCase()}"*.\n❤️ 3 vidas por jugador. El que repite, inventa o se equivoca pierde una. ¡Último en pie gana (+60 diky)!` }, { quoted: msg });
+                return sock.sendMessage(chatId, { text: `🔗 *¡CADENA DE PALABRAS!*\n━━━━━━━━━━━━━━\n📂 Categoría libre. Empiezo yo: *${ini[1].toUpperCase()}*\n👉 Sigue con *!cadena <palabra>* que empiece con *"${normPal(ini[1]).slice(-2).toUpperCase()}"*.\n❤️ 3 vidas por jugador · ⏱️ *5 segundos* por turno · 🔟 gana quien ponga la *palabra 10*. El que repite, inventa, se equivoca o tarda pierde una. ¡Último en pie gana (+60 diky)!` }, { quoted: msg });
             }
             if (!palabra || palabra.length < 3) return sock.sendMessage(chatId, { text: '🔗 Manda una palabra de verdad: *!cadena <palabra>*.' }, { quoted: msg });
             juego.jugadores[sender] = true;
@@ -275,8 +275,21 @@ module.exports = {
             };
             if (!palabra.startsWith(debe)) return await fail(`"${palabra.toUpperCase()}" no empieza con "${debe.toUpperCase()}"`);
             if (juego.usadas.has(palabra)) return await fail(`"${palabra.toUpperCase()}" ya se usó`);
-            juego.usadas.add(palabra); juego.ultima = palabra;
-            return sock.sendMessage(chatId, { text: `🔗 ${nom(sender)}: *${palabra.toUpperCase()}* ✅\n👉 Siguiente con *"${palabra.slice(-2).toUpperCase()}"*: *!cadena <palabra>*`, mentions: [sender] }, { quoted: msg });
+            // ⏱️ 5 segundos por turno (se mide desde la última palabra válida)
+            if (juego.total > 1 && Date.now() - (juego.lastTs || Date.now()) > 5000) {
+                juego.lastTs = Date.now();
+                return await fail('tardaste más de 5 segundos ⏱️🐢');
+            }
+            juego.usadas.add(palabra); juego.ultima = palabra; juego.lastTs = Date.now(); juego.total = (juego.total || 1) + 1;
+            // 🔟 La palabra 10 cierra la cadena y gana quien la puso
+            if (juego.total >= 10) {
+                const win = sender;
+                delete botState.juegos[chatId];
+                db.sumarXP(win, 20).catch(() => {});
+                const pagado = await db.premiarConLimite(win, 60, 0, chatId).catch(() => true);
+                return sock.sendMessage(chatId, { text: `🔗 ${nom(sender)}: *${palabra.toUpperCase()}* ✅\n━━━━━━━━━━━━━━\n🔟 *¡DÉCIMA PALABRA! ¡SE ACABÓ LA CADENA!*\n🏆 *¡${nom(win)} GANA!*\n💰 +60 diky | +20 XP${pagado ? '' : db.NOTA_ANTIFARMA}`, mentions: [sender] }, { quoted: msg });
+            }
+            return sock.sendMessage(chatId, { text: `🔗 ${nom(sender)}: *${palabra.toUpperCase()}* ✅ (${juego.total}/10)\n👉 Siguiente con *"${palabra.slice(-2).toUpperCase()}"*: *!cadena <palabra>* ⏱️`, mentions: [sender] }, { quoted: msg });
         }
 
         // ==========================================

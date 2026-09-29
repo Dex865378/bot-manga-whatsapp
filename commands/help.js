@@ -291,7 +291,7 @@ const helpData = {
         cooldown: 'Ninguno'
     },
     '!naval': {
-        desc: 'Batalla naval 5x5 contra alguien, barcos escondidos al azar.',
+        desc: 'Batalla naval 5x5 contra alguien, barcos escondidos al azar. Solo ves tus tiros.',
         usage: '!naval @usuario\n!naval si / !naval no\n!fuego B3',
         ejemplo: '!naval @juan\n!fuego B3',
         args: 'Mención para retar, casilla A-E + 1-5 para disparar',
@@ -312,10 +312,10 @@ const helpData = {
         cooldown: 'Ninguno'
     },
     '!simon': {
-        desc: 'Memoria de secuencias de emojis (guarda tu récord).',
-        usage: '!simon\n!simon <emojis en orden>',
-        ejemplo: '!simon\n!simon 🔥 🐱',
-        args: 'Ninguno para empezar, emojis en orden para repetir',
+        desc: 'Memoria de emojis AL REVÉS y contra reloj (20s). Guarda tu récord.',
+        usage: '!simon\n!simon <emojis al revés>',
+        ejemplo: '!simon\n!simon 🐱 🔥',
+        args: 'Ninguno para empezar, emojis de atrás hacia adelante para repetir',
         cooldown: 'Ninguno'
     },
     '!hongbao': {
@@ -333,10 +333,10 @@ const helpData = {
         cooldown: 'Ninguno'
     },
     '!cadena': {
-        desc: 'Encadena palabras por sus 2 últimas letras. 3 vidas, último en pie gana.',
+        desc: 'Encadena palabras por sus 2 últimas letras. 3 vidas, 5s por turno, gana la palabra 10.',
         usage: '!cadena\n!cadena <palabra>',
         ejemplo: '!cadena\n!cadena mesa',
-        args: 'Ninguno para empezar, palabra para encadenar',
+        args: 'Ninguno para empezar, palabra para encadenar (máx 10 palabras)',
         cooldown: 'Ninguno'
     },
     '!traidor': {
@@ -368,10 +368,10 @@ const helpData = {
         cooldown: 'Ninguno'
     },
     '!palabron': {
-        desc: 'Palabra más larga con las mismas 6 letras. 3 rondas, mínimo 4 letras.',
+        desc: 'Palabra más larga con las mismas 6 letras (solo palabras de diccionario). 3 rondas, mínimo 4 letras.',
         usage: '!palabron @usuario\n!palabron <palabra>',
         ejemplo: '!palabron @juan\n!palabron respeto',
-        args: 'Mención para retar; palabra con solo las letras dadas',
+        args: 'Mención para retar; palabra real con solo las letras dadas',
         cooldown: 'Ninguno'
     },
     '!esgrima': {
@@ -389,7 +389,7 @@ const helpData = {
         cooldown: 'Ninguno'
     },
     '!miento': {
-        desc: '2 verdades + 1 mentira: escribe tu trío (o auto) y el rival descubre la mentira.',
+        desc: '2 verdades + 1 mentira: la mentira se te avisa al privado al aceptar el reto. El rival descubre con !cual.',
         usage: '!miento @usuario\n!miento 1..|2..|3.. (o auto)\n!cual <1-3>',
         ejemplo: '!miento @juan\n!miento auto\n!cual 2',
         args: 'Mención para retar; trío con | o auto',

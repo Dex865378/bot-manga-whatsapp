@@ -59,21 +59,6 @@ function colocarBarcos() {
     return new Set(barcos);
 }
 
-function pintarNavalPropio(barcos, tirosRival) {
-    // Tu tablero: 🚢 intacto, 🔥 tocado, ⚪ agua fallada por el rival
-    let r = '　🇦​🇧​🇨​🇩​🇪\n';
-    for (let f = 0; f < NAVAL_SIZE; f++) {
-        r += `${f + 1}️⃣`;
-        for (let c = 0; c < NAVAL_SIZE; c++) {
-            const k = `${f},${c}`;
-            if (tirosRival.has(k)) r += barcos.has(k) ? '🔥' : '⚪';
-            else r += barcos.has(k) ? '🚢' : '🌊';
-        }
-        r += '\n';
-    }
-    return r;
-}
-
 function pintarNavalTiros(misTiros, barcosRival) {
     // Lo que le disparaste: 💥 dado, ⚪ fallado, 🌊 sin probar
     let r = '　🇦​🇧​🇨​🇩​🇪\n';
@@ -325,7 +310,9 @@ module.exports = {
                 return sock.sendMessage(chatId, { text: txt, mentions: [win] }, { quoted: msg });
             }
             juego.turno = rival;
-            txt += `\n━━━━━━━━━━━━━━\n🛡️ *Tu tablero:*\n${pintarNavalPropio(juego.barcos[sender], juego.tiros[rival])}\n🎯 *Tus tiros:*\n${pintarNavalTiros(juego.tiros[sender], juego.barcos[rival])}\n👉 Turno de ${nom(rival)}: *!fuego <casilla>*`;
+            // Un solo tablero: TUS tiros (los barcos del rival siguen escondidos).
+            const faltan = total - hits;
+            txt += `\n━━━━━━━━━━━━━━\n🎯 *Tus tiros:*\n${pintarNavalTiros(juego.tiros[sender], juego.barcos[rival])}\n💥 ${hits}/${total} tocados · le faltan *${faltan}* casillas por hundir.\n👉 Turno de ${nom(rival)}: *!fuego <casilla>* (A-E, 1-5)`;
             return sock.sendMessage(chatId, { text: txt, mentions: [rival] }, { quoted: msg });
         }
 
@@ -413,15 +400,22 @@ module.exports = {
             if (args.length === 0) {
                 if (juego) return sock.sendMessage(chatId, { text: '⚠️ Ya hay un juego activo en este grupo. Termínalo primero.' }, { quoted: msg });
                 const seq = [SIMON_EMOJIS[rnd(SIMON_EMOJIS.length)], SIMON_EMOJIS[rnd(SIMON_EMOJIS.length)]];
-                botState.juegos[chatId] = { tipo: 'simon', jugador: sender, responder: sender, seq, _ts: Date.now() };
-                return sock.sendMessage(chatId, { text: `🧠 *¡SIMON DICE!* Memoriza y repite.\n━━━━━━━━━━━━━━\n${seq.join('  ')}\n\n✍️ Repite con *!simon* + los emojis en orden.`, mentions: [sender] }, { quoted: msg });
+                botState.juegos[chatId] = { tipo: 'simon', jugador: sender, responder: sender, seq, shownAt: Date.now(), _ts: Date.now() };
+                return sock.sendMessage(chatId, { text: `🧠 *¡SIMON DICE... AL REVÉS!* 🔄 Memoriza y repite la secuencia *de ATRÁS hacia adelante* (nada de copiar y pegar 😏).\n━━━━━━━━━━━━━━\n${seq.join('  ')}\n\n✍️ Repite con *!simon* + los emojis AL REVÉS. ⏱️ Tienes *20 segundos*.`, mentions: [sender] }, { quoted: msg });
             }
             if (!juego || juego.tipo !== 'simon' || juego.jugador !== sender) {
                 if (juego && juego.tipo === 'simon') return sock.sendMessage(chatId, { text: '👀 Ese Simón es de otro.' }, { quoted: msg });
                 return sock.sendMessage(chatId, { text: '🧠 Empieza con *!simon* (sin nada).' }, { quoted: msg });
             }
             const dicho = args.join('').replace(/\s/g, '');
-            const real = juego.seq.join('');
+            const real = [...juego.seq].reverse().join('');
+            const tardo = Date.now() - (juego.shownAt || Date.now());
+            if (tardo > 20000) {
+                const nivel = juego.seq.length - 1;
+                delete botState.juegos[chatId];
+                await premiar(db, sender, 10, 0, chatId);
+                return sock.sendMessage(chatId, { text: `⏱️ *¡MUY LENTO!* Pasaron ${(tardo / 1000).toFixed(0)}s (límite 20s).\n🏁 Te quedas en *nivel ${nivel}*.\n+10 XP`, mentions: [sender] }, { quoted: msg });
+            }
             if (dicho !== real) {
                 const nivel = juego.seq.length - 1;
                 delete botState.juegos[chatId];
@@ -435,8 +429,8 @@ module.exports = {
                 return sock.sendMessage(chatId, { text: `💥 *¡FALLASTE!* Era: ${juego.seq.join('  ')}\n🏁 Llegaste a *nivel ${nivel}*${extra}\n+10 XP`, mentions: [sender] }, { quoted: msg });
             }
             juego.seq.push(SIMON_EMOJIS[rnd(SIMON_EMOJIS.length)]);
-            juego._ts = Date.now();
-            return sock.sendMessage(chatId, { text: `✅ ¡Bien! Nivel ${juego.seq.length - 1} superado.\n━━━━━━━━━━━━━━\n${juego.seq.join('  ')}\n\n✍️ Repite con *!simon* + los emojis en orden.` }, { quoted: msg });
+            juego._ts = Date.now(); juego.shownAt = Date.now();
+            return sock.sendMessage(chatId, { text: `✅ ¡Bien! Nivel ${juego.seq.length - 1} superado.\n━━━━━━━━━━━━━━\n${juego.seq.join('  ')}\n\n✍️ Repite con *!simon* + los emojis AL REVÉS 🔄. ⏱️ 20 segundos.` }, { quoted: msg });
         }
     }
 };
