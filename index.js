@@ -361,9 +361,14 @@ function getBienvenidaAssets() {
     return _bienvenidaCache;
 }
 // Usada por: group-participants.update (admin) y mensajes de sistema (sin admin)
+// Rápida: config + portada se piden EN PARALELO (antes eran 2 viajes
+// secuenciales a Turso) y el sticker sale sin bloquear (fire-and-forget).
 async function enviarBienvenida(sock, groupId, participantJid) {
     try {
-        const conf = await db.tieneBienvenida(groupId);
+        const [conf, portadaDb] = await Promise.all([
+            db.tieneBienvenida(groupId),
+            db.getPortada('bienvenida', groupId).catch(() => null)
+        ]);
         if (!conf.activa) {
             if (VERBOSE_LOGS) console.log(`[BIENVENIDA] omitida en ${groupId?.slice(-10)}: desactivada (usa !bienvenida on)`);
             return;
@@ -384,8 +389,7 @@ async function enviarBienvenida(sock, groupId, participantJid) {
         
         // Enviar imagen de bienvenida: portada configurada con !setportada
         // (cacheada en RAM) o la imagen por defecto. Imagen + texto en UN mensaje.
-        let bienvenidaImg = null;
-        try { bienvenidaImg = await db.getPortada('bienvenida', groupId); } catch (_) { }
+        let bienvenidaImg = portadaDb;
         if (!bienvenidaImg) bienvenidaImg = getBienvenidaAssets().img;
         const { stk: bienvenidaStk } = getBienvenidaAssets();
         if (bienvenidaImg) {
@@ -405,14 +409,12 @@ async function enviarBienvenida(sock, groupId, participantJid) {
             await sock.sendMessage(groupId, { text: customMsg, mentions: [participantJid] });
         }
         
-        // Pausa y sticker (cacheado en RAM)
-        await delay(1500);
+        // Sticker de regalo SIN bloquear: sale en segundo plano mientras el
+        // bot ya quedó libre (antes esperaba 1.5s fijos aquí).
         if (bienvenidaStk) {
-            try {
-                await sock.sendMessage(groupId, { sticker: bienvenidaStk });
-            } catch (eStk) {
+            sock.sendMessage(groupId, { sticker: bienvenidaStk }).catch(eStk => {
                 console.error(`❌ Error sticker bienvenida:`, eStk.message);
-            }
+            });
         }
     } catch (e) {
         console.error('❌ Error en enviarBienvenida:', e.message);
@@ -432,9 +434,13 @@ function yaDespedido(groupId, user) {
 }
 
 // Despedida al salir alguien (con portada + texto en UN mensaje).
+// Rápida: config + portada en paralelo (igual que la bienvenida).
 async function enviarDespedida(sock, groupId, participantJid) {
     try {
-        const conf = await db.tieneDespedida(groupId);
+        const [conf, portadaDb] = await Promise.all([
+            db.tieneDespedida(groupId),
+            db.getPortada('despedida', groupId).catch(() => null)
+        ]);
         if (!conf.activa) {
             if (VERBOSE_LOGS) console.log(`[DESPEDIDA] omitida: desactivada (usa !despedida on)`);
             return;
@@ -444,8 +450,7 @@ async function enviarDespedida(sock, groupId, participantJid) {
         customMsg = customMsg.replace(/{usuario}/gi, `@${nombre}`).replace(/{user}/gi, `@${nombre}`);
         if (!customMsg.includes(`@${nombre}`)) customMsg = `Adiós @${nombre} 👋\n\n` + customMsg;
 
-        let img = null;
-        try { img = await db.getPortada('despedida', groupId); } catch (_) { }
+        let img = portadaDb;
         if (!img) img = getBienvenidaAssets().img;
         if (img) {
             try {
@@ -1197,10 +1202,8 @@ async function startBot() {
                     const groupId = msg.key.remoteJid;
                     console.log(`👥 [SISTEMA] Detectada entrada de ${participants.length} usuario(s) a ${groupId}`);
                     
-                    // Procesar bienvenida para cada participante
-                    for (const p of participants) {
-                        await enviarBienvenida(sock, groupId, p);
-                    }
+                    // Procesar bienvenidas en paralelo (antes una por una)
+                    await Promise.allSettled(participants.map(p => enviarBienvenida(sock, groupId, p)));
                     continue; // No procesar como mensaje normal
                 }
             }
@@ -1279,22 +1282,14 @@ async function startBot() {
     sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
         console.log(`👥 [ADMIN] Evento grupo: ${action} en ${id} para ${participants.length} usuarios`);
         if (action === 'add') {
-            for (const raw of participants) {
-                const p = normWelcomeJid(raw);
-                if (!p || yaSaludado(id, p)) continue;
-                await enviarBienvenida(sock, id, p);
-                // Pausa entre usuarios si hay varios
-                if (participants.length > 1) await delay(2000);
-            }
+            const pendientes = participants.map(normWelcomeJid).filter(p => p && !yaSaludado(id, p));
+            // En paralelo y sin pausas de 2s: cada bienvenida ya es rápida
+            await Promise.allSettled(pendientes.map(p => enviarBienvenida(sock, id, p)));
             return;
         }
         if (action === 'remove' || action === 'leave') {
-            for (const raw of participants) {
-                const p = normWelcomeJid(raw);
-                if (!p || yaDespedido(id, p)) continue;
-                await enviarDespedida(sock, id, p);
-                if (participants.length > 1) await delay(2000);
-            }
+            const salientes = participants.map(normWelcomeJid).filter(p => p && !yaDespedido(id, p));
+            await Promise.allSettled(salientes.map(p => enviarDespedida(sock, id, p)));
         }
     });
 

@@ -320,14 +320,18 @@ module.exports = {
 
             const categories = ['waifu', 'neko', 'shinobu', 'megumin', 'waifu', 'neko', 'waifu', 'waifu', 'neko', 'waifu'];
 
-            // Obtener 10 imágenes en paralelo para velocidad
+            // Obtener 10 imágenes en paralelo para velocidad (con 1 reintento
+            // por categoría: waifu.pics a veces falla el primer intento)
+            const UA_WAIFU = { 'User-Agent': 'DikybotWA/1.0 (WhatsApp Bot)' };
             const promises = categories.map(async (cat, index) => {
-                try {
-                    const res = await axios.get(`https://api.waifu.pics/sfw/${cat}`, { timeout: 8000 });
-                    return { index, url: res.data.url, ok: true };
-                } catch (e) {
-                    return { index, ok: false };
+                for (let intento = 0; intento < 2; intento++) {
+                    try {
+                        const res = await axios.get(`https://api.waifu.pics/sfw/${cat}`, { timeout: 8000, headers: UA_WAIFU });
+                        if (res.data && res.data.url) return { index, url: res.data.url, ok: true };
+                    } catch (e) { /* reintenta una vez */ }
+                    if (intento === 0) await new Promise(r => setTimeout(r, 1000));
                 }
+                return { index, ok: false };
             });
 
             const results = await Promise.all(promises);
@@ -353,8 +357,8 @@ module.exports = {
                         image: Buffer.from(imgRes.data),
                         caption: `🎀 *Waifu #${enviadas}/${successful.length}*`
                     });
-                    // Pausa para evitar flood/ban de WhatsApp
-                    if (enviadas < successful.length) await delay(1500);
+                    // Pausa corta para evitar flood/ban de WhatsApp
+                    if (enviadas < successful.length) await delay(800);
                 } catch (e) {
                     console.error(`❌ Error descargando waifu #${waifu.index + 1}:`, e.message);
                 }

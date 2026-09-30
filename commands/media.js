@@ -470,19 +470,34 @@ El bot traduce tu texto y lo dice en voz alta.
                 return sock.sendMessage(chatId, { text: info }, { quoted: msg });
             }
 
-            // 2. Buscar Online (Jikan)
+            // 2. Buscar Online (Jikan, con respaldo AniList)
+            const mandarManga = async (titulo, score, capitulos, generos, autor, sinopsis, imgUrl) => {
+                let info = `📖 **${String(titulo).toUpperCase()}** 📖\n`;
+                info += `━━━━━━━━━━━━━━\n🌟 **Nota:** ${score || 'N/A'} | 📅 **Capítulos:** ${capitulos || '?'}\n`;
+                info += `🎭 **Géneros:** ${generos || '?'}\n`;
+                info += `👤 **Autor:** ${autor || '?'}\n`;
+                info += `━━━━━━━━━━━━━━\n📖 **SINOPSIS:**\n_${sinopsis}_\n━━━━━━━━━━━━━━`;
+                if (imgUrl) {
+                    try {
+                        return sock.sendMessage(chatId, { image: { url: imgUrl }, caption: info }, { quoted: msg });
+                    } catch (_) { /* cae a texto */ }
+                }
+                return sock.sendMessage(chatId, { text: info }, { quoted: msg });
+            };
             try {
                 const res = await fetchWithRetry(`https://api.jikan.moe/v4/manga?q=${encodeURIComponent(q)}&limit=1`, { timeout: 8000 }, 3, 1000);
-                if (!res.data.data[0]) return sock.sendMessage(chatId, { text: '❌ No se encontró ese manga en la base de datos mundial.' });
-                const m = res.data.data[0];
-                const sinopsis = await traducirConCache(m.synopsis, 'resumen');
-                let info = `📖 **${m.title.toUpperCase()}** 📖\n`;
-                info += `━━━━━━━━━━━━━━\n🌟 **Nota:** ${m.score || 'N/A'} | 📅 **Capítulos:** ${m.chapters || '?'}\n`;
-                info += `🎭 **Géneros:** ${m.genres.map(g => g.name).join(', ')}\n`;
-                info += `👤 **Autor:** ${m.authors.map(a => a.name).join(', ') || '?'}\n`;
-                info += `━━━━━━━━━━━━━━\n📖 **SINOPSIS:**\n_${sinopsis}_\n━━━━━━━━━━━━━━`;
-                return sock.sendMessage(chatId, { image: { url: m.images.jpg.image_url }, caption: info }, { quoted: msg });
-            } catch (e) { return sock.sendMessage(chatId, { text: '❌ Error al buscar online.' }); }
+                if (res.data.data[0]) {
+                    const m = res.data.data[0];
+                    const sinopsis = await traducirConCache(m.synopsis, 'resumen');
+                    return mandarManga(m.title, m.score, m.chapters, m.genres.map(g => g.name).join(', '), m.authors.map(a => a.name).join(', '), sinopsis, m.images.jpg.image_url);
+                }
+            } catch (_) { /* cae al respaldo AniList */ }
+            try {
+                const am = await anilist.buscarManga(q);
+                if (!am) return sock.sendMessage(chatId, { text: '❌ No se encontró ese manga en Jikan ni en AniList.' });
+                const sinop = am.sinopsis ? await traducirConCache(am.sinopsis, 'resumen') : 'Sin descripción disponible.';
+                return mandarManga(am.titulo, am.score, am.capitulos, am.generos, null, sinop, am.portada);
+            } catch (e) { return sock.sendMessage(chatId, { text: '❌ Error al buscar online. Intenta de nuevo.' }); }
         }
 
         // !buscar
@@ -878,32 +893,63 @@ El bot traduce tu texto y lo dice en voz alta.
                 const cacheKey = `studio:${q.toLowerCase()}`;
                 let s = getApiCache(cacheKey);
                 if (!s) {
-                    const res = await fetchWithRetry(`https://api.jikan.moe/v4/producers?q=${encodeURIComponent(q)}&limit=1`, { timeout: 8000 }, 3, 1000);
-                    if (!res.data.data[0]) return sock.sendMessage(chatId, { text: '❌ No encontrado.' }, { quoted: msg });
-                    s = res.data.data[0];
-                    setApiCache(cacheKey, s);
+                    try {
+                        const res = await fetchWithRetry(`https://api.jikan.moe/v4/producers?q=${encodeURIComponent(q)}&limit=1`, { timeout: 8000 }, 3, 1000);
+                        if (res.data.data[0]) { s = res.data.data[0]; setApiCache(cacheKey, s); }
+                    } catch (_) { /* cae al respaldo AniList */ }
                 }
-                const caption = `🎬 *Estudio:* ${s.titles[0]?.title}\n📅 *Est:* ${s.established || '?'}\n🔗 *Web:* ${s.url}`;
-
-                if (s.images?.jpg?.image_url) {
-                    return sock.sendMessage(chatId, { image: { url: s.images.jpg.image_url }, caption }, { quoted: msg });
+                if (s) {
+                    const caption = `🎬 *Estudio:* ${s.titles[0]?.title}\n📅 *Est:* ${s.established || '?'}\n🔗 *Web:* ${s.url}`;
+                    if (s.images?.jpg?.image_url) {
+                        try {
+                            return sock.sendMessage(chatId, { image: { url: s.images.jpg.image_url }, caption }, { quoted: msg });
+                        } catch (_) { /* cae a texto */ }
+                    }
+                    return sock.sendMessage(chatId, { text: caption }, { quoted: msg });
                 }
-                return sock.sendMessage(chatId, { text: caption }, { quoted: msg });
+                // Respaldo AniList (Jikan caído o sin resultado)
+                const est = await anilist.buscarEstudio(q);
+                if (!est) return sock.sendMessage(chatId, { text: '❌ No encontrado en Jikan ni en AniList.' }, { quoted: msg });
+                let txtEst = `🎬 *Estudio:* ${est.nombre}${est.url ? `\n🔗 ${est.url}` : ''}`;
+                if (est.top.length > 0) {
+                    txtEst += `\n\n⭐ *Sus animes más populares:*`;
+                    est.top.slice(0, 5).forEach((t, i) => { txtEst += `\n${i + 1}. ${t.titulo}${t.score ? ` (${t.score}⭐)` : ''}`; });
+                }
+                const portEst = (est.top.find(t => t.portada) || {}).portada;
+                if (portEst) {
+                    try {
+                        return sock.sendMessage(chatId, { image: { url: portEst }, caption: txtEst }, { quoted: msg });
+                    } catch (_) { /* cae a texto */ }
+                }
+                return sock.sendMessage(chatId, { text: txtEst }, { quoted: msg });
             } catch (e) {
                 console.error('❌ [estudio] Error:', e.message);
-                return sock.sendMessage(chatId, { text: '❌ Error al buscar estudio.' }, { quoted: msg });
+                return sock.sendMessage(chatId, { text: '❌ Error al buscar estudio. Intenta de nuevo.' }, { quoted: msg });
             }
         }
 
         if (start === '!proximo') {
             const q = args.join(' ');
+            if (!q) return sock.sendMessage(chatId, { text: '📺 Uso: !proximo <nombre del anime>' }, { quoted: msg });
             try {
-                const res = await fetchWithRetry(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(q)}&limit=1`, { timeout: 8000 }, 3, 1000);
-                if (!res.data.data[0]) return sock.sendMessage(chatId, { text: '❌ No encontrado.' });
-                const a = res.data.data[0];
-                return sock.sendMessage(chatId, { text: `📺 *${a.title}*\n📡 *Emisión:* ${a.broadcast?.string || 'No disponible'}` });
+                try {
+                    const res = await fetchWithRetry(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(q)}&limit=1`, { timeout: 8000 }, 3, 1000);
+                    if (res.data.data[0]) {
+                        const a = res.data.data[0];
+                        return sock.sendMessage(chatId, { text: `📺 *${a.title}*\n📡 *Emisión:* ${a.broadcast?.string || 'No disponible'}` });
+                    }
+                } catch (_) { /* cae al respaldo AniList */ }
+                // Respaldo AniList (Jikan caído o sin resultado)
+                const p = await anilist.buscarProximo(q);
+                if (!p) return sock.sendMessage(chatId, { text: '❌ No encontrado en Jikan ni en AniList.' }, { quoted: msg });
+                let txtProx = `📺 *${p.titulo}*\n📡 *Estado:* ${p.estado}`;
+                if (p.proxEp && p.proxFecha) txtProx += `\n🗓️ *Ep. ${p.proxEp}:* ${p.proxFecha}`;
+                else if (p.inicio) txtProx += `\n🗓️ *Inicio:* ${p.inicio}`;
+                else txtProx += `\n🗓️ *Emisión:* fecha por confirmar`;
+                if (p.url) txtProx += `\n🔗 ${p.url}`;
+                return sock.sendMessage(chatId, { text: txtProx });
             } catch (e) {
-                return sock.sendMessage(chatId, { text: '❌ Error al buscar información.' }, { quoted: msg });
+                return sock.sendMessage(chatId, { text: '❌ Error al buscar información. Intenta de nuevo.' }, { quoted: msg });
             }
         }
 

@@ -299,6 +299,9 @@ async function handleGameResponse(sock, msg, context) {
 
     // Caso Ahorcado
     if (juego.tipo === 'ahorcado') {
+        // Los comandos (ej: !8ball) NO son letras: si hay un ahorcado activo
+        // en el grupo se los tragaba como letra '!' y les quitaba vidas.
+        if (isCommand) return false;
         const letra = cmd.substring(0, 1).toLowerCase();
         if (cmd.toLowerCase() === juego.palabra.toLowerCase()) {
             delete botState.juegos[chatId];

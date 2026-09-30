@@ -165,6 +165,18 @@ async function recomendarNovela(generoEs, excludeIds = []) {
 // ─── Búsqueda de anime por nombre (respaldo de !anime cuando Jikan falla) ────
 const _animeCache = new Map(); // nombre lower → { anime, ts }
 const TTL_ANIME = 6 * 60 * 60 * 1000; // 6h
+const _studioCache = new Map(); // nombre lower → { estudio, ts }
+const _airingCache = new Map(); // nombre lower → { airing, ts }
+const _mangaCache = new Map(); // nombre lower → { manga, ts }
+
+// Evicción simple: si el mapa pasa de 100 entradas, saca la más vieja.
+function cacheSetLimitado(map, key, val) {
+    if (map.size >= 100) {
+        const oldest = map.keys().next().value;
+        map.delete(oldest);
+    }
+    map.set(key, val);
+}
 
 /**
  * Busca un anime por nombre en AniList.
@@ -214,9 +226,132 @@ async function buscarAnime(nombre) {
     return anime;
 }
 
+/**
+ * Busca un estudio de animación (respaldo de !estudio cuando Jikan falla).
+ * Devuelve nombre + sus 5 animes más populares con portada.
+ */
+async function buscarEstudio(nombre) {
+    const key = (nombre || '').toLowerCase().trim();
+    if (!key) return null;
+    const hit = _studioCache.get(key);
+    if (hit && Date.now() - hit.ts < TTL_ANIME) return hit.estudio;
+
+    const query = `
+        query ($search: String) {
+            Studio(search: $search) {
+                name
+                siteUrl
+                isAnimationStudio
+                media(sort: POPULARITY_DESC, perPage: 5) {
+                    nodes {
+                        title { romaji english }
+                        averageScore
+                        siteUrl
+                        coverImage { large }
+                    }
+                }
+            }
+        }`;
+    const data = await anilistQuery(query, { search: nombre }, 2);
+    const s = data && data.Studio;
+    if (!s) return null;
+
+    const top = ((s.media && s.media.nodes) || []).map(m => ({
+        titulo: (m.title && (m.title.english || m.title.romaji)) || '?',
+        score: m.averageScore ? (m.averageScore / 10).toFixed(2) : null,
+        url: m.siteUrl || '',
+        portada: (m.coverImage && m.coverImage.large) || null
+    }));
+    const estudio = { nombre: s.name, url: s.siteUrl || '', esAnimacion: !!s.isAnimationStudio, top };
+    cacheSetLimitado(_studioCache, key, { estudio, ts: Date.now() });
+    return estudio;
+}
+
+/**
+ * Busca un anime y devuelve su próxima emisión (respaldo de !proximo).
+ */
+async function buscarProximo(nombre) {
+    const key = (nombre || '').toLowerCase().trim();
+    if (!key) return null;
+    const hit = _airingCache.get(key);
+    if (hit && Date.now() - hit.ts < TTL_ANIME) return hit.airing;
+
+    const query = `
+        query ($search: String) {
+            Media(search: $search, type: ANIME) {
+                title { romaji english }
+                status
+                siteUrl
+                startDate { year month day }
+                nextAiringEpisode { airingAt episode }
+            }
+        }`;
+    const data = await anilistQuery(query, { search: nombre }, 2);
+    const m = data && data.Media;
+    if (!m) return null;
+
+    const airing = {
+        titulo: (m.title && (m.title.english || m.title.romaji)) || nombre,
+        estado: m.status || '?',
+        url: m.siteUrl || '',
+        inicio: (m.startDate && m.startDate.year) ? `${m.startDate.day || '?'}/${m.startDate.month || '?'}/${m.startDate.year}` : null,
+        proxEp: (m.nextAiringEpisode && m.nextAiringEpisode.episode) || null,
+        proxFecha: (m.nextAiringEpisode && m.nextAiringEpisode.airingAt)
+            ? new Date(m.nextAiringEpisode.airingAt * 1000).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+            : null
+    };
+    cacheSetLimitado(_airingCache, key, { airing, ts: Date.now() });
+    return airing;
+}
+
+/**
+ * Busca un manga (respaldo de !manga cuando Jikan falla).
+ */
+async function buscarManga(nombre) {
+    const key = (nombre || '').toLowerCase().trim();
+    if (!key) return null;
+    const hit = _mangaCache.get(key);
+    if (hit && Date.now() - hit.ts < TTL_ANIME) return hit.manga;
+
+    const query = `
+        query ($search: String) {
+            Media(search: $search, type: MANGA) {
+                title { romaji english }
+                averageScore
+                genres
+                status
+                chapters
+                volumes
+                siteUrl
+                coverImage { large }
+                description(asHtml: false)
+            }
+        }`;
+    const data = await anilistQuery(query, { search: nombre }, 2);
+    const m = data && data.Media;
+    if (!m) return null;
+
+    const manga = {
+        titulo: (m.title && (m.title.english || m.title.romaji)) || nombre,
+        score: m.averageScore ? (m.averageScore / 10).toFixed(2) : null,
+        generos: (m.genres || []).join(', '),
+        estado: m.status || '?',
+        capitulos: m.chapters || '?',
+        tomos: m.volumes || '?',
+        url: m.siteUrl || '',
+        portada: (m.coverImage && m.coverImage.large) || null,
+        sinopsis: (m.description || '').replace(/<[^>]+>/g, '').trim().slice(0, 900)
+    };
+    cacheSetLimitado(_mangaCache, key, { manga, ts: Date.now() });
+    return manga;
+}
+
 module.exports = {
     recomendarNovela,
     buscarAnime,
+    buscarEstudio,
+    buscarProximo,
+    buscarManga,
     GENEROS_DISPLAY,
     GENERO_MAP_ES_EN
 };
