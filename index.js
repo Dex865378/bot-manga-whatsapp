@@ -1227,7 +1227,12 @@ async function startBot() {
             else if (tipo === 'imageMessage') texto = msg.message.imageMessage?.caption || '';
             else if (tipo === 'videoMessage') texto = msg.message.videoMessage?.caption || '';
 
-            if (fromMe && !texto.trim().startsWith('!')) continue;
+            // Ignorar TODO lo que sale del propio teléfono vinculado (fromMe):
+            // si el dueño prueba comandos desde el celular del bot, el sender
+            // es el JID del otro (grupo u otra persona) pero el pushName es el
+            // del perfil del bot ('Dex') → ensucia nombres ajenos y farmea
+            // stats en filas que no son suyas. Práctica estándar en bots.
+            if (fromMe) continue;
 
             const sender = msg.key.participant || chatId;
             const juegoActivo = botState.juegos[chatId];
@@ -1422,7 +1427,9 @@ async function procesarMensaje(sock, msg) {
         }
 
         // --- REGISTRO INTELIGENTE DE NOMBRE (WhatsApp Nickname) ---
-        if (pushName && isCommand) {
+        // Nunca con mensajes propios (fromMe): el pushName ahí es el del
+        // perfil del teléfono del bot y renombraría filas ajenas a 'Dex'.
+        if (pushName && isCommand && !msg.key.fromMe) {
             db.obtenerUsuario(sender)
                 .then(u => {
                     if (u && u.nombre_wa !== pushName) {
