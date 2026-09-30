@@ -843,43 +843,55 @@ El bot traduce tu texto y lo dice en voz alta.
         if (start === '!personaje') {
             const q = args.join(' ');
             if (!q) return sock.sendMessage(chatId, { text: '👤 Uso: !personaje <nombre>' }, { quoted: msg });
+
+            const mandarPersonaje = async (nombre, nativo, favs, bio, imgUrl) => {
+                const bioCorta = bio.length > 400 ? bio.substring(0, 400) + '...' : bio;
+                const caption = `👤 *${nombre}*\n🎌 *Nombre JP:* ${nativo || 'N/A'}\n⭐ *Favoritos:* ${favs || 0}\n\n📖 *Biografía:*\n${bioCorta}`;
+                if (imgUrl) {
+                    try {
+                        return sock.sendMessage(chatId, { image: { url: imgUrl }, caption }, { quoted: msg });
+                    } catch (_) { /* cae a texto */ }
+                }
+                return sock.sendMessage(chatId, { text: caption }, { quoted: msg });
+            };
+
             try {
                 const cacheKey = `char:${q.toLowerCase()}`;
                 let characters = getApiCache(cacheKey);
-                
+
                 if (!characters) {
                     // Buscar hasta 5 resultados para encontrar el mejor match
-                    const res = await fetchWithRetry(`https://api.jikan.moe/v4/characters?q=${encodeURIComponent(q)}&limit=5`, { timeout: 8000 }, 3, 1000);
-                    if (!res.data.data || res.data.data.length === 0) {
-                        return sock.sendMessage(chatId, { text: '❌ No se encontró ese personaje.' }, { quoted: msg });
-                    }
-                    characters = res.data.data;
-                    setApiCache(cacheKey, characters);
+                    try {
+                        const res = await fetchWithRetry(`https://api.jikan.moe/v4/characters?q=${encodeURIComponent(q)}&limit=5`, { timeout: 8000 }, 3, 1000);
+                        if (res.data.data && res.data.data.length > 0) {
+                            characters = res.data.data;
+                            setApiCache(cacheKey, characters);
+                        }
+                    } catch (_) { /* cae al respaldo AniList */ }
                 }
-                
-                // Buscar el mejor match por nombre exacto o coincidencia parcial
-                const qLower = q.toLowerCase();
-                let c = characters.find(ch => 
-                    ch.name.toLowerCase() === qLower || 
-                    (ch.name_kanji && ch.name_kanji.toLowerCase() === qLower)
-                ) || characters.find(ch => 
-                    ch.name.toLowerCase().includes(qLower) || 
-                    (ch.name_kanji && ch.name_kanji.toLowerCase().includes(qLower))
-                ) || characters[0]; // fallback al primero si no hay match exacto
-                
-                // Asegurar que la bio sea traducida a español
-                let bioText = c.about || 'Sin descripción disponible.';
-                const bio = await traducirConCache(bioText, 'biografía');
-                
-                // Limitar bio para WhatsApp
-                const bioCorta = bio.length > 400 ? bio.substring(0, 400) + '...' : bio;
-                
-                const caption = `👤 *${c.name}*\n🎌 *Nombre JP:* ${c.name_kanji || 'N/A'}\n⭐ *Favoritos:* ${c.favorites || 0}\n\n📖 *Biografía:*\n${bioCorta}`;
 
-                if (c.images?.jpg?.image_url) {
-                    return sock.sendMessage(chatId, { image: { url: c.images.jpg.image_url }, caption }, { quoted: msg });
+                if (characters && characters.length > 0) {
+                    // Buscar el mejor match por nombre exacto o coincidencia parcial
+                    const qLower = q.toLowerCase();
+                    const c = characters.find(ch =>
+                        ch.name.toLowerCase() === qLower ||
+                        (ch.name_kanji && ch.name_kanji.toLowerCase() === qLower)
+                    ) || characters.find(ch =>
+                        ch.name.toLowerCase().includes(qLower) ||
+                        (ch.name_kanji && ch.name_kanji.toLowerCase().includes(qLower))
+                    ) || characters[0]; // fallback al primero si no hay match exacto
+
+                    // Asegurar que la bio sea traducida a español
+                    const bioText = c.about || 'Sin descripción disponible.';
+                    const bio = await traducirConCache(bioText, 'biografía');
+                    return mandarPersonaje(c.name, c.name_kanji, c.favorites, bio, c.images?.jpg?.image_url);
                 }
-                return sock.sendMessage(chatId, { text: caption }, { quoted: msg });
+
+                // Respaldo AniList cuando Jikan no trae nada o está limitado
+                const ac = await anilist.buscarPersonaje(q);
+                if (!ac) return sock.sendMessage(chatId, { text: '❌ No se encontró ese personaje en Jikan ni en AniList.' }, { quoted: msg });
+                const bioEs = await traducirConCache(ac.bio, 'biografía');
+                return mandarPersonaje(ac.nombre, ac.nativo, ac.favoritos, bioEs, ac.portada);
             } catch (e) {
                 console.error('❌ [personaje] Error:', e.message);
                 return sock.sendMessage(chatId, { text: '❌ Error al buscar personaje. Intenta con otro nombre.' }, { quoted: msg });

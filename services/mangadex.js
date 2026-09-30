@@ -32,7 +32,7 @@ const MAX_PAGES_PDF = 150;
 const MAX_CONCURRENT_DL = 5;
 
 /** Delay entre llamadas a la API de MangaDex (ms) */
-const API_DELAY_MS = 250;
+const API_DELAY_MS = 400; // pausa base entre llamadas (MangaDex limita a 5 req/s)
 
 // ─── Caché en memoria (TTL) ───────────────────────────────────────────────────
 const _idCache  = new Map();  // titulo → { id, ts }
@@ -101,11 +101,23 @@ async function mdexGet(endpoint, params = {}) {
             });
             return res.data;
         } catch (e) {
-            const isTransient = !e.response || e.code === 'ECONNRESET' || e.code === 'ETIMEDOUT'
+            // 429 = rate limit de MangaDex: SÍ se reintenta (antes se lanzaba
+            // de una vez porque tiene e.response y no contaba como transitorio).
+            const status = e.response?.status;
+            const retryAfter = parseInt(
+                e.response?.headers?.['retry-after'] ||
+                e.response?.headers?.['x-ratelimit-retry-after'] || '0', 10
+            );
+            const isRateLimit = status === 429;
+            const isTransient = isRateLimit || !e.response || e.code === 'ECONNRESET' || e.code === 'ETIMEDOUT'
                 || e.code === 'ECONNABORTED' || e.message?.includes('socket hang up');
             if (!isTransient || attempt === maxRetries) throw e;
-            const wait = 1000 * Math.pow(2, attempt - 1); // 1s, 2s, 4s
-            console.warn(`[MangaDex] Intento ${attempt} falló (${e.code || e.message}), reintentando en ${wait}ms...`);
+            // Respetar el Retry-After que manda MangaDex (segundos → ms),
+            // con un mínimo generoso si no trae el header.
+            const wait = isRateLimit
+                ? Math.max(retryAfter * 1000, 2000) + attempt * 1000
+                : 1000 * Math.pow(2, attempt - 1); // 1s, 2s, 4s
+            console.warn(`[MangaDex] Intento ${attempt} falló (${status || e.code || e.message}), reintentando en ${wait}ms...`);
             await delay(wait);
         }
     }

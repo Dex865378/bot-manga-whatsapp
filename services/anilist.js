@@ -346,12 +346,53 @@ async function buscarManga(nombre) {
     return manga;
 }
 
+// ─── Búsqueda de personaje (respaldo de !personaje cuando Jikan falla) ────
+const _charCache = new Map(); // nombre lower → { char, ts }
+
+/**
+ * Busca un personaje por nombre en AniList.
+ * @param {string} nombre
+ * @returns {Promise<{nombre, nativo, favoritos, bio, portada, url}|null>}
+ */
+async function buscarPersonaje(nombre) {
+    const key = (nombre || '').toLowerCase().trim();
+    if (!key) return null;
+    const hit = _charCache.get(key);
+    if (hit && Date.now() - hit.ts < TTL_ANIME) return hit.char;
+
+    const query = `
+        query ($search: String) {
+            Character(search: $search) {
+                name { full native }
+                favourites
+                image { large }
+                siteUrl
+                description(asHtml: false)
+            }
+        }`;
+    const data = await anilistQuery(query, { search: nombre }, 2);
+    const c = data && data.Character;
+    if (!c) return null;
+
+    const char = {
+        nombre: (c.name && c.name.full) || nombre,
+        nativo: (c.name && c.name.native) || 'N/A',
+        favoritos: c.favourites || 0,
+        bio: (c.description || '').replace(/<[^>]+>/g, '').replace(/~!|!~/g, '').trim().slice(0, 900) || 'Sin descripción disponible.',
+        portada: (c.image && c.image.large) || null,
+        url: c.siteUrl || ''
+    };
+    cacheSetLimitado(_charCache, key, { char, ts: Date.now() });
+    return char;
+}
+
 module.exports = {
     recomendarNovela,
     buscarAnime,
     buscarEstudio,
     buscarProximo,
     buscarManga,
+    buscarPersonaje,
     GENEROS_DISPLAY,
     GENERO_MAP_ES_EN
 };
