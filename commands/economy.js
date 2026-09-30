@@ -679,7 +679,26 @@ module.exports = {
                 }
                 return false;
             };
-            const filtrarAdmin = (lista) => lista.filter(u => !esAdminSupremo(u.user_id));
+            // Filtrar también al BOT (su número/LID nunca sale en el top).
+            // El bot termina con filas en usuarios (número@s.whatsapp.net y
+            // LID@lid) y por eso aparecía hasta doble vez en el ranking.
+            let BOT_NUMBER_ENV = '';
+            try { BOT_NUMBER_ENV = require('../config').CONFIG?.BOT_NUMBER || ''; } catch (_) { }
+            const botJids = [sock?.user?.id, BOT_NUMBER_ENV].filter(Boolean);
+            const esBot = (userId) => {
+                if (!userId) return false;
+                if (botJids.includes(userId)) return true;
+                const digits = cleanNumber(userId);
+                if (!digits) return false;
+                for (const b of botJids) {
+                    const botDigits = cleanNumber(b);
+                    if (!botDigits || botDigits.length < 7) continue;
+                    if (digits === botDigits) return true;
+                    if (botDigits.length >= 8 && digits.endsWith(botDigits.slice(-8))) return true;
+                }
+                return false;
+            };
+            const filtrarAdmin = (lista) => lista.filter(u => !esAdminSupremo(u.user_id) && !esBot(u.user_id));
 
             const topNFiltered = filtrarAdmin(topN);
             const topMFiltered = filtrarAdmin(topM);
