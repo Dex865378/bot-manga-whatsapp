@@ -318,15 +318,19 @@ module.exports = {
         if (subCmd === 'random') {
             await sock.sendMessage(chatId, { text: '🎲 *Buscando 10 waifus aleatorias...* ⏳' }, { quoted: msg });
 
-            const categories = ['waifu', 'neko', 'shinobu', 'megumin', 'waifu', 'neko', 'waifu', 'waifu', 'neko', 'waifu'];
+            // Categorías vivas de nekos.life (verificadas 200). La API vieja
+            // (api.waifu.pics) murió — su dominio ya no resuelve DNS — así
+            // que se migró el proveedor. shinobu/megumin eran exclusivas de
+            // la API muerta y se reemplazan por categorías equivalentes.
+            const categories = ['waifu', 'neko', 'fox_girl', 'wallpaper', 'cuddle', 'hug', 'kiss', 'pat', 'smug', 'slap'];
 
             // Obtener 10 imágenes en paralelo para velocidad (con 1 reintento
-            // por categoría: waifu.pics a veces falla el primer intento)
+            // por categoría: nekos.life a veces falla el primer intento)
             const UA_WAIFU = { 'User-Agent': 'DikybotWA/1.0 (WhatsApp Bot)' };
             const promises = categories.map(async (cat, index) => {
                 for (let intento = 0; intento < 2; intento++) {
                     try {
-                        const res = await axios.get(`https://api.waifu.pics/sfw/${cat}`, { timeout: 8000, headers: UA_WAIFU });
+                        const res = await axios.get(`https://nekos.life/api/v2/img/${cat}`, { timeout: 8000, headers: UA_WAIFU });
                         if (res.data && res.data.url) return { index, url: res.data.url, ok: true };
                     } catch (e) { /* reintenta una vez */ }
                     if (intento === 0) await new Promise(r => setTimeout(r, 1000));
