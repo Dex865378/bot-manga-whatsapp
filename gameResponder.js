@@ -193,11 +193,12 @@ async function handleGameResponse(sock, msg, context) {
         }
     }
 
-    // Caso Inglés (!inglish): español→inglés, 5s por palabra, racha de 5 gana
+    // Caso Inglés (!inglish): español→inglés, 5s por palabra, sin racha ni vidas.
+    // Solo pregunta y dice correcto/incorrecto; termina con !deljuego.
     if (juego.tipo === 'inglish') {
-        if (sender !== juego.responder) return false;
+        const normR = (j) => String(j || '').split('@')[0].replace(/\D/g, '');
+        if (normR(sender) !== normR(juego.responder)) return false;
         if (isCommand) return false;
-        const normI = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9']/g, '').trim();
         const pedirSiguiente = () => {
             if (!juego.mazo || juego.mazo.length === 0) {
                 const { nivel1, nivel2, nivel3 } = require('./data/inglesData');
@@ -213,45 +214,22 @@ async function handleGameResponse(sock, msg, context) {
             juego.en = par[1];
             juego.askedAt = Date.now();
         };
-        // ⏱️ Regla de los 5 segundos: responder tarde cuenta como fallo
+        // ⏱️ Sin responder en 5s cuenta como incorrecto (siguiente palabra)
         if (Date.now() - (juego.askedAt || 0) > 5000) {
-            juego.vidas--;
-            juego.askedAt = Date.now();
-            if (juego.vidas <= 0) {
-                delete botState.juegos[chatId];
-                await sock.sendMessage(chatId, { text: `💀 *SE ACABÓ EL TIEMPO* 💀\nEra *\"${juego.es}\"* → *${String(juego.en).toUpperCase()}*.${juego.apuesta > 0 ? `\n💸 Perdiste tu apuesta de *${juego.apuesta}* diky.` : ''}` }, { quoted: msg });
-            } else {
-                await sock.sendMessage(chatId, { text: `⏰ ¡Muy lento! (más de 5s) Pierdes ❤️.\nTe quedan ❤️ ${juego.vidas} | 🔥 Racha: ${juego.racha}/5\n\nOtra vez: ¿cómo se dice *\"${juego.es}\"*?` }, { quoted: msg });
-            }
+            pedirSiguiente();
+            await sock.sendMessage(chatId, { text: `⏰ ¡Muy lento! (más de 5s) Cuenta como incorrecto.\n\n¿Cómo se dice *\"${juego.es}\"*?\n⏱️ _5 segundos..._` }, { quoted: msg });
             return true;
         }
-        const uAns = normI(cmd);
-        const tAns = normI(juego.en);
-        if (uAns.length > 0 && uAns === tAns) {
-            juego.racha++;
+        if (respuestasEquivalentes(txt, juego.en)) {
             const pagado = await db.premiarConLimite(sender, 50, 25, chatId).catch(() => true);
-            if (juego.racha >= 5) {
-                const esApuesta = juego.apuesta > 0;
-                const premio = esApuesta ? Math.min(juego.apuesta * 2, 1000000) : 250;
-                if (esApuesta) await db.sumarMonedas(sender, premio).catch(() => {});
-                else await db.premiarConLimite(sender, premio, 0, chatId).catch(() => true);
-                const palabra = juego.en;
-                delete botState.juegos[chatId];
-                await sock.sendMessage(chatId, { text: `🏆 *¡RACHA DE 5! ¡INCREÍBLE!* 🏆\nÚltima: *\"${palabra.toUpperCase()} 🇬🇧\"*\n💰 +${premio} diky${esApuesta ? '\n💰 ¡Apuesta duplicada (x2)!' : ''}` }, { quoted: msg });
-                return true;
-            }
             pedirSiguiente();
-            await sock.sendMessage(chatId, { text: `✅ ¡Bien! +50 diky${pagado ? '' : db.NOTA_ANTIFARMA}\n🔥 Racha: *${juego.racha}/5* | ❤️ ${juego.vidas}\n\n¿Cómo se dice *\"${juego.es}\"*?\n⏱️ _5 segundos..._` }, { quoted: msg });
+            await sock.sendMessage(chatId, { text: `✅ ¡Correcto! +50 diky${pagado ? '' : db.NOTA_ANTIFARMA}\n\n¿Cómo se dice *\"${juego.es}\"*?\n⏱️ _5 segundos..._` }, { quoted: msg });
             return true;
         } else {
-            juego.vidas--;
-            juego.askedAt = Date.now();
-            if (juego.vidas <= 0) {
-                delete botState.juegos[chatId];
-                await sock.sendMessage(chatId, { text: `💀 *PERDISTE* 💀\nEra *\"${juego.es}\"* → *${String(juego.en).toUpperCase()}*.\n🔥 Racha final: ${juego.racha}/5${juego.apuesta > 0 ? `\n💸 Perdiste tu apuesta de *${juego.apuesta}* diky.` : ''}` }, { quoted: msg });
-            } else {
-                await sock.sendMessage(chatId, { text: `❌ ¡No! Te quedan ❤️ ${juego.vidas} | 🔥 Racha: ${juego.racha}/5\n\nIntenta de nuevo: ¿cómo se dice *\"${juego.es}\"*?` }, { quoted: msg });
-            }
+            const eraEs = juego.es;
+            const eraEn = juego.en;
+            pedirSiguiente();
+            await sock.sendMessage(chatId, { text: `❌ ¡Incorrecto! Era *\"${eraEs}\"* → *${String(eraEn).toUpperCase()}*.\n\nSiguiente: ¿cómo se dice *\"${juego.es}\"*?\n⏱️ _5 segundos..._` }, { quoted: msg });
             return true;
         }
     }
