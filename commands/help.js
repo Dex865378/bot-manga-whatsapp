@@ -507,6 +507,13 @@ const helpData = {
         args: 'Apuesta (opcional)',
         cooldown: '30 segundos'
     },
+    '!inglish': {
+        desc: 'El bot te da una palabra en español y tú la dices en inglés en 5 segundos. Racha de 5 para ganar. Niveles: 1 básico, 2 intermedio, 3 difícil. Sin número salen todas mezcladas.',
+        usage: '!inglish [1|2|3] [apuesta]',
+        ejemplo: '!inglish\n!inglish 1\n!inglish 2 200',
+        args: 'Nivel (opcional) + apuesta (opcional)',
+        cooldown: '30 segundos'
+    },
     '!slot': {
         desc: 'Juega a la máquina tragamonedas.',
         usage: '!slot [apuesta]',

@@ -6,7 +6,7 @@ const axios = require('axios');
 module.exports = {
     name: 'trivia',
     isMultiple: true,
-    names: ['!quiz', '!quizanime', '!adivina', '!matematicas', '!bandera', '!ahorcado', '!trivia'],
+    names: ['!quiz', '!quizanime', '!adivina', '!matematicas', '!bandera', '!ahorcado', '!trivia', '!inglish'],
     async execute(sock, chatId, msg, args, { start, cmd, txt, isGroup, sender, db, botState }) {
 
         if (botState.juegos[chatId]) return sock.sendMessage(chatId, { text: '⚠️ Ya hay un juego activo en este grupo.' }, { quoted: msg });
@@ -34,6 +34,31 @@ module.exports = {
             return { apuesta: monto };
         }
         const lineaApuesta = (ap) => ap > 0 ? `\n💰 Apuesta: *${ap}* diky (Ganas x2 · máx 500K)` : '';
+
+        // !inglish [1|2|3] [apuesta] — español→inglés, 5s por palabra, racha de 5 gana
+        // Nivel por número y SIN combinar: 1 básico, 2 intermedio, 3 difícil.
+        // Sin número usa TODAS las palabras mezcladas.
+        if (start === '!inglish') {
+            const { nivel1, nivel2, nivel3 } = require('../data/inglesData');
+            let nivel = 0;
+            let apuestaArg = args[0];
+            if (['1', '2', '3'].includes((args[0] || '').trim())) {
+                nivel = parseInt(args[0], 10);
+                apuestaArg = args[1];
+            }
+            const cobro = await cobrarApuestaTrivia(parseInt(apuestaArg) || 0);
+            if (!cobro) return;
+            const pozo = nivel === 1 ? nivel1 : nivel === 2 ? nivel2 : nivel === 3 ? nivel3 : [...nivel1, ...nivel2, ...nivel3];
+            const mazo = [...pozo];
+            for (let i = mazo.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [mazo[i], mazo[j]] = [mazo[j], mazo[i]];
+            }
+            const primera = mazo.pop();
+            const nomNiv = nivel === 0 ? 'TODOS 🌍' : nivel === 1 ? 'BÁSICO 🟢' : nivel === 2 ? 'INTERMEDIO 🟡' : 'DIFÍCIL 🔴';
+            botState.juegos[chatId] = { tipo: 'inglish', es: primera[0], en: primera[1], nivel, vidas: 3, racha: 0, askedAt: Date.now(), msgId: msg.key.id, responder: sender, apuesta: cobro.apuesta, mazo };
+            return sock.sendMessage(chatId, { text: `🇬🇧 *INGLÉS EXPRESS* 🇪🇸\nNivel: *${nomNiv}*\n\n¿Cómo se dice *\"${primera[0]}\"* en inglés?\n\n⏱️ *5 segundos* por palabra\n🔥 Racha meta: *5* seguidas (+50 diky y +25 XP por acierto)\n❤️ Vidas: 3${lineaApuesta(cobro.apuesta)}\n👉 _Responde a este mensaje._\n\n💡 _!inglish 1 · 2 · 3 para jugar por nivel_` }, { quoted: msg });
+        }
 
         // !quiz (Cultura General)
         if (start === '!quiz' || start === '!trivia') {

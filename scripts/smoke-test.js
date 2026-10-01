@@ -53,7 +53,7 @@ for (const c of ['!ping', '!menu', '!leer', '!manga', '!modomanga', '!recomanga'
     '!hongbao', '!abrir', '!mentiroso', '!apuesta', '!duda', '!cadena', '!traidor', '!soy', '!votar', '!botella', '!girar',
     '!pares', '!voltea', '!ahorcado2', '!palabra', '!palabron', '!esgrima', '!tira', '!puja', '!miento', '!cual', '!globo', '!inflar', '!anagrama', '!rima',
     '!wordle', '!intruso', '!supervivencia', '!cazatesoros', '!ruleta2', '!escalera', '!caja',
-    '!remoto', '!autoadmin', '!antifarma']) {
+    '!remoto', '!autoadmin', '!antifarma', '!inglish']) {
     check(handler.commands.has(c), `Existe ${c}`);
 }
 
