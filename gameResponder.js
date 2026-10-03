@@ -193,6 +193,50 @@ async function handleGameResponse(sock, msg, context) {
         }
     }
 
+    // Caso Estudio (!inglish reseat): transcribir el par EN = ES 3 veces.
+    // Sin tiempo, sin vidas. Vale si trae la palabra en inglés Y la(s) de
+    // español como palabras exactas (cualquier orden, cualquier separador).
+    // Termina con !deljuego.
+    if (juego.tipo === 'inglishreset') {
+        const normR = (j) => String(j || '').split('@')[0].replace(/\D/g, '');
+        if (normR(sender) !== normR(juego.responder)) return false;
+        if (isCommand) return false;
+        const pedirSiguienteReset = () => {
+            if (!juego.mazo || juego.mazo.length === 0) {
+                const { nivel1, nivel2, nivel3 } = require('./data/inglesData');
+                juego.mazo = [...nivel1, ...nivel2, ...nivel3];
+                for (let i = juego.mazo.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [juego.mazo[i], juego.mazo[j]] = [juego.mazo[j], juego.mazo[i]];
+                }
+            }
+            const par = juego.mazo.pop();
+            juego.es = par[0];
+            juego.en = par[1];
+            juego.repes = 0;
+            juego.askedAt = Date.now();
+        };
+        const toks = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/[^a-z0-9]+/).filter(Boolean);
+        const tiene = (palabra) => {
+            const set = new Set(toks(txt));
+            return toks(palabra).every((w) => set.has(w));
+        };
+        if (tiene(juego.en) && tiene(juego.es)) {
+            juego.repes = (juego.repes || 0) + 1;
+            if (juego.repes >= 3) {
+                const pagado = await db.premiarConLimite(sender, 50, 25, chatId).catch(() => true);
+                pedirSiguienteReset();
+                await sock.sendMessage(chatId, { text: `✅ *3/3 ¡MEMORIZADA!* +50 diky${pagado ? '' : db.NOTA_ANTIFARMA}\n\nSiguiente, escribe:\n*${juego.en} = ${juego.es}*\n\n🔁 Repeticiones: *0/3*` }, { quoted: msg });
+            } else {
+                await sock.sendMessage(chatId, { text: `✅ ¡Bien! *${juego.repes}/3*\n\nEscríbela de nuevo:\n*${juego.en} = ${juego.es}*` }, { quoted: msg });
+            }
+            return true;
+        } else {
+            await sock.sendMessage(chatId, { text: `❌ Casi... mira bien y escribe el par completo:\n*${juego.en} = ${juego.es}*\n\n🔁 Repeticiones: *${juego.repes || 0}/3*` }, { quoted: msg });
+            return true;
+        }
+    }
+
     // Caso Inglés (!inglish): español→inglés, 5s por palabra, sin racha ni vidas.
     // Solo pregunta y dice correcto/incorrecto; termina con !deljuego.
     if (juego.tipo === 'inglish') {

@@ -508,9 +508,9 @@ const helpData = {
         cooldown: '30 segundos'
     },
     '!inglish': {
-        desc: 'El bot te da una palabra en español y tú la dices en inglés en 5 segundos. Solo dice correcto o incorrecto. Niveles: 1 básico, 2 intermedio, 3 difícil. Sin número salen todas mezcladas. Termina con !deljuego.',
-        usage: '!inglish [1|2|3]',
-        ejemplo: '!inglish\n!inglish 1',
+        desc: 'El bot te da una palabra en español y tú la dices en inglés en 5 segundos. Solo dice correcto o incorrecto. Niveles: 1 básico, 2 intermedio, 3 difícil. Sin número salen todas mezcladas. Con reseat entra al modo estudio: el bot te muestra el par (apple = manzana) y lo escribes 3 veces para memorizarlo. Termina con !deljuego.',
+        usage: '!inglish [1|2|3|reseat]',
+        ejemplo: '!inglish\n!inglish 1\n!inglish reseat',
         args: 'Nivel (opcional)',
         cooldown: '30 segundos'
     },

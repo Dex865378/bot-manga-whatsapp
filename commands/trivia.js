@@ -35,6 +35,23 @@ module.exports = {
         }
         const lineaApuesta = (ap) => ap > 0 ? `\n💰 Apuesta: *${ap}* diky (Ganas x2 · máx 500K)` : '';
 
+        // !inglish reseat — MODO ESTUDIO: el bot muestra el par EN = ES y el
+        // usuario lo TRANSCRIBE tal cual 3 veces seguidas para memorizar cómo
+        // se escribe. Sin tiempo, sin vidas. Todas las palabras mezcladas.
+        // Vale el par completo en cualquier orden (p. ej. "apple = manzana",
+        // "manzana - apple"). Termina con !deljuego.
+        if (start === '!inglish' && (args[0] || '').trim().toLowerCase() === 'reseat') {
+            const { nivel1, nivel2, nivel3 } = require('../data/inglesData');
+            const mazo = [...nivel1, ...nivel2, ...nivel3];
+            for (let i = mazo.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [mazo[i], mazo[j]] = [mazo[j], mazo[i]];
+            }
+            const primera = mazo.pop();
+            botState.juegos[chatId] = { tipo: 'inglishreset', es: primera[0], en: primera[1], repes: 0, askedAt: Date.now(), msgId: msg.key.id, responder: sender, mazo };
+            return sock.sendMessage(chatId, { text: `✏️ *MODO ESTUDIO* ✏️\n\nTe muestro la palabra y *la escribes 3 veces* para memorizarla.\n\n✍️ Escribe:\n*${primera[1]} = ${primera[0]}*\n\n🔁 Repeticiones: *0/3*\n✅ Cada palabra memorizada = +50 diky y +25 XP\n\n💡 _!deljuego para terminar_` }, { quoted: msg });
+        }
+
         // !inglish [1|2|3] — español→inglés, 5s por palabra, sin racha ni vidas.
         // Solo pregunta y dice correcto/incorrecto. Termina con !deljuego.
         // Nivel por número y SIN combinar: 1 básico, 2 intermedio, 3 difícil.
