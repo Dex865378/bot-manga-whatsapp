@@ -1271,12 +1271,12 @@ async function startBot() {
             else if (tipo === 'imageMessage') texto = msg.message.imageMessage?.caption || '';
             else if (tipo === 'videoMessage') texto = msg.message.videoMessage?.caption || '';
 
-            // Ignorar TODO lo que sale del propio teléfono vinculado (fromMe):
-            // si el dueño prueba comandos desde el celular del bot, el sender
-            // es el JID del otro (grupo u otra persona) pero el pushName es el
-            // del perfil del bot ('Dex') → ensucia nombres ajenos y farmea
-            // stats en filas que no son suyas. Práctica estándar en bots.
-            if (fromMe) continue;
+            // Ignorar lo que sale del propio teléfono vinculado (fromMe), SALVO
+            // comandos: el dueño suele probar el bot desde ese mismo celular y
+            // si no, su !s (incluso respondido a sus propias fotos) se descarta
+            // en silencio. Los mensajes casuales fromMe sí se siguen ignorando
+            // para no ensuciar nombres/stats con el pushName del perfil del bot.
+            if (fromMe && !texto.trim().startsWith('!')) continue;
 
             const sender = msg.key.participant || chatId;
             const juegoActivo = botState.juegos[chatId];

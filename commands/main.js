@@ -480,6 +480,7 @@ module.exports = {
                 if (quoted?.imageMessage || quoted?.videoMessage) {
                     const ventana = (botState.recentMedia && botState.recentMedia.get(chatId)) || [];
                     const citado = ventana.find((e) => e.id === ctxInfo?.stanzaId);
+                    if (!citado) console.log(`[STICKER LOTE] Citado ${ctxInfo?.stanzaId || '?'} no en ventana (${ventana.length} items): se convierte solo él.`);
                     if (citado) {
                         const hermanas = ventana
                             .filter((e) => e.id !== citado.id && e.sender === citado.sender && Math.abs(e.ts - citado.ts) <= 120000)
