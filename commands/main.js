@@ -430,7 +430,7 @@ module.exports = {
 
             mText += `🛠️ *[ HERRAMIENTAS ]*\n`;
             mText += `• *!s*\n`;
-            mText += `└ _Crear sticker de imagen o video._\n`;
+            mText += `└ _Sticker de imagen/video. Si respondes a una de un álbum, las convierte todas una por una._\n`;
             mText += `• *!toimg*\n`;
             mText += `└ _Convertir sticker a foto._\n`;
             mText += `• *!decir <texto>*\n`;
@@ -470,9 +470,53 @@ module.exports = {
             }
 
             try {
-                const buffer = await downloadMediaMessage(quoted ? { message: quoted } : msg, 'buffer', {});
-                const stiker = await convertirAWebp(buffer, !!(msg.message?.videoMessage || quoted?.videoMessage));
-                if (stiker) return sock.sendMessage(chatId, { sticker: stiker }, { quoted: msg });
+                // 🎨 LOTE: si lo citado es una foto/video recibida hace poco
+                // (ventana recentMedia en index.js), se convierten también sus
+                // hermanas del mismo álbum (mismo autor, ±2 min), una por una
+                // con pausa para no saturar ni trabarse. Si lo citado es viejo
+                // o no está en ventana, se convierte solo él como siempre.
+                const ctxInfo = msg.message?.extendedTextMessage?.contextInfo;
+                let lote = null;
+                if (quoted?.imageMessage || quoted?.videoMessage) {
+                    const ventana = (botState.recentMedia && botState.recentMedia.get(chatId)) || [];
+                    const citado = ventana.find((e) => e.id === ctxInfo?.stanzaId);
+                    if (citado) {
+                        const hermanas = ventana
+                            .filter((e) => e.id !== citado.id && e.sender === citado.sender && Math.abs(e.ts - citado.ts) <= 120000)
+                            .sort((a, b) => a.ts - b.ts)
+                            .slice(0, 9);
+                        lote = [{ obj: { message: quoted } }, ...hermanas.map((e) => ({ obj: e.msg }))];
+                    }
+                }
+                if (!lote) {
+                    // Camino clásico: una sola imagen (la citada o la del mensaje)
+                    const buffer = await downloadMediaMessage(quoted ? { message: quoted } : msg, 'buffer', {});
+                    const stiker = await convertirAWebp(buffer, !!(msg.message?.videoMessage || quoted?.videoMessage));
+                    if (stiker) return sock.sendMessage(chatId, { sticker: stiker }, { quoted: msg });
+                } else {
+                    // Camino lote: uno por uno, sin textos extra si todo sale bien
+                    let ok = 0, fallos = 0;
+                    for (let i = 0; i < lote.length; i++) {
+                        try {
+                            const vInfo = lote[i].obj.message?.videoMessage;
+                            if (vInfo && vInfo.seconds > 10) { fallos++; continue; }
+                            const buffer = await downloadMediaMessage(lote[i].obj, 'buffer', {});
+                            const stiker = await convertirAWebp(buffer, !!vInfo);
+                            if (stiker) {
+                                await sock.sendMessage(chatId, { sticker: stiker }, i === 0 ? { quoted: msg } : {});
+                                ok++;
+                            } else { fallos++; }
+                        } catch (eUno) {
+                            console.error('[STICKER LOTE] Error en item:', eUno.message);
+                            fallos++;
+                        }
+                        if (i < lote.length - 1) await new Promise((r) => setTimeout(r, 800));
+                    }
+                    if (fallos > 0) {
+                        await sock.sendMessage(chatId, { text: `🎨 Lote listo: *${ok}* stickers. (${fallos} no se pudieron convertir)` }, { quoted: msg });
+                    }
+                    return;
+                }
             } catch (e) { 
                 console.error('[STICKER] Error:', e.message);
                 return sock.sendMessage(chatId, { text: '❌ Error al crear sticker.' }); 
