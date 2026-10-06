@@ -510,63 +510,7 @@ const botState = {
     mangaMode: new Map(), // chatId → true/false para modo manga exclusivo
     mangaSessions: new Map(), // `${chatId}_${sender}` → { tempCode, titulo, genero, step, ts }
     novelaSessions: new Map(), // `${chatId}_${sender}` → { titulo, generoEs, step, ts } - para !reconovela
-    // 📸 Ventana corta de mensajes con foto/video por chat (solo el objeto del
-    // mensaje, sin bytes): permite que !s respondido convierta en lote todas
-    // las imágenes del mismo álbum. chatId → [{ id, msg, sender, ts }].
-    recentMedia: new Map(),
 };
-
-const MAX_RECENT_MEDIA_CHAT = 12; // fotos/videos recordados por chat
-const MAX_RECENT_MEDIA_CHATS = 60; // chats con ventana activa
-const TTL_RECENT_MEDIA_MS = 3 * 60 * 1000; // 3 minutos de ventana
-
-// Desarma envoltorios (efímero / una sola vista) hasta el contenido real.
-// Se usa al cachear la ventana de !s para que fotos efímeras, view-once y
-// documentos-imagen (modo HD) también entren al lote.
-function desarmarContenido(q) {
-    let x = q;
-    for (let i = 0; i < 4 && x; i++) {
-        if (x.ephemeralMessage?.message) x = x.ephemeralMessage.message;
-        else if (x.viewOnceMessage?.message) x = x.viewOnceMessage.message;
-        else if (x.viewOnceMessageV2?.message) x = x.viewOnceMessageV2.message;
-        else if (x.viewOnceMessageV2Extension?.message) x = x.viewOnceMessageV2Extension.message;
-        else break;
-    }
-    return x;
-}
-
-// Guarda un mensaje con foto/video en la ventana corta del chat.
-// Solo guarda referencia al objeto (WhatsApp permite descargar el media
-// después con downloadMediaMessage); los bytes nunca quedan en RAM.
-function cacheRecentMedia(chatId, msg) {
-    if (!msg?.key?.id || !msg?.message) return;
-    const inner = desarmarContenido(msg.message);
-    if (!botState.recentMedia.has(chatId)) {
-        if (botState.recentMedia.size >= MAX_RECENT_MEDIA_CHATS) {
-            const oldest = botState.recentMedia.keys().next().value;
-            botState.recentMedia.delete(oldest);
-        }
-        botState.recentMedia.set(chatId, []);
-    }
-    const lista = botState.recentMedia.get(chatId);
-    if (!lista.some((e) => e.id === msg.key.id)) {
-        // Si venía envuelto, guardar normalizado (contenido desarmado) para
-        // que downloadMediaMessage lo pueda descargar después.
-        const guarda = (inner && inner !== msg.message) ? { key: msg.key, message: inner } : msg;
-        lista.push({
-            id: msg.key.id,
-            msg: guarda,
-            sender: msg.key.participant || chatId,
-            ts: Number(msg.messageTimestamp) * 1000 || Date.now()
-        });
-    }
-    // Podar: fuera los viejos y el exceso (los más antiguos primero)
-    const ahora = Date.now();
-    const frescos = lista.filter((e) => ahora - e.ts <= TTL_RECENT_MEDIA_MS);
-    while (frescos.length > MAX_RECENT_MEDIA_CHAT) frescos.shift();
-    if (frescos.length === 0) botState.recentMedia.delete(chatId);
-    else botState.recentMedia.set(chatId, frescos);
-}
 
 const TTL_CONFIG = 5 * 60 * 1000; // 5 minutos para caché de config
 // Throttle de groupMetadata: si el cache de admins expiró, no disparar 1
@@ -1277,18 +1221,6 @@ async function startBot() {
             }
 
             const tipo = getContentType(msg.message);
-
-            // 📸 Ventana corta de fotos/videos para el lote de !s (ver helper).
-            // Se cachea ANTES de los filtros de comando para no perder el álbum.
-            // Entran fotos/videos directos, envueltos (efímeros/una sola vista)
-            // y fotos mandadas como documento (modo HD).
-            if (msg.message) {
-                const innerCache = desarmarContenido(msg.message);
-                const docImg = innerCache?.documentMessage && String(innerCache.documentMessage.mimetype || '').startsWith('image/');
-                if (innerCache?.imageMessage || innerCache?.videoMessage || docImg) {
-                    cacheRecentMedia(chatId, msg);
-                }
-            }
 
             let texto = '';
             if (tipo === 'conversation') texto = msg.message.conversation || '';

@@ -430,7 +430,7 @@ module.exports = {
 
             mText += `🛠️ *[ HERRAMIENTAS ]*\n`;
             mText += `• *!s*\n`;
-            mText += `└ _Sticker de imagen/video. Si respondes a una de un álbum, las convierte todas una por una (!parar detiene el lote)._\n`;
+            mText += `└ _Sticker de imagen/video (responde a una imagen o video)._\n`;
             mText += `• *!toimg*\n`;
             mText += `└ _Convertir sticker a foto._\n`;
             mText += `• *!decir <texto>*\n`;
@@ -489,81 +489,12 @@ module.exports = {
             }
 
             try {
-                // 🎨 LOTE: si lo citado es una foto/video recibida hace poco
-                // (ventana recentMedia en index.js), se convierten también sus
-                // hermanas del mismo álbum (mismo autor, ±2 min), una por una
-                // con pausa para no saturar ni trabarse. Si lo citado es viejo
-                // o no está en ventana, se convierte solo él como siempre.
-                const ctxInfo = msg.message?.extendedTextMessage?.contextInfo;
-                let lote = null;
-                if (citada?.imageMessage || citada?.videoMessage || docEsImagen) {
-                    const ventana = (botState.recentMedia && botState.recentMedia.get(chatId)) || [];
-                    const citado = ventana.find((e) => e.id === ctxInfo?.stanzaId);
-                    if (!citado) console.log(`[STICKER LOTE] Citado ${ctxInfo?.stanzaId || '?'} no en ventana (${ventana.length} items): se convierte solo él.`);
-                    if (citado) {
-                        const AHORA_LOTE = Date.now();
-                        const hermanas = ventana
-                            .filter((e) => e.id !== citado.id && e.sender === citado.sender && Math.abs(e.ts - citado.ts) <= 120000
-                                // 🏷️ Etiqueta anti-repetidos: salta fotos que ya se
-                                // hicieron sticker hace poco (el lote no rehace lo hecho)
-                                && !(e.hecho && AHORA_LOTE - e.hecho < 10 * 60 * 1000))
-                            .sort((a, b) => a.ts - b.ts)
-                            .slice(0, 9);
-                        // Primer item normalizado (contenido desarmado); las hermanas
-                        // ya vienen normalizadas desde la ventana.
-                        const citadaObj = { key: msg.key, message: citada };
-                        lote = [{ obj: citadaObj, entry: citado }, ...hermanas.map((e) => ({ obj: e.msg, entry: e }))];
-                    }
-                }
-                if (!lote) {
-                    // Camino clásico: una sola imagen (la citada o la del mensaje)
-                    const esVideo = !!(msg.message?.videoMessage || citada?.videoMessage);
-                    const buffer = await downloadMediaMessage(citada ? { key: msg.key, message: citada } : msg, 'buffer', {});
-                    const stiker = await convertirAWebp(buffer, esVideo);
-                    if (stiker) return sock.sendMessage(chatId, { sticker: stiker }, { quoted: msg });
-                } else {
-                    // Camino lote: uno por uno, sin textos extra si todo sale bien.
-                    // 🛑 Se puede detener con !parar. Si ya hay un lote corriendo
-                    // en este chat, no se arranca otro encima.
-                    if (!botState.stickerLote) botState.stickerLote = new Map();
-                    if (botState.stickerLote.has(chatId)) {
-                        return sock.sendMessage(chatId, { text: '🎨 Ya hay un lote de stickers en curso en este chat.\n🛑 Usa *!parar* para detenerlo.' }, { quoted: msg });
-                    }
-                    botState.stickerLote.set(chatId, { cancel: false });
-                    await sock.sendMessage(chatId, { text: `🎨 Haciendo *${lote.length}* stickers, uno por uno...\n🛑 *!parar* para detener.` }, { quoted: msg });
-                    let ok = 0, fallos = 0, detenido = false;
-                    try {
-                    for (let i = 0; i < lote.length; i++) {
-                        if (botState.stickerLote.get(chatId)?.cancel) { detenido = true; break; }
-                        try {
-                            const vInfo = lote[i].obj.message?.videoMessage;
-                            if (vInfo && vInfo.seconds > 10) { fallos++; continue; }
-                            const buffer = await downloadMediaMessage(lote[i].obj, 'buffer', {});
-                            const stiker = await convertirAWebp(buffer, !!vInfo);
-                            if (stiker) {
-                                await sock.sendMessage(chatId, { sticker: stiker }, i === 0 ? { quoted: msg } : {});
-                                ok++;
-                                // 🏷️ Marcar la imagen como ya hecha: si el mismo
-                                // lote (u otro !s) la vuelve a ver, la salta.
-                                if (lote[i].entry) lote[i].entry.hecho = Date.now();
-                            } else { fallos++; }
-                        } catch (eUno) {
-                            console.error('[STICKER LOTE] Error en item:', eUno.message);
-                            fallos++;
-                        }
-                        if (i < lote.length - 1) await new Promise((r) => setTimeout(r, 800));
-                    }
-                    } finally {
-                        botState.stickerLote.delete(chatId);
-                    }
-                    if (detenido) {
-                        return sock.sendMessage(chatId, { text: `🛑 Lote detenido. Se alcanzaron a hacer *${ok}* stickers.` }, { quoted: msg });
-                    }
-                    if (fallos > 0) {
-                        await sock.sendMessage(chatId, { text: `🎨 Lote listo: *${ok}* stickers. (${fallos} no se pudieron convertir)` }, { quoted: msg });
-                    }
-                    return;
-                }
+                // Una sola imagen: la citada o la del mensaje
+                const esVideo = !!(msg.message?.videoMessage || citada?.videoMessage);
+                const buffer = await downloadMediaMessage(citada ? { key: msg.key, message: citada } : msg, 'buffer', {});
+                const stiker = await convertirAWebp(buffer, esVideo);
+                if (stiker) return sock.sendMessage(chatId, { sticker: stiker }, { quoted: msg });
+                return sock.sendMessage(chatId, { text: '❌ Error al crear sticker.' });
             } catch (e) { 
                 console.error('[STICKER] Error:', e.message);
                 return sock.sendMessage(chatId, { text: '❌ Error al crear sticker.' }); 
