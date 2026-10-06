@@ -80,10 +80,15 @@ module.exports = {
     isMultiple: true,
     names: ['!waifu', '!anime', '!personaje', '!estudio', '!proximo', '!estrenos', '!temporada', '!recomendar', '!random', '!trace', '!news', '!wiki', '!decir', '!setdecir', '!catalogo', '!manga', '!leer', '!buscar', '!ver', '!parar', '!setmanga', '!recomanga'],
     async execute(sock, chatId, msg, args, { start, cmd, txt, db, delay, downloadMediaMessage, traducirConCache, botState, sender, pushName }) {
-        // !parar - Cancela descargas masivas en curso
+        // !parar - Cancela descargas masivas y lotes de stickers en curso
         if (start === '!parar') {
             cancelMap.set(chatId, true);
-            return sock.sendMessage(chatId, { text: '🛑 Se han cancelado las descargas masivas en curso para este chat.' }, { quoted: msg });
+            let extra = '';
+            if (botState.stickerLote?.get(chatId)) {
+                botState.stickerLote.get(chatId).cancel = true;
+                extra = '\n🛑 Lote de stickers detenido.';
+            }
+            return sock.sendMessage(chatId, { text: `🛑 Se han cancelado las descargas masivas en curso para este chat.${extra}` }, { quoted: msg });
         }
 
         // !setmanga - Fuerza el ID de mangadex para un código específico

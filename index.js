@@ -1602,6 +1602,25 @@ async function procesarMensaje(sock, msg) {
             const start = cmd.split(' ')[0];
             // 🔍 DEBUG LOG — Eliminar cuando todo funcione
             if (VERBOSE_LOGS) console.log(`[CMD] ${start} | sender=${sender} | isGlobalAdmin=${isGlobalAdmin} | isGroup=${isGroup} | chatId=${chatId?.slice(-10)}`);
+            // 🛡️ ANTI-DUPLICADO: mismo remitente + mismo comando + mismo texto
+            // + misma cita en <5s se descarta (dos instancias vivas procesando
+            // el mismo mensaje, o eco duplicado de WhatsApp). No es castigo:
+            // un humano casi nunca repite el comando idéntico en 5 segundos.
+            if (!globalThis.__dupCmd) globalThis.__dupCmd = new Map();
+            const dupKey = `${sender}|${chatId}|${start}|${txt}|${quotedMsgId || ''}`;
+            const ahoraDup = Date.now();
+            const ultimoDup = globalThis.__dupCmd.get(dupKey) || 0;
+            if (ahoraDup - ultimoDup < 5000) {
+                if (VERBOSE_LOGS) console.log(`[DUP] ${start} duplicado (<5s), se ignora.`);
+                return;
+            }
+            globalThis.__dupCmd.set(dupKey, ahoraDup);
+            if (globalThis.__dupCmd.size > 500) {
+                for (const [k, ts] of globalThis.__dupCmd) {
+                    if (ahoraDup - ts > 5000) globalThis.__dupCmd.delete(k);
+                    if (globalThis.__dupCmd.size <= 400) break;
+                }
+            }
             const comandosValidos = [
                 '!menu', '!menu2', '!help', '!ping', '!s', '!sticker', '!v', '!toimg', '!ascii',
                 '!profile', '!p', '!perfil', '!config', '!marry', '!divorce',
