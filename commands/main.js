@@ -456,15 +456,34 @@ module.exports = {
         // !sticker / !s
         if (start === '!sticker' || start === '!s') {
             const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-            const media = msg.message?.imageMessage || msg.message?.videoMessage || quoted?.imageMessage || quoted?.videoMessage;
+            // Desarma envoltorios (efímero / una sola vista) para llegar al contenido
+            const desarmar = (q) => {
+                let x = q;
+                for (let i = 0; i < 4 && x; i++) {
+                    if (x.ephemeralMessage?.message) x = x.ephemeralMessage.message;
+                    else if (x.viewOnceMessage?.message) x = x.viewOnceMessage.message;
+                    else if (x.viewOnceMessageV2?.message) x = x.viewOnceMessageV2.message;
+                    else if (x.viewOnceMessageV2Extension?.message) x = x.viewOnceMessageV2Extension.message;
+                    else break;
+                }
+                return x;
+            };
+            const citada = desarmar(quoted);
+            // Fotos mandadas como documento (modo HD) también valen
+            const docEsImagen = citada?.documentMessage && String(citada.documentMessage.mimetype || '').startsWith('image/');
+            const media = msg.message?.imageMessage || msg.message?.videoMessage || citada?.imageMessage || citada?.videoMessage || (docEsImagen ? citada.documentMessage : null);
             if (!media) {
+                // Log siempre visible (sin VERBOSE): si citó algo pero no se
+                // reconoce, las claves dicen qué forma trajo y se diagnostica
+                // desde el log de Render sin adivinar.
+                if (quoted) console.warn('[STICKER] Citado sin media reconocible. Claves:', Object.keys(quoted).join(','));
                 return sock.sendMessage(chatId, { 
                     text: '*Como usar el sticker maker:*\n\nResponde a una imagen/video con *!s*.\n\nVideos maximo 10 segundos.' 
                 }, { quoted: msg });
             }
 
             // Validación estricta: Limitar videos a 10 segundos
-            const videoInfo = msg.message?.videoMessage || quoted?.videoMessage;
+            const videoInfo = msg.message?.videoMessage || citada?.videoMessage;
             if (videoInfo && videoInfo.seconds > 10) {
                 return sock.sendMessage(chatId, { text: '⚠️ *El video es demasiado largo.*\n\nSolo puedes convertir videos de hasta *10 segundos* en stickers.' }, { quoted: msg });
             }
@@ -477,7 +496,7 @@ module.exports = {
                 // o no está en ventana, se convierte solo él como siempre.
                 const ctxInfo = msg.message?.extendedTextMessage?.contextInfo;
                 let lote = null;
-                if (quoted?.imageMessage || quoted?.videoMessage) {
+                if (citada?.imageMessage || citada?.videoMessage || docEsImagen) {
                     const ventana = (botState.recentMedia && botState.recentMedia.get(chatId)) || [];
                     const citado = ventana.find((e) => e.id === ctxInfo?.stanzaId);
                     if (!citado) console.log(`[STICKER LOTE] Citado ${ctxInfo?.stanzaId || '?'} no en ventana (${ventana.length} items): se convierte solo él.`);
@@ -490,13 +509,17 @@ module.exports = {
                                 && !(e.hecho && AHORA_LOTE - e.hecho < 10 * 60 * 1000))
                             .sort((a, b) => a.ts - b.ts)
                             .slice(0, 9);
-                        lote = [{ obj: { message: quoted }, entry: citado }, ...hermanas.map((e) => ({ obj: e.msg, entry: e }))];
+                        // Primer item normalizado (contenido desarmado); las hermanas
+                        // ya vienen normalizadas desde la ventana.
+                        const citadaObj = { key: msg.key, message: citada };
+                        lote = [{ obj: citadaObj, entry: citado }, ...hermanas.map((e) => ({ obj: e.msg, entry: e }))];
                     }
                 }
                 if (!lote) {
                     // Camino clásico: una sola imagen (la citada o la del mensaje)
-                    const buffer = await downloadMediaMessage(quoted ? { message: quoted } : msg, 'buffer', {});
-                    const stiker = await convertirAWebp(buffer, !!(msg.message?.videoMessage || quoted?.videoMessage));
+                    const esVideo = !!(msg.message?.videoMessage || citada?.videoMessage);
+                    const buffer = await downloadMediaMessage(citada ? { key: msg.key, message: citada } : msg, 'buffer', {});
+                    const stiker = await convertirAWebp(buffer, esVideo);
                     if (stiker) return sock.sendMessage(chatId, { sticker: stiker }, { quoted: msg });
                 } else {
                     // Camino lote: uno por uno, sin textos extra si todo sale bien.

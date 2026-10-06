@@ -520,11 +520,27 @@ const MAX_RECENT_MEDIA_CHAT = 12; // fotos/videos recordados por chat
 const MAX_RECENT_MEDIA_CHATS = 60; // chats con ventana activa
 const TTL_RECENT_MEDIA_MS = 3 * 60 * 1000; // 3 minutos de ventana
 
+// Desarma envoltorios (efímero / una sola vista) hasta el contenido real.
+// Se usa al cachear la ventana de !s para que fotos efímeras, view-once y
+// documentos-imagen (modo HD) también entren al lote.
+function desarmarContenido(q) {
+    let x = q;
+    for (let i = 0; i < 4 && x; i++) {
+        if (x.ephemeralMessage?.message) x = x.ephemeralMessage.message;
+        else if (x.viewOnceMessage?.message) x = x.viewOnceMessage.message;
+        else if (x.viewOnceMessageV2?.message) x = x.viewOnceMessageV2.message;
+        else if (x.viewOnceMessageV2Extension?.message) x = x.viewOnceMessageV2Extension.message;
+        else break;
+    }
+    return x;
+}
+
 // Guarda un mensaje con foto/video en la ventana corta del chat.
 // Solo guarda referencia al objeto (WhatsApp permite descargar el media
 // después con downloadMediaMessage); los bytes nunca quedan en RAM.
 function cacheRecentMedia(chatId, msg) {
-    if (!msg?.key?.id) return;
+    if (!msg?.key?.id || !msg?.message) return;
+    const inner = desarmarContenido(msg.message);
     if (!botState.recentMedia.has(chatId)) {
         if (botState.recentMedia.size >= MAX_RECENT_MEDIA_CHATS) {
             const oldest = botState.recentMedia.keys().next().value;
@@ -534,9 +550,12 @@ function cacheRecentMedia(chatId, msg) {
     }
     const lista = botState.recentMedia.get(chatId);
     if (!lista.some((e) => e.id === msg.key.id)) {
+        // Si venía envuelto, guardar normalizado (contenido desarmado) para
+        // que downloadMediaMessage lo pueda descargar después.
+        const guarda = (inner && inner !== msg.message) ? { key: msg.key, message: inner } : msg;
         lista.push({
             id: msg.key.id,
-            msg,
+            msg: guarda,
             sender: msg.key.participant || chatId,
             ts: Number(msg.messageTimestamp) * 1000 || Date.now()
         });
@@ -1261,8 +1280,14 @@ async function startBot() {
 
             // 📸 Ventana corta de fotos/videos para el lote de !s (ver helper).
             // Se cachea ANTES de los filtros de comando para no perder el álbum.
-            if (msg.message?.imageMessage || msg.message?.videoMessage) {
-                cacheRecentMedia(chatId, msg);
+            // Entran fotos/videos directos, envueltos (efímeros/una sola vista)
+            // y fotos mandadas como documento (modo HD).
+            if (msg.message) {
+                const innerCache = desarmarContenido(msg.message);
+                const docImg = innerCache?.documentMessage && String(innerCache.documentMessage.mimetype || '').startsWith('image/');
+                if (innerCache?.imageMessage || innerCache?.videoMessage || docImg) {
+                    cacheRecentMedia(chatId, msg);
+                }
             }
 
             let texto = '';
