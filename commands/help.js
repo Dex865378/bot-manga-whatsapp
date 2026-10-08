@@ -616,6 +616,13 @@ const helpData = {
         args: 'Foto adjunta o respondida',
         cooldown: 'Ninguno (solo admins)'
     },
+    '!setsticker': {
+        desc: 'Cambia el sticker de bienvenida: responde a un sticker con este comando y el bot lo usará para dar la bienvenida. Por grupo o global si lo pone el dueño por privado. Solo admins.',
+        usage: '!setsticker (respondiendo a un sticker)',
+        ejemplo: '!setsticker',
+        args: 'Sticker respondido',
+        cooldown: 'Ninguno (solo admins)'
+    },
     '!tag': {
         desc: 'Menciona a todos los miembros del grupo.',
         usage: '!tag [mensaje]',

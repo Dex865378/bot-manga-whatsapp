@@ -365,9 +365,10 @@ function getBienvenidaAssets() {
 // secuenciales a Turso) y el sticker sale sin bloquear (fire-and-forget).
 async function enviarBienvenida(sock, groupId, participantJid) {
     try {
-        const [conf, portadaDb] = await Promise.all([
+        const [conf, portadaDb, stickerDb] = await Promise.all([
             db.tieneBienvenida(groupId),
-            db.getPortada('bienvenida', groupId).catch(() => null)
+            db.getPortada('bienvenida', groupId).catch(() => null),
+            db.getPortada('sticker_bienvenida', groupId).catch(() => null)
         ]);
         if (!conf.activa) {
             if (VERBOSE_LOGS) console.log(`[BIENVENIDA] omitida en ${groupId?.slice(-10)}: desactivada (usa !bienvenida on)`);
@@ -391,7 +392,8 @@ async function enviarBienvenida(sock, groupId, participantJid) {
         // (cacheada en RAM) o la imagen por defecto. Imagen + texto en UN mensaje.
         let bienvenidaImg = portadaDb;
         if (!bienvenidaImg) bienvenidaImg = getBienvenidaAssets().img;
-        const { stk: bienvenidaStk } = getBienvenidaAssets();
+        let bienvenidaStk = stickerDb;
+        if (!bienvenidaStk) bienvenidaStk = getBienvenidaAssets().stk;
         if (bienvenidaImg) {
             try {
                 const captionFinal = `╔══════════════════════╗\n║    😺 *¡BIENVENID@!* 😺    ║\n╚══════════════════════╝\n\n${customMsg}`;
@@ -1591,7 +1593,7 @@ async function procesarMensaje(sock, msg) {
                 '!pat', '!hug', '!kiss', '!slap', '!punch', '!cry', '!dance', '!bite', '!highfive',
                 '!fumar', '!cafe', '!puchero', '!sonrojar', '!baka', '!dormir', '!comiendo', '!pensar',
                 '!patear', '!celebrar', '!aburrido', '!risa', '!smug', '!stare',
-                '!tag', '!reglas', '!kick', '!adm', '!promover', '!bot', '!bienvenida', '!setbienvenida', '!despedida', '!setdespedida', '!setportada', '!news', '!broadcast', '!anuncio', '!sorteo', '!rifa',
+                '!tag', '!reglas', '!kick', '!adm', '!promover', '!bot', '!bienvenida', '!setbienvenida', '!despedida', '!setdespedida', '!setportada', '!setsticker', '!news', '!broadcast', '!anuncio', '!sorteo', '!rifa',
                 '!tienda', '!comprar', '!vender', '!inventario', '!mejor', '!bounty', '!regalar', '!regalaritem', '!dar',
                 '!antispam', '!mododios', '!remoto', '!autoadmin', '!antifarma',
                 '!prestigio', '!loteria', '!clase', '!pedir', '!plantarse', '!pl', '!trivia', '!daily', '!w', '!slut', '!robar', '!canjear',

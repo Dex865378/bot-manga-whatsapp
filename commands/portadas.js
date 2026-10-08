@@ -3,6 +3,7 @@
  *
  * Uso (en el grupo):
  *   !setportada   (con foto adjunta o respondiendo a una foto)
+ *   !setsticker   (respondiendo a un sticker: nuevo sticker de bienvenida)
  *
  * Cada grupo tiene SU propia portada: lo que se ponga aquí solo se ve en
  * este grupo, los demás grupos no se enteran. Si el grupo aún no pone una,
@@ -45,15 +46,46 @@ async function comprimirPortada(buffer, ffmpegPath) {
 module.exports = {
     name: 'portadas',
     isMultiple: true,
-    names: ['!setportada'],
+    names: ['!setportada', '!setsticker'],
     category: 'Admin',
     async execute(sock, chatId, msg, args, extras) {
-        const { isGroup, isAdmin, isGlobalAdmin, db, FFMPEG_PATH, downloadMediaMessage } = extras;
+        const { start, isGroup, isAdmin, isGlobalAdmin, db, FFMPEG_PATH, downloadMediaMessage } = extras;
         if (!isGroup && !isGlobalAdmin) {
             return sock.sendMessage(chatId, { text: 'Este comando solo funciona en grupos.' }, { quoted: msg });
         }
         if (!isAdmin && !isGlobalAdmin) {
             return sock.sendMessage(chatId, { text: 'Solo admins.' }, { quoted: msg });
+        }
+
+        // !setsticker (respondiendo a un sticker): guarda ese sticker como
+        // sticker de bienvenida. Se guarda TAL CUAL en webp (sin comprimir:
+        // recomprimir mataría la animación). Por grupo o global del dueño.
+        if (start === '!setsticker') {
+            const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+            const stk = msg.message?.stickerMessage || quoted?.stickerMessage;
+            if (!stk) {
+                return sock.sendMessage(chatId, { text: '❌ Responde a un sticker con *!setsticker*.' }, { quoted: msg });
+            }
+            try {
+                const buffer = await downloadMediaMessage(quoted?.stickerMessage ? { message: quoted } : msg, 'buffer', {});
+                if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+                    return sock.sendMessage(chatId, { text: '❌ No pude descargar ese sticker. Intenta con otro.' }, { quoted: msg });
+                }
+                const miChat = isGroup ? chatId : null;
+                const r = await db.setPortada('sticker_bienvenida', buffer, miChat);
+                if (!r.ok) {
+                    return sock.sendMessage(chatId, { text: `❌ No se pudo guardar: ${r.error || 'error'}` }, { quoted: msg });
+                }
+                await sock.sendMessage(chatId, { sticker: buffer });
+                return sock.sendMessage(chatId, {
+                    text: isGroup
+                        ? `✅ Sticker de bienvenida de ESTE GRUPO actualizado.\n💡 Los demás grupos conservan el suyo.`
+                        : `✅ Sticker de bienvenida global actualizado.\n💡 Se usa en los grupos que no tienen uno propio.`
+                }, { quoted: msg });
+            } catch (e) {
+                console.error('[SETSTICKER] Error:', e.message);
+                return sock.sendMessage(chatId, { text: '❌ No pude descargar ese sticker. Intenta con otro.' }, { quoted: msg });
+            }
         }
 
         // Foto adjunta o respondida (sin subcomandos: una sola portada para todo)

@@ -732,7 +732,7 @@ async function setMensajeDespedida(chatId, mensaje) {
 // La tabla global `portadas` queda como imagen por defecto para los grupos
 // que aún no ponen la suya. Caché RAM por (chat, clave).
 const portadaCache = new Map(); // `${chatId||'global'}::${clave}` -> Buffer|null
-const PORTADAS_VALIDAS = ['menu', 'bienvenida', 'despedida'];
+const PORTADAS_VALIDAS = ['menu', 'bienvenida', 'despedida', 'sticker_bienvenida'];
 
 function portadaCacheKey(clave, chatId) { return `${chatId || 'global'}::${clave}`; }
 
