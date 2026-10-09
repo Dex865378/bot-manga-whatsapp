@@ -780,24 +780,44 @@ http.createServer(dashboardHandler).listen(PORT, '0.0.0.0', () => console.log(`�
 //                     STICKER UTILS
 // ============================================================
 async function convertirAWebp(buffer, isVideo = false) {
-    const ext = isVideo ? 'mp4' : 'png';
-    const uid = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const tmpIn = path.join(os.tmpdir(), `stk_in_${uid}.${ext}`);
-    const tmpOut = path.join(os.tmpdir(), `stk_out_${uid}.webp`);
-    fs.writeFileSync(tmpIn, buffer);
+    // Intento único de conversión ffmpeg (isVideo = ruta animada).
+    const intentar = async (comoVideo) => {
+        const ext = comoVideo ? 'mp4' : 'png';
+        const uid = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const tmpIn = path.join(os.tmpdir(), `stk_in_${uid}.${ext}`);
+        const tmpOut = path.join(os.tmpdir(), `stk_out_${uid}.webp`);
+        fs.writeFileSync(tmpIn, buffer);
+        try {
+            const vf = 'scale=512:512:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=white@0,format=yuva420p';
+            const args = comoVideo
+                ? ['-i', tmpIn, '-vf', vf + ',fps=10', '-vcodec', 'libwebp', '-loop', '0', '-preset', 'default', '-an', '-vsync', '0', '-t', '6', '-quality', '50', '-compression_level', '3', '-y', tmpOut]
+                : ['-i', tmpIn, '-vf', vf, '-quality', '75', '-compression_level', '4', '-y', tmpOut];
+            // Videos/GIFs en Render (CPU chica) suelen tardar más de 15s:
+            // timeout 30s para no matarlos a la mitad.
+            await execFileAsync(FFMPEG_PATH, args, { timeout: comoVideo ? 30000 : 15000, windowsHide: true });
+            return fs.readFileSync(tmpOut);
+        } finally {
+            try { fs.unlinkSync(tmpIn); } catch (e) { }
+            try { fs.unlinkSync(tmpOut); } catch (e) { }
+        }
+    };
     try {
-        const vf = 'scale=512:512:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=white@0,format=yuva420p';
-        const args = isVideo
-            ? ['-i', tmpIn, '-vf', vf + ',fps=10', '-vcodec', 'libwebp', '-loop', '0', '-preset', 'default', '-an', '-vsync', '0', '-t', '6', '-quality', '50', '-compression_level', '3', '-y', tmpOut]
-            : ['-i', tmpIn, '-vf', vf, '-quality', '75', '-compression_level', '4', '-y', tmpOut];
-        await execFileAsync(FFMPEG_PATH, args, { timeout: 15000, windowsHide: true });
-        return fs.readFileSync(tmpOut);
+        return await intentar(isVideo);
     } catch (e) {
+        // Si entró como imagen pero en realidad es animada (webp animado,
+        // GIF con otro mime), se reintenta UNA vez por la ruta de video
+        // en vez de devolver error directo.
+        if (!isVideo) {
+            try {
+                console.warn('[Sticker] Reintentando como animado:', e.message);
+                return await intentar(true);
+            } catch (e2) {
+                console.error('❌ [Sticker]', e2.message);
+                return null;
+            }
+        }
         console.error('❌ [Sticker]', e.message);
         return null;
-    } finally {
-        try { fs.unlinkSync(tmpIn); } catch (e) { }
-        try { fs.unlinkSync(tmpOut); } catch (e) { }
     }
 }
 

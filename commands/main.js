@@ -28,6 +28,32 @@ async function enviarMenuConPortada(sock, chatId, msg, db, texto) {
     return sock.sendMessage(chatId, { text: texto }, { quoted: msg });
 }
 
+// Cola propia de stickers: ffmpeg en Render (512MB) no aguanta varias
+// conversiones a la vez — pedir muchos juntos los mataba a todos con error.
+// Máx 2 convirtiendo, el resto espera su turno en vez de fallar.
+let stickersActivos = 0;
+const colaStickers = [];
+const MAX_STICKERS_PARALELO = 2;
+const MAX_COLA_STICKERS = 6;
+function liberarSlotSticker() {
+    stickersActivos = Math.max(0, stickersActivos - 1);
+    if (colaStickers.length > 0) {
+        const next = colaStickers.shift();
+        stickersActivos++;
+        next();
+    }
+}
+function esperarSlotSticker() {
+    return new Promise((resolve) => {
+        if (stickersActivos < MAX_STICKERS_PARALELO) {
+            stickersActivos++;
+            return resolve(true);
+        }
+        if (colaStickers.length >= MAX_COLA_STICKERS) return resolve(false);
+        colaStickers.push(() => resolve(true));
+    });
+}
+
 module.exports = {
     name: 'main',
     isMultiple: true,
@@ -483,9 +509,12 @@ module.exports = {
                 return x;
             };
             const citada = desarmar(quoted);
-            // Fotos mandadas como documento (modo HD) también valen
-            const docEsImagen = citada?.documentMessage && String(citada.documentMessage.mimetype || '').startsWith('image/');
-            const media = msg.message?.imageMessage || msg.message?.videoMessage || citada?.imageMessage || citada?.videoMessage || (docEsImagen ? citada.documentMessage : null);
+            // Fotos mandadas como documento (modo HD) también valen, y videos
+            // mandados como documento (así llegan varios GIF) también valen
+            const docMime = String(citada?.documentMessage?.mimetype || '');
+            const docEsImagen = citada?.documentMessage && docMime.startsWith('image/');
+            const docEsVideo = citada?.documentMessage && docMime.startsWith('video/');
+            const media = msg.message?.imageMessage || msg.message?.videoMessage || citada?.imageMessage || citada?.videoMessage || (docEsImagen ? citada.documentMessage : null) || (docEsVideo ? citada.documentMessage : null);
             if (!media) {
                 // Log siempre visible (sin VERBOSE): si citó algo pero no se
                 // reconoce, las claves dicen qué forma trajo y se diagnostica
@@ -497,21 +526,42 @@ module.exports = {
             }
 
             // Validación estricta: Limitar videos a 10 segundos
-            const videoInfo = msg.message?.videoMessage || citada?.videoMessage;
+            const videoInfo = msg.message?.videoMessage || citada?.videoMessage || (docEsVideo ? citada.documentMessage : null);
             if (videoInfo && videoInfo.seconds > 10) {
                 return sock.sendMessage(chatId, { text: '⚠️ *El video es demasiado largo.*\n\nSolo puedes convertir videos de hasta *10 segundos* en stickers.' }, { quoted: msg });
             }
 
+            // Si hay fila de stickers esperando, se espera el turno en vez de
+            // fallar: cada conversión sale una por una sin tumbar al bot.
+            const hayTurno = await esperarSlotSticker();
+            if (!hayTurno) {
+                return sock.sendMessage(chatId, { text: '⏳ *Hay muchos stickers en fila.*\nEspera unos segundos y manda el tuyo de nuevo.' }, { quoted: msg });
+            }
             try {
                 // Una sola imagen: la citada o la del mensaje
-                const esVideo = !!(msg.message?.videoMessage || citada?.videoMessage);
-                const buffer = await downloadMediaMessage(citada ? { key: msg.key, message: citada } : msg, 'buffer', {});
+                const esVideo = !!(msg.message?.videoMessage || citada?.videoMessage || docEsVideo);
+                let buffer;
+                try {
+                    buffer = await downloadMediaMessage(citada ? { key: msg.key, message: citada } : msg, 'buffer', {});
+                } catch (eDesc) {
+                    console.error('[STICKER] Descarga falló:', eDesc.message);
+                    return sock.sendMessage(chatId, { text: '⚠️ *No pude descargar ese archivo.*\n\nLos mensajes viejos caducan en WhatsApp: mándalo de nuevo al chat y responde *!s*.' }, { quoted: msg });
+                }
+                if (!buffer || buffer.length === 0) {
+                    return sock.sendMessage(chatId, { text: '⚠️ *No pude descargar ese archivo.*\n\nMándalo de nuevo al chat y responde *!s*.' }, { quoted: msg });
+                }
+                // Tope 15MB: archivos más grandes tumban la RAM de Render
+                if (buffer.length > 15 * 1024 * 1024) {
+                    return sock.sendMessage(chatId, { text: '⚠️ *Archivo muy pesado* (más de 15MB).\nManda un video más corto o una imagen más liviana.' }, { quoted: msg });
+                }
                 const stiker = await convertirAWebp(buffer, esVideo);
                 if (stiker) return sock.sendMessage(chatId, { sticker: stiker }, { quoted: msg });
-                return sock.sendMessage(chatId, { text: '❌ Error al crear sticker.' });
-            } catch (e) { 
+                return sock.sendMessage(chatId, { text: '❌ *No pude convertirlo* (formato raro).\nPrueba con otra imagen o GIF.' });
+            } catch (e) {
                 console.error('[STICKER] Error:', e.message);
-                return sock.sendMessage(chatId, { text: '❌ Error al crear sticker.' }); 
+                return sock.sendMessage(chatId, { text: '❌ Error al crear sticker.' });
+            } finally {
+                liberarSlotSticker();
             }
         }
 
