@@ -121,7 +121,7 @@ function haceCuanto(ts) {
 module.exports = {
     name: 'ocio',
     isMultiple: true,
-    names: ['!emojimix', '!ttt', '!warn', '!unwarn', '!warns', '!afk', '!encuesta', '!topactivos', '!recordar', '!recordatorios'],
+    names: ['!emojimix', '!ttt', '!warn', '!unwarn', '!warns', '!afk', '!encuesta', '!topactivos', '!fantasmas', '!recordar', '!recordatorios'],
     category: 'Ocio',
     async execute(sock, chatId, msg, args, extras) {
         const { start, sender, pushName, isGroup, isAdmin, db, botState, convertirAWebp, delay } = extras;
@@ -322,6 +322,36 @@ module.exports = {
                 out += `${medallas[i] || `${i + 1}.`} @${(r.user_id || '').split('@')[0]} — ${r.total} mensajes\n`;
             });
             return sock.sendMessage(chatId, { text: out, mentions: rows.map(r => r.user_id) });
+        }
+
+        // ==========================================
+        //  !fantasmas — los que casi no hablan en el grupo
+        // ==========================================
+        if (start === '!fantasmas') {
+            if (!isGroup) return sock.sendMessage(chatId, { text: '👥 Este comando solo funciona en grupos.' }, { quoted: msg });
+            try {
+                const meta = await sock.groupMetadata(chatId);
+                const miembros = (meta.participants || []).map(p => p.id || p.jid).filter(Boolean);
+                const mapa = await db.actividadPorChat(chatId).catch(() => ({}));
+                const yoNum = String(sock.user?.id || '').split(':')[0].split('@')[0].replace(/\D/g, '');
+                const fantasmas = miembros.filter(jid => {
+                    if (yoNum && String(jid).split('@')[0].replace(/\D/g, '') === yoNum) return false;
+                    return (mapa[jid] || 0) < 5;
+                });
+                if (fantasmas.length === 0) {
+                    return sock.sendMessage(chatId, { text: '👻 No hay fantasmas: ¡todos hablan en este grupo!' }, { quoted: msg });
+                }
+                const lista = fantasmas.slice(0, 20);
+                let out = `👻 *FANTASMAS DEL GRUPO* (${fantasmas.length})\nMenos de 5 mensajes registrados:\n\n`;
+                lista.forEach((jid, i) => {
+                    out += `${i + 1}. @${jid.split('@')[0]} — ${mapa[jid] || 0} mensajes\n`;
+                });
+                if (fantasmas.length > 20) out += `\n…y ${fantasmas.length - 20} más.`;
+                out += `\n\n💬 _¡Hablen o serán los próximos eliminados!_`;
+                return sock.sendMessage(chatId, { text: out, mentions: lista }, { quoted: msg });
+            } catch (e) {
+                return sock.sendMessage(chatId, { text: '❌ No pude revisar la actividad.' }, { quoted: msg });
+            }
         }
 
         // ==========================================

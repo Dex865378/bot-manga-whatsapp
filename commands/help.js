@@ -155,6 +155,13 @@ const helpData = {
         args: 'Ninguno',
         cooldown: 'Ninguno'
     },
+    '!fantasmas': {
+        desc: 'Muestra a los miembros con menos de 5 mensajes registrados. Para descubrir a los que nunca hablan.',
+        usage: '!fantasmas',
+        ejemplo: '!fantasmas',
+        args: 'Ninguno',
+        cooldown: 'Ninguno'
+    },
     '!warn': {
         desc: 'Advertir a un miembro (admin). A las 3 es expulsado.',
         usage: '!warn @usuario [motivo]',
@@ -507,6 +514,20 @@ const helpData = {
         args: 'Apuesta (opcional)',
         cooldown: '30 segundos'
     },
+    '!ahorcadoanime': {
+        desc: 'Ahorcado solo con nombres de anime. Acepta apuesta igual que el normal.',
+        usage: '!ahorcadoanime [apuesta]',
+        ejemplo: '!ahorcadoanime\n!ahorcadoanime 200',
+        args: 'Apuesta (opcional)',
+        cooldown: '30 segundos'
+    },
+    '!sopaletras': {
+        desc: 'Sopa de letras 8x8 con un nombre de anime escondido. Rondas infinitas: aciertas (+50 diky y +25 XP) y sale otra. Termina con !deljuego.',
+        usage: '!sopaletras',
+        ejemplo: '!sopaletras',
+        args: 'Ninguno',
+        cooldown: '30 segundos'
+    },
     '!inglish': {
         desc: 'El bot te da una palabra en español y tú la dices en inglés en 5 segundos. Solo dice correcto o incorrecto. Niveles: 1 básico, 2 intermedio, 3 difícil. Sin número salen todas mezcladas. Con reseat entra al modo estudio: el bot te muestra el par (apple = manzana) y lo escribes 3 veces para memorizarlo. Termina con !deljuego.',
         usage: '!inglish [1|2|3|reseat]',
@@ -631,10 +652,59 @@ const helpData = {
         cooldown: '1 minuto (solo admins)'
     },
     '!reglas': {
-        desc: 'Muestra las reglas del grupo.',
+        desc: 'Muestra las reglas del grupo (las propias si un admin las puso con !setreglas, si no la descripción del grupo).',
         usage: '!reglas',
         ejemplo: '!reglas',
         args: 'Ninguno',
+        cooldown: 'Ninguno'
+    },
+    '!setreglas': {
+        desc: 'Pone las reglas propias del grupo (solo admins). Se ven con !reglas.',
+        usage: '!setreglas <texto>',
+        ejemplo: '!setreglas 1. Nada de spam. 2. Respeto ante todo.',
+        args: 'Texto (requerido)',
+        cooldown: 'Ninguno'
+    },
+    '!borrareglas': {
+        desc: 'Borra las reglas propias y !reglas vuelve a mostrar la descripción del grupo (solo admins).',
+        usage: '!borrareglas',
+        ejemplo: '!borrareglas',
+        args: 'Ninguno',
+        cooldown: 'Ninguno'
+    },
+    '!letra': {
+        desc: 'Letra de una canción: busca y la muestra.',
+        usage: '!letra <canción o artista>',
+        ejemplo: '!letra despacito',
+        args: 'Búsqueda (requerida)',
+        cooldown: 'Ninguno'
+    },
+    '!gstick': {
+        desc: 'Guarda un sticker en tu banco con un nombre. Responde a un sticker con este comando.',
+        usage: '!gstick <nombre>',
+        ejemplo: '!gstick risa',
+        args: 'Nombre (requerido)',
+        cooldown: 'Ninguno'
+    },
+    '!stick': {
+        desc: 'Saca un sticker de tu banco por su nombre.',
+        usage: '!stick <nombre>',
+        ejemplo: '!stick risa',
+        args: 'Nombre (requerido)',
+        cooldown: 'Ninguno'
+    },
+    '!misstickers': {
+        desc: 'Lista los stickers de tu banco (máx 30).',
+        usage: '!misstickers',
+        ejemplo: '!misstickers',
+        args: 'Ninguno',
+        cooldown: 'Ninguno'
+    },
+    '!borrastick': {
+        desc: 'Borra un sticker de tu banco.',
+        usage: '!borrastick <nombre>',
+        ejemplo: '!borrastick risa',
+        args: 'Nombre (requerido)',
         cooldown: 'Ninguno'
     }
 };

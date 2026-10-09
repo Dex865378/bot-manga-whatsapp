@@ -48,6 +48,8 @@ async function crearTablas() {
         `CREATE TABLE IF NOT EXISTS warns (chat_id TEXT NOT NULL, user_id TEXT NOT NULL, count INTEGER DEFAULT 0, updated_at BIGINT, PRIMARY KEY (chat_id, user_id))`,
         `CREATE TABLE IF NOT EXISTS afk (user_id TEXT PRIMARY KEY, motivo TEXT DEFAULT '', ts BIGINT)`,
         `CREATE TABLE IF NOT EXISTS actividad (chat_id TEXT NOT NULL, user_id TEXT NOT NULL, total INTEGER DEFAULT 0, PRIMARY KEY (chat_id, user_id))`,
+        `CREATE TABLE IF NOT EXISTS stickers_usuario (user_id TEXT NOT NULL, nombre TEXT NOT NULL, sticker BLOB NOT NULL, created_at BIGINT, PRIMARY KEY (user_id, nombre))`,
+        `CREATE TABLE IF NOT EXISTS reglas_grupo (chat_id TEXT PRIMARY KEY, texto TEXT NOT NULL, puesto_por TEXT, updated_at BIGINT)`,
         `CREATE TABLE IF NOT EXISTS recordatorios (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT, user_id TEXT, texto TEXT, execute_at BIGINT, creado BIGINT)`,
         `CREATE TABLE IF NOT EXISTS records (juego TEXT NOT NULL, user_id TEXT NOT NULL, mejor INTEGER NOT NULL, updated_at BIGINT, PRIMARY KEY (juego, user_id))`,
         `CREATE TABLE IF NOT EXISTS usuarios (
@@ -961,6 +963,85 @@ async function topActivos(chatId, limit = 10) {
     } catch (e) { return []; }
 }
 
+// Mapa user_id -> total de mensajes (para !fantasmas: incluye ceros por fuera)
+async function actividadPorChat(chatId) {
+    if (!connected) await init();
+    try {
+        const rs = await dbClient.execute({ sql: 'SELECT user_id, total FROM actividad WHERE chat_id = ?', args: [chatId] });
+        const mapa = {};
+        for (const r of rs.rows || []) mapa[r.user_id] = r.total;
+        return mapa;
+    } catch (e) { return {}; }
+}
+
+// --- Banco de stickers (!gstick / !stick) ---
+async function guardarSticker(userId, nombre, buffer) {
+    if (!connected) await init();
+    try {
+        if (!buffer || buffer.length > 2 * 1024 * 1024) return { ok: false, error: 'sticker muy pesado (máx 2MB)' };
+        const c = await dbClient.execute({ sql: 'SELECT COUNT(*) AS n FROM stickers_usuario WHERE user_id = ?', args: [userId] });
+        if ((c.rows[0]?.n || 0) >= 30) return { ok: false, error: 'banco lleno (máx 30)' };
+        await dbClient.execute({
+            sql: 'INSERT INTO stickers_usuario (user_id, nombre, sticker, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, nombre) DO UPDATE SET sticker = excluded.sticker, created_at = excluded.created_at',
+            args: [userId, nombre, buffer, Date.now()]
+        });
+        return { ok: true };
+    } catch (e) { return { ok: false, error: e.message }; }
+}
+
+async function obtenerSticker(userId, nombre) {
+    if (!connected) await init();
+    try {
+        const rs = await dbClient.execute({ sql: 'SELECT sticker FROM stickers_usuario WHERE user_id = ? AND nombre = ?', args: [userId, nombre] });
+        if (rs.rows.length > 0 && rs.rows[0].sticker) return Buffer.from(rs.rows[0].sticker);
+        return null;
+    } catch (e) { return null; }
+}
+
+async function misStickers(userId) {
+    if (!connected) await init();
+    try {
+        const rs = await dbClient.execute({ sql: 'SELECT nombre FROM stickers_usuario WHERE user_id = ? ORDER BY nombre LIMIT 30', args: [userId] });
+        return (rs.rows || []).map(r => r.nombre);
+    } catch (e) { return []; }
+}
+
+async function borrarSticker(userId, nombre) {
+    if (!connected) await init();
+    try {
+        const rs = await dbClient.execute({ sql: 'DELETE FROM stickers_usuario WHERE user_id = ? AND nombre = ?', args: [userId, nombre] });
+        return (rs.rowsAffected || 0) > 0;
+    } catch (e) { return false; }
+}
+
+// --- Reglas del grupo (!setreglas / !reglas) ---
+async function setReglas(chatId, texto, puestoPor) {
+    if (!connected) await init();
+    try {
+        await dbClient.execute({
+            sql: 'INSERT INTO reglas_grupo (chat_id, texto, puesto_por, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET texto = excluded.texto, puesto_por = excluded.puesto_por, updated_at = excluded.updated_at',
+            args: [chatId, texto, puestoPor || '', Date.now()]
+        });
+        return { ok: true };
+    } catch (e) { return { ok: false, error: e.message }; }
+}
+
+async function getReglas(chatId) {
+    if (!connected) await init();
+    try {
+        const rs = await dbClient.execute({ sql: 'SELECT texto FROM reglas_grupo WHERE chat_id = ?', args: [chatId] });
+        return rs.rows.length > 0 ? rs.rows[0].texto : null;
+    } catch (e) { return null; }
+}
+
+async function borrarReglas(chatId) {
+    if (!connected) await init();
+    try {
+        const rs = await dbClient.execute({ sql: 'DELETE FROM reglas_grupo WHERE chat_id = ?', args: [chatId] });
+        return (rs.rowsAffected || 0) > 0;
+    } catch (e) { return false; }
+}
+
 // --- Recordatorios ---
 async function crearRecordatorio(chatId, userId, texto, executeAt) {
     if (!connected) await init();
@@ -1298,7 +1379,9 @@ module.exports = {
     sumarKarma, obtenerTopMonedas, obtenerTopNivel, registrarHistorial,
     addWarn, getWarns, resetWarns,
     setAFK, getAFK, clearAFK,
-    sumarActividadBatch, topActivos,
+    sumarActividadBatch, topActivos, actividadPorChat,
+    guardarSticker, obtenerSticker, misStickers, borrarSticker,
+    setReglas, getReglas, borrarReglas,
     crearRecordatorio, misRecordatorios, borrarRecordatorio, recordatoriosVencidos,
     getRecord, saveRecord,
     crearSubasta, obtenerSubastasActivas, pujarSubasta, finalizarSubasta, obtenerSubasta,

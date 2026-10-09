@@ -78,7 +78,7 @@ function partirTextoTTS(texto, max = 190) {
 module.exports = {
     name: 'media',
     isMultiple: true,
-    names: ['!waifu', '!anime', '!personaje', '!estudio', '!proximo', '!estrenos', '!temporada', '!recomendar', '!random', '!trace', '!news', '!wiki', '!decir', '!setdecir', '!catalogo', '!manga', '!leer', '!buscar', '!ver', '!parar', '!setmanga', '!recomanga'],
+    names: ['!waifu', '!anime', '!personaje', '!estudio', '!proximo', '!estrenos', '!temporada', '!recomendar', '!random', '!trace', '!news', '!wiki', '!decir', '!setdecir', '!letra', '!catalogo', '!manga', '!leer', '!buscar', '!ver', '!parar', '!setmanga', '!recomanga'],
     async execute(sock, chatId, msg, args, { start, cmd, txt, db, delay, downloadMediaMessage, traducirConCache, botState, sender, pushName }) {
         // !parar - Cancela descargas masivas en curso
         if (start === '!parar') {
@@ -428,6 +428,25 @@ El bot traduce tu texto y lo dice en voz alta.
 └ *!decir tr hola a todos*
 • *Indonesio* 🇮🇩 — id
 └ *!decir id hola a todos*` }, { quoted: msg });
+        }
+
+        // !letra <canción o artista> — letra vía lyrics.ovh (gratis, sin key).
+        // Busca primero con /suggest y luego trae la letra del mejor match.
+        if (start === '!letra') {
+            const q = args.join(' ').trim();
+            if (!q) return sock.sendMessage(chatId, { text: '🎵 Uso: *!letra <canción o artista>*\nEj: *!letra despacito*' }, { quoted: msg });
+            try {
+                const sug = await axios.get(`https://api.lyrics.ovh/suggest/${encodeURIComponent(q)}`, { timeout: 10000, maxContentLength: 2 * 1024 * 1024 });
+                const hit = sug.data?.data?.[0];
+                if (!hit) return sock.sendMessage(chatId, { text: `🎵 No encontré nada para *${q}*.` }, { quoted: msg });
+                const lyr = await axios.get(`https://api.lyrics.ovh/v1/${encodeURIComponent(hit.artist.name)}/${encodeURIComponent(hit.title)}`, { timeout: 10000, maxContentLength: 2 * 1024 * 1024 });
+                const letra = (lyr.data?.lyrics || '').trim();
+                if (!letra) return sock.sendMessage(chatId, { text: `🎵 Encontré *${hit.title}* de *${hit.artist.name}* pero no tiene letra disponible.` }, { quoted: msg });
+                const txt = `🎵 *${hit.title}* — ${hit.artist.name}\n\n${letra}`;
+                return sock.sendMessage(chatId, { text: txt.slice(0, 4000) }, { quoted: msg });
+            } catch (e) {
+                return sock.sendMessage(chatId, { text: '🎵 No pude traer la letra ahorita. Intenta en un rato.' }, { quoted: msg });
+            }
         }
 
         // Manga functions

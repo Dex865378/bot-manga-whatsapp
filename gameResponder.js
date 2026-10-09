@@ -382,6 +382,52 @@ async function handleGameResponse(sock, msg, context) {
         }
     }
 
+    // Caso Sopa de letras (!sopaletras): rondas infinitas, sin vidas.
+    // Aciertas (+50 diky y +25 XP con tope antifarma) y sale otra sopa;
+    // fallas y también sale otra. Termina con !deljuego.
+    if (juego.tipo === 'sopaletras') {
+        const normR = (j) => String(j || '').split('@')[0].replace(/\D/g, '');
+        if (normR(sender) !== normR(juego.responder)) return false;
+        if (isCommand) return false;
+        const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+        const pedirOtraSopa = () => {
+            const banco = [
+                'naruto', 'goku', 'luffy', 'ichigo', 'zoro', 'nami', 'eren', 'levi', 'mikasa', 'deku',
+                'gojo', 'denji', 'power', 'gon', 'asta', 'yuno', 'hisoka', 'sukuna', 'megumi', 'nobara',
+                'tanjiro', 'nezuko', 'vegeta', 'sasuke', 'sakura', 'kakashi', 'makima', 'itadori', 'kurapika', 'killua'
+            ];
+            const p = banco[Math.floor(Math.random() * banco.length)].toUpperCase();
+            const N = 8;
+            const g = Array.from({ length: N }, () => Array(N).fill(''));
+            if (Math.random() < 0.5) {
+                const fr = Math.floor(Math.random() * N), fc = Math.floor(Math.random() * (N - p.length + 1));
+                for (let i = 0; i < p.length; i++) g[fr][fc + i] = p[i];
+            } else {
+                const fr = Math.floor(Math.random() * (N - p.length + 1)), fc = Math.floor(Math.random() * N);
+                for (let i = 0; i < p.length; i++) g[fr + i][fc] = p[i];
+            }
+            const AZ = 'ABCDEFGHIJKLMNÑOPQRSTUVWXYZ';
+            for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+                if (!g[r][c]) g[r][c] = AZ[Math.floor(Math.random() * AZ.length)];
+            }
+            juego.palabra = p.toLowerCase();
+            juego.cuadricula = g.map(f => f.join(' ')).join('\n');
+            juego.askedAt = Date.now();
+        };
+        if (norm(txt) === norm(juego.palabra)) {
+            const era = juego.palabra;
+            const pagado = await db.premiarConLimite(sender, 50, 25, chatId).catch(() => true);
+            pedirOtraSopa();
+            await sock.sendMessage(chatId, { text: `✅ ¡La hallaste! Era *${String(era).toUpperCase()}*. +50 diky${pagado ? '' : db.NOTA_ANTIFARMA}\n\n🔎 *NUEVA SOPA* (${juego.palabra.length} letras):\n\n\`\`\`${juego.cuadricula}\`\`\`\n\n👉 _Escribe el nombre que ves._` }, { quoted: msg });
+            return true;
+        } else {
+            const era = juego.palabra;
+            pedirOtraSopa();
+            await sock.sendMessage(chatId, { text: `❌ ¡No! Era *${String(era).toUpperCase()}*.\n\n🔎 *NUEVA SOPA* (${juego.palabra.length} letras):\n\n\`\`\`${juego.cuadricula}\`\`\`\n\n👉 _Escribe el nombre que ves._` }, { quoted: msg });
+            return true;
+        }
+    }
+
     // Caso Ahorcado
     if (juego.tipo === 'ahorcado') {
         // Los comandos (ej: !8ball) NO son letras: si hay un ahorcado activo

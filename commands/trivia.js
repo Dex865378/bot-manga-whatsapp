@@ -6,7 +6,7 @@ const axios = require('axios');
 module.exports = {
     name: 'trivia',
     isMultiple: true,
-    names: ['!quiz', '!quizanime', '!adivina', '!matematicas', '!bandera', '!ahorcado', '!trivia', '!inglish'],
+    names: ['!quiz', '!quizanime', '!adivina', '!matematicas', '!bandera', '!ahorcado', '!ahorcadoanime', '!sopaletras', '!trivia', '!inglish'],
     async execute(sock, chatId, msg, args, { start, cmd, txt, isGroup, sender, db, botState }) {
 
         if (botState.juegos[chatId]) return sock.sendMessage(chatId, { text: '⚠️ Ya hay un juego activo en este grupo.' }, { quoted: msg });
@@ -362,6 +362,53 @@ module.exports = {
             if (!cobroH) return;
             botState.juegos[chatId] = { tipo: 'ahorcado', palabra: p, oculto, vidas: 4, msgId: msg.key.id, responder: sender, apuesta: cobroH.apuesta };
             return sock.sendMessage(chatId, { text: `🪑 *AHORCADO DIKY* 🪑\n\nPalabra: \`${oculto}\` (${p.length} letras)\n\n❤️ Vidas: 4${lineaApuesta(cobroH.apuesta)}\n👉 _Escribe una letra o la palabra completa._` }, { quoted: msg });
+        }
+
+        // !ahorcadoanime — mismo ahorcado pero solo con nombres de anime.
+        // Reutiliza el bloque 'ahorcado' del gameResponder sin cambios.
+        if (start === '!ahorcadoanime') {
+            const animes = [
+                'naruto', 'goku', 'luffy', 'ichigo', 'sasuke', 'sakura', 'zoro', 'nami', 'vegeta', 'eren',
+                'mikasa', 'levi', 'deku', 'todoroki', 'nezuko', 'tanjiro', 'zenitsu', 'inosuke', 'gon', 'killua',
+                'kurapika', 'hisoka', 'asta', 'yuno', 'noelle', 'denji', 'power', 'makima', 'itadori', 'megumi',
+                'nobara', 'gojo', 'sukuna', 'edward', 'light', 'lelouch', 'guts', 'shinji', 'asuka', 'kakashi'
+            ];
+            const p = animes[Math.floor(Math.random() * animes.length)];
+            const oculto = '_'.repeat(p.length);
+            const cobroH = await cobrarApuestaTrivia(parseInt(args[0]) || 0);
+            if (!cobroH) return;
+            botState.juegos[chatId] = { tipo: 'ahorcado', palabra: p, oculto, vidas: 4, msgId: msg.key.id, responder: sender, apuesta: cobroH.apuesta };
+            return sock.sendMessage(chatId, { text: `⛩️ *AHORCADO ANIME* ⛩️\n\nPalabra: \`${oculto}\` (${p.length} letras)\n\n❤️ Vidas: 4${lineaApuesta(cobroH.apuesta)}\n👉 _Escribe una letra o el nombre completo._` }, { quoted: msg });
+        }
+
+        // !sopaletras — sopa de letras 8x8 con un nombre de anime escondido
+        // (horizontal o vertical). Rondas infinitas: aciertas (+50 diky y +25 XP
+        // con tope antifarma) y sale otra; fallas y también sale otra.
+        // Termina con !deljuego.
+        if (start === '!sopaletras') {
+            const banco = [
+                'naruto', 'goku', 'luffy', 'ichigo', 'zoro', 'nami', 'eren', 'levi', 'mikasa', 'deku',
+                'gojo', 'denji', 'power', 'gon', 'asta', 'yuno', 'hisoka', 'sukuna', 'megumi', 'nobara',
+                'tanjiro', 'nezuko', 'vegeta', 'sasuke', 'sakura', 'kakashi', 'makima', 'itadori', 'kurapika', 'killua'
+            ];
+            const p = banco[Math.floor(Math.random() * banco.length)].toUpperCase();
+            const N = 8;
+            const g = Array.from({ length: N }, () => Array(N).fill(''));
+            const horiz = Math.random() < 0.5;
+            if (horiz) {
+                const fr = Math.floor(Math.random() * N), fc = Math.floor(Math.random() * (N - p.length + 1));
+                for (let i = 0; i < p.length; i++) g[fr][fc + i] = p[i];
+            } else {
+                const fr = Math.floor(Math.random() * (N - p.length + 1)), fc = Math.floor(Math.random() * N);
+                for (let i = 0; i < p.length; i++) g[fr + i][fc] = p[i];
+            }
+            const AZ = 'ABCDEFGHIJKLMNÑOPQRSTUVWXYZ';
+            for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+                if (!g[r][c]) g[r][c] = AZ[Math.floor(Math.random() * AZ.length)];
+            }
+            const cuadricula = g.map(f => f.join(' ')).join('\n');
+            botState.juegos[chatId] = { tipo: 'sopaletras', palabra: p.toLowerCase(), cuadricula, msgId: msg.key.id, responder: sender, askedAt: Date.now() };
+            return sock.sendMessage(chatId, { text: `🔎 *SOPA DE LETRAS ANIME* 🔎\nHay un nombre escondido (${p.length} letras).\n\n\`\`\`${cuadricula}\`\`\`\n\n✅ Aciertas = +50 diky y +25 XP\n❌ Fallas = sale otra palabra\n👉 _Escribe el nombre que ves._\n\n💡 _!deljuego para terminar_` }, { quoted: msg });
         }
     }
 };

@@ -14,7 +14,7 @@ async function refreshGroupCache(db, botState, chatId) {
 module.exports = {
     name: 'settings',
     isMultiple: true,
-    names: ['!bienvenida', '!setbienvenida', '!despedida', '!setdespedida', '!adm', '!bot', '!reglas', '!tag', '!antispam', '!mododios', '!sincronizar', '!modomanga', '!manga', '!remoto', '!autoadmin', '!antifarma'],
+    names: ['!bienvenida', '!setbienvenida', '!despedida', '!setdespedida', '!adm', '!bot', '!reglas', '!setreglas', '!borrareglas', '!tag', '!antispam', '!mododios', '!sincronizar', '!modomanga', '!manga', '!remoto', '!autoadmin', '!antifarma'],
     async execute(sock, chatId, msg, args, extras) {
         const { start, isGroup, isAdmin, isGlobalAdmin, db, botState, sender } = extras;
         if (!isGroup && !isGlobalAdmin) return sock.sendMessage(chatId, { text: 'Este comando solo funciona en grupos.' }, { quoted: msg });
@@ -265,9 +265,28 @@ module.exports = {
 
         if (start === '!reglas') {
             try {
+                const custom = await db.getReglas(chatId).catch(() => null);
+                if (custom) return sock.sendMessage(chatId, { text: `📜 *REGLAS DEL GRUPO*\n\n${custom}` }, { quoted: msg });
                 const meta = await sock.groupMetadata(chatId);
-                return sock.sendMessage(chatId, { text: `*REGLAS DEL GRUPO:*\n\n${meta.desc || 'No hay reglas configuradas.'}` }, { quoted: msg });
+                return sock.sendMessage(chatId, { text: `*REGLAS DEL GRUPO:*\n\n${meta.desc || 'No hay reglas configuradas.'}\n\n💡 _Un admin puede poner unas con !setreglas <texto>._` }, { quoted: msg });
             } catch (e) { return sock.sendMessage(chatId, { text: 'Error al obtener reglas.' }); }
+        }
+
+        // !setreglas <texto> — reglas propias del grupo (solo admins)
+        if (start === '!setreglas') {
+            if (!isAdmin) return sock.sendMessage(chatId, { text: 'Solo admins.' }, { quoted: msg });
+            const texto = args.join(' ').trim().slice(0, 1500);
+            if (!texto) return sock.sendMessage(chatId, { text: '📜 Uso: *!setreglas <texto>*\nEj: *!setreglas 1. Nada de spam. 2. Respeto ante todo.*' }, { quoted: msg });
+            const r = await db.setReglas(chatId, texto, sender).catch(() => ({ ok: false }));
+            if (!r.ok) return sock.sendMessage(chatId, { text: `❌ No se pudo guardar: ${r.error || 'error'}` }, { quoted: msg });
+            return sock.sendMessage(chatId, { text: '📜 Reglas guardadas. Míralas con *!reglas*' }, { quoted: msg });
+        }
+
+        // !borrareglas — vuelve a las reglas de la descripción del grupo
+        if (start === '!borrareglas') {
+            if (!isAdmin) return sock.sendMessage(chatId, { text: 'Solo admins.' }, { quoted: msg });
+            await db.borrarReglas(chatId).catch(() => false);
+            return sock.sendMessage(chatId, { text: '🗑️ Reglas borradas. *!reglas* vuelve a mostrar la descripción del grupo.' }, { quoted: msg });
         }
 
         // !modomanga / !manga on/off - Modo manga exclusivo (desactiva todo menos manga + admin)
