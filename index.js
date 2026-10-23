@@ -277,10 +277,16 @@ function batchActualizarRacha(userId) {
 // --- Actividad por grupo (para !topactivos): conteo en RAM + flush en lote.
 // Mapa acotado a 5000 entradas (chat::user) para no crecer sin control.
 const actividadBatch = new Map();
+const actividadUltima = new Map();
 function batchActividad(chatId, userId) {
-    const k = `${chatId}::${userId}`;
+    const k = chatId + '::' + userId;
     actividadBatch.set(k, (actividadBatch.get(k) || 0) + 1);
-    if (actividadBatch.size > 5000) actividadBatch.delete(actividadBatch.keys().next().value);
+    actividadUltima.set(k, Date.now());
+    if (actividadBatch.size > 5000) {
+        const viejo = actividadBatch.keys().next().value;
+        actividadBatch.delete(viejo);
+        actividadUltima.delete(viejo);
+    }
     statsBatch.dirty = true;
 }
 
@@ -312,6 +318,7 @@ async function flushStatsBatch() {
     if (actividadBatch.size > 0) {
         const acts = [...actividadBatch.entries()];
         actividadBatch.clear();
+        actividadUltima.clear();
         for (let i = 0; i < acts.length; i += 20) {
             const lote = acts.slice(i, i + 20).map(([k, n]) => {
                 const sep = k.lastIndexOf('::');
@@ -515,6 +522,9 @@ const botState = {
     mangaSessions: new Map(), // `${chatId}_${sender}` → { tempCode, titulo, genero, step, ts }
     novelaSessions: new Map(), // `${chatId}_${sender}` → { titulo, generoEs, step, ts } - para !reconovela
 };
+
+botState.actividadPendiente = actividadBatch;
+botState.actividadUltima = actividadUltima;
 
 const TTL_CONFIG = 5 * 60 * 1000; // 5 minutos para caché de config
 // Throttle de groupMetadata: si el cache de admins expiró, no disparar 1

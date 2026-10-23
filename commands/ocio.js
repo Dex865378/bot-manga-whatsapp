@@ -15,6 +15,39 @@
  */
 const axios = require('axios');
 
+const META_TTL_MS = 5 * 60 * 1000;
+const META_TIMEOUT_MS = 8000;
+const metaCache = new Map();
+
+function numJid(jid) {
+    return String(jid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+}
+
+async function participantesConCache(sock, chatId) {
+    const ahora = Date.now();
+    const cache = metaCache.get(chatId);
+    if (cache && ahora - cache.ts < META_TTL_MS) return cache.participantes;
+
+    let timer;
+    try {
+        const meta = await Promise.race([
+            sock.groupMetadata(chatId),
+            new Promise((_, reject) => {
+                timer = setTimeout(() => reject(new Error('groupMetadata timeout')), META_TIMEOUT_MS);
+            })
+        ]);
+        const participantes = meta.participants || [];
+        metaCache.set(chatId, { participantes, ts: Date.now() });
+        if (metaCache.size > 50) metaCache.delete(metaCache.keys().next().value);
+        return participantes;
+    } catch (e) {
+        if (cache) return cache.participantes;
+        throw e;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 const NUMEMOJI = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣'];
 const TTT_GANAR = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
 
@@ -330,25 +363,86 @@ module.exports = {
         if (start === '!fantasmas') {
             if (!isGroup) return sock.sendMessage(chatId, { text: '👥 Este comando solo funciona en grupos.' }, { quoted: msg });
             try {
-                const meta = await sock.groupMetadata(chatId);
-                const miembros = (meta.participants || []).map(p => p.id || p.jid).filter(Boolean);
-                const mapa = await db.actividadPorChat(chatId).catch(() => ({}));
-                const yoNum = String(sock.user?.id || '').split(':')[0].split('@')[0].replace(/\D/g, '');
-                const fantasmas = miembros.filter(jid => {
-                    if (yoNum && String(jid).split('@')[0].replace(/\D/g, '') === yoNum) return false;
-                    return (mapa[jid] || 0) < 5;
-                });
-                if (fantasmas.length === 0) {
-                    return sock.sendMessage(chatId, { text: '👻 No hay fantasmas: ¡todos hablan en este grupo!' }, { quoted: msg });
+                const participants = await participantesConCache(sock, chatId);
+                const detalle = await db.actividadDetalle(chatId);
+                if (detalle === null) {
+                    return sock.sendMessage(chatId, { text: '❌ No pude consultar la actividad. Intenta de nuevo en un momento.' }, { quoted: msg });
                 }
+
+                const ahora = Date.now();
+                const limite = ahora - 7 * 24 * 60 * 60 * 1000;
+                const porNumero = new Map();
+                for (const r of detalle) {
+                    const n = numJid(r.user_id);
+                    if (!n) continue;
+                    const prev = porNumero.get(n);
+                    const total = Number(r.total) || 0;
+                    const ultima = Number(r.ultima_actividad) || 0;
+                    if (!prev) porNumero.set(n, { total, ultima });
+                    else {
+                        prev.total += total;
+                        if (ultima > prev.ultima) prev.ultima = ultima;
+                    }
+                }
+
+                if (botState.actividadPendiente) {
+                    for (const [k, n] of botState.actividadPendiente) {
+                        const sep = k.lastIndexOf('::');
+                        if (sep < 0 || k.slice(0, sep) !== chatId) continue;
+                        const numero = numJid(k.slice(sep + 2));
+                        if (!numero) continue;
+                        const prev = porNumero.get(numero) || { total: 0, ultima: 0 };
+                        prev.total += n;
+                        const ultimaPendiente = (botState.actividadUltima && botState.actividadUltima.get(k)) || ahora;
+                        if (ultimaPendiente > prev.ultima) prev.ultima = ultimaPendiente;
+                        porNumero.set(numero, prev);
+                    }
+                }
+
+                const actividadTotal = [...porNumero.values()].reduce((s, a) => s + a.total, 0);
+                if (actividadTotal === 0) {
+                    return sock.sendMessage(chatId, { text: '📊 Aún no hay suficiente actividad registrada. El historial de 7 días empieza a contar desde ahora.' }, { quoted: msg });
+                }
+
+                const botNums = new Set([numJid(sock.user?.id), numJid(sock.user?.lid)].filter(Boolean));
+                const fantasmas = [];
+                const vistos = new Set();
+                for (const p of participants) {
+                    const jids = [p.id, p.jid, p.phoneNumber, p.lid].filter(Boolean);
+                    const numeros = [...new Set(jids.map(numJid).filter(Boolean))];
+                    if (numeros.length === 0) continue;
+                    if (numeros.some(n => botNums.has(n))) continue;
+                    if (numeros.some(n => vistos.has(n))) continue;
+                    numeros.forEach(n => vistos.add(n));
+
+                    let total = 0;
+                    let ultima = 0;
+                    for (const n of numeros) {
+                        const act = porNumero.get(n);
+                        if (!act) continue;
+                        total += act.total;
+                        if (act.ultima > ultima) ultima = act.ultima;
+                    }
+
+                    if (ultima === 0 || ultima < limite) {
+                        fantasmas.push({ jid: p.id || p.jid || p.phoneNumber || p.lid, total, ultima });
+                    }
+                }
+
+                if (fantasmas.length === 0) {
+                    return sock.sendMessage(chatId, { text: '👻 No hay fantasmas: todos han hablado en los últimos 7 días.' }, { quoted: msg });
+                }
+
+                fantasmas.sort((a, b) => a.ultima - b.ultima);
                 const lista = fantasmas.slice(0, 20);
-                let out = `👻 *FANTASMAS DEL GRUPO* (${fantasmas.length})\nMenos de 5 mensajes registrados:\n\n`;
-                lista.forEach((jid, i) => {
-                    out += `${i + 1}. @${jid.split('@')[0]} — ${mapa[jid] || 0} mensajes\n`;
+                let out = '👻 *FANTASMAS DEL GRUPO* (' + fantasmas.length + ')\nSin hablar en los últimos 7 días:\n\n';
+                lista.forEach((f, i) => {
+                    const cuando = f.ultima === 0 ? 'nunca registrado' : 'hace ' + Math.max(1, Math.floor((ahora - f.ultima) / 86400000)) + ' días';
+                    out += (i + 1) + '. @' + String(f.jid).split('@')[0] + ' — ' + cuando + ' · ' + f.total + ' mensajes\n';
                 });
-                if (fantasmas.length > 20) out += `\n…y ${fantasmas.length - 20} más.`;
-                out += `\n\n💬 _¡Hablen o serán los próximos eliminados!_`;
-                return sock.sendMessage(chatId, { text: out, mentions: lista }, { quoted: msg });
+                if (fantasmas.length > 20) out += '\n…y ' + (fantasmas.length - 20) + ' más.';
+                out += '\n\n💬 _Si quieres seguir en el grupo, participa._';
+                return sock.sendMessage(chatId, { text: out, mentions: lista.map(f => f.jid) }, { quoted: msg });
             } catch (e) {
                 return sock.sendMessage(chatId, { text: '❌ No pude revisar la actividad.' }, { quoted: msg });
             }

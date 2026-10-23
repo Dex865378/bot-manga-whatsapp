@@ -156,7 +156,7 @@ const helpData = {
         cooldown: 'Ninguno'
     },
     '!fantasmas': {
-        desc: 'Muestra a los miembros con menos de 5 mensajes registrados. Para descubrir a los que nunca hablan.',
+        desc: 'Muestra a los miembros que no han hablado en los últimos 7 días.',
         usage: '!fantasmas',
         ejemplo: '!fantasmas',
         args: 'Ninguno',

@@ -47,7 +47,7 @@ async function crearTablas() {
         `CREATE TABLE IF NOT EXISTS antifarma_off (chat_id TEXT PRIMARY KEY, desactivado_por TEXT, updated_at BIGINT)`,
         `CREATE TABLE IF NOT EXISTS warns (chat_id TEXT NOT NULL, user_id TEXT NOT NULL, count INTEGER DEFAULT 0, updated_at BIGINT, PRIMARY KEY (chat_id, user_id))`,
         `CREATE TABLE IF NOT EXISTS afk (user_id TEXT PRIMARY KEY, motivo TEXT DEFAULT '', ts BIGINT)`,
-        `CREATE TABLE IF NOT EXISTS actividad (chat_id TEXT NOT NULL, user_id TEXT NOT NULL, total INTEGER DEFAULT 0, PRIMARY KEY (chat_id, user_id))`,
+        `CREATE TABLE IF NOT EXISTS actividad (chat_id TEXT NOT NULL, user_id TEXT NOT NULL, total INTEGER DEFAULT 0, ultima_actividad BIGINT DEFAULT 0, PRIMARY KEY (chat_id, user_id))`,
         `CREATE TABLE IF NOT EXISTS stickers_usuario (user_id TEXT NOT NULL, nombre TEXT NOT NULL, sticker BLOB NOT NULL, created_at BIGINT, PRIMARY KEY (user_id, nombre))`,
         `CREATE TABLE IF NOT EXISTS reglas_grupo (chat_id TEXT PRIMARY KEY, texto TEXT NOT NULL, puesto_por TEXT, updated_at BIGINT)`,
         `CREATE TABLE IF NOT EXISTS recordatorios (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT, user_id TEXT, texto TEXT, execute_at BIGINT, creado BIGINT)`,
@@ -147,7 +147,8 @@ async function crearTablas() {
             'ALTER TABLE grupos_activados ADD COLUMN modo_manga INTEGER DEFAULT 0',
             // Tablas creadas en versiones viejas sin esta columna (el CREATE TABLE
             // IF NOT EXISTS no la agrega a tablas ya existentes en Turso).
-            'ALTER TABLE grupos_bienvenida ADD COLUMN mensaje TEXT'
+            'ALTER TABLE grupos_bienvenida ADD COLUMN mensaje TEXT',
+            'ALTER TABLE actividad ADD COLUMN ultima_actividad BIGINT DEFAULT 0'
         ];
         for (const sql of allCols) {
             try { await dbClient.execute(sql); } catch (e) { }
@@ -174,6 +175,25 @@ async function crearTablas() {
                 console.log(`📦 [DB] Migración mascota_legacy_v1 aplicada (${old.rows.length} filas revisadas).`);
             }
         } catch(_) {}
+        try {
+            await dbClient.execute("CREATE TABLE IF NOT EXISTS migraciones (nombre TEXT PRIMARY KEY, aplicada_en BIGINT)");
+            const backfill = await dbClient.execute({
+                sql: 'SELECT 1 FROM migraciones WHERE nombre = ?',
+                args: ['actividad_backfill_v1']
+            });
+            if (backfill.rows.length === 0) {
+                const ahora = Date.now();
+                await dbClient.execute({
+                    sql: 'UPDATE actividad SET ultima_actividad = ? WHERE total > 0 AND (ultima_actividad IS NULL OR ultima_actividad = 0)',
+                    args: [ahora]
+                });
+                await dbClient.execute({
+                    sql: 'INSERT INTO migraciones (nombre, aplicada_en) VALUES (?, ?)',
+                    args: ['actividad_backfill_v1', ahora]
+                });
+            }
+        } catch (_) {}
+
         console.log('📦 [DB] Estructura verificada.');
     } catch (e) { console.error('❌ [DB] Error en tablas:', e.message); }
 }
@@ -948,8 +968,8 @@ async function sumarActividadBatch(items) {
     try {
         for (const [chatId, userId, n] of items) {
             await dbClient.execute({
-                sql: 'INSERT INTO actividad (chat_id, user_id, total) VALUES (?, ?, ?) ON CONFLICT(chat_id, user_id) DO UPDATE SET total = actividad.total + ?',
-                args: [chatId, userId, n, n]
+                sql: 'INSERT INTO actividad (chat_id, user_id, total, ultima_actividad) VALUES (?, ?, ?, ?) ON CONFLICT(chat_id, user_id) DO UPDATE SET total = actividad.total + ?, ultima_actividad = ?',
+                args: [chatId, userId, n, Date.now(), n, Date.now()]
             });
         }
     } catch (e) {}
@@ -972,6 +992,20 @@ async function actividadPorChat(chatId) {
         for (const r of rs.rows || []) mapa[r.user_id] = r.total;
         return mapa;
     } catch (e) { return {}; }
+}
+
+async function actividadDetalle(chatId) {
+    if (!connected) return null;
+    try {
+        const rs = await dbClient.execute({
+            sql: 'SELECT user_id, total, ultima_actividad FROM actividad WHERE chat_id = ?',
+            args: [chatId]
+        });
+        return rs.rows || [];
+    } catch (e) {
+        console.error('❌ [DB] Error actividadDetalle:', e.message);
+        return null;
+    }
 }
 
 // --- Banco de stickers (!gstick / !stick) ---
@@ -1379,7 +1413,7 @@ module.exports = {
     sumarKarma, obtenerTopMonedas, obtenerTopNivel, registrarHistorial,
     addWarn, getWarns, resetWarns,
     setAFK, getAFK, clearAFK,
-    sumarActividadBatch, topActivos, actividadPorChat,
+    sumarActividadBatch, topActivos, actividadPorChat, actividadDetalle,
     guardarSticker, obtenerSticker, misStickers, borrarSticker,
     setReglas, getReglas, borrarReglas,
     crearRecordatorio, misRecordatorios, borrarRecordatorio, recordatoriosVencidos,
