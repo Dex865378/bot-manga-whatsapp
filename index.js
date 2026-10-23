@@ -360,6 +360,8 @@ function getBienvenidaAssets() {
     } catch (e) { _bienvenidaCache = { img: null, stk: null }; }
     return _bienvenidaCache;
 }
+const HEADER_BIENVENIDA = '╭━━━━━━━━━━━━━━━━━━━━━━╮\n  ✦ UN NUEVO OTAKU SE UNE ✦\n╰━━━━━━━━━━━━━━━━━━━━━━╯';
+const HEADER_DESPEDIDA = '╭━━━━━━━━━━━━━━━━━━━━━━━╮\n  ✦ QUE LA FUERZA TE ACOMPAÑE ✦\n╰━━━━━━━━━━━━━━━━━━━━━━━╯';
 // Usada por: group-participants.update (admin) y mensajes de sistema (sin admin)
 // Rápida: config + portada se piden EN PARALELO (antes eran 2 viajes
 // secuenciales a Turso) y el sticker sale sin bloquear (fire-and-forget).
@@ -396,7 +398,7 @@ async function enviarBienvenida(sock, groupId, participantJid) {
         if (!bienvenidaStk) bienvenidaStk = getBienvenidaAssets().stk;
         if (bienvenidaImg) {
             try {
-                const captionFinal = `╔══════════════════════╗\n║    😺 *¡BIENVENID@!* 😺    ║\n╚══════════════════════╝\n\n${customMsg}`;
+                const captionFinal = `${HEADER_BIENVENIDA}\n\n${customMsg}`;
                 await sock.sendMessage(groupId, {
                     image: bienvenidaImg,
                     caption: captionFinal,
@@ -405,10 +407,10 @@ async function enviarBienvenida(sock, groupId, participantJid) {
                 console.log(`📸 Bienvenida enviada a ${nombre}`);
             } catch (eImg) {
                 console.error(`❌ Error imagen bienvenida:`, eImg.message);
-                await sock.sendMessage(groupId, { text: customMsg, mentions: [participantJid] });
+                await sock.sendMessage(groupId, { text: `${HEADER_BIENVENIDA}\n\n${customMsg}`, mentions: [participantJid] });
             }
         } else {
-            await sock.sendMessage(groupId, { text: customMsg, mentions: [participantJid] });
+            await sock.sendMessage(groupId, { text: `${HEADER_BIENVENIDA}\n\n${customMsg}`, mentions: [participantJid] });
         }
         
         // Sticker de regalo SIN bloquear: sale en segundo plano mientras el
@@ -456,14 +458,14 @@ async function enviarDespedida(sock, groupId, participantJid) {
         if (!img) img = getBienvenidaAssets().img;
         if (img) {
             try {
-                await sock.sendMessage(groupId, { image: img, caption: customMsg, mentions: [participantJid] });
+                await sock.sendMessage(groupId, { image: img, caption: `${HEADER_DESPEDIDA}\n\n${customMsg}`, mentions: [participantJid] });
                 console.log(`👋 Despedida enviada a ${nombre}`);
                 return;
             } catch (eImg) {
                 console.error(`❌ Error imagen despedida:`, eImg.message);
             }
         }
-        await sock.sendMessage(groupId, { text: customMsg, mentions: [participantJid] });
+        await sock.sendMessage(groupId, { text: `${HEADER_DESPEDIDA}\n\n${customMsg}`, mentions: [participantJid] });
     } catch (e) {
         console.error('❌ Error en enviarDespedida:', e.message);
     }

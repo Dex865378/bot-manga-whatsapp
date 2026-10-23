@@ -4,6 +4,9 @@
 const path = require('path');
 const fs = require('fs');
 
+const HEADER_BIENVENIDA = '╭━━━━━━━━━━━━━━━━━━━━━━╮\n  ✦ UN NUEVO OTAKU SE UNE ✦\n╰━━━━━━━━━━━━━━━━━━━━━━╯';
+const HEADER_DESPEDIDA = '╭━━━━━━━━━━━━━━━━━━━━━━━╮\n  ✦ QUE LA FUERZA TE ACOMPAÑE ✦\n╰━━━━━━━━━━━━━━━━━━━━━━━╯';
+
 async function refreshGroupCache(db, botState, chatId) {
     const active = await db.estaGrupoActivo(chatId);
     const config = { active };
@@ -137,7 +140,7 @@ module.exports = {
                     const nombre = (t || '').split('@')[0];
                     let preview = conf.mensaje || `¡Hola @${nombre}! 🎉\nBienvenid@ al grupo.`;
                     preview = preview.replace(/{usuario}/gi, `@${nombre}`).replace(/{user}/gi, `@${nombre}`);
-                    await sock.sendMessage(chatId, { text: `🧪 *Prueba de bienvenida:*\n\n${preview}`, mentions: [t] });
+                    await sock.sendMessage(chatId, { text: `🧪 *Prueba de bienvenida:*\n\n${HEADER_BIENVENIDA}\n\n${preview}`, mentions: [t] });
                 }
                 return;
             }
@@ -179,7 +182,7 @@ module.exports = {
                     const nombre = (t || '').split('@')[0];
                     let preview = conf.mensaje || `Adiós @${nombre} 👋\nSe salió del grupo.`;
                     preview = preview.replace(/{usuario}/gi, `@${nombre}`).replace(/{user}/gi, `@${nombre}`);
-                    await sock.sendMessage(chatId, { text: `🧪 *Prueba de despedida:*\n\n${preview}`, mentions: [t] });
+                    await sock.sendMessage(chatId, { text: `🧪 *Prueba de despedida:*\n\n${HEADER_DESPEDIDA}\n\n${preview}`, mentions: [t] });
                 }
                 return;
             }
