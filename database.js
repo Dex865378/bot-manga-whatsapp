@@ -46,6 +46,7 @@ async function crearTablas() {
         `CREATE TABLE IF NOT EXISTS premios_log (user_id TEXT NOT NULL, ts BIGINT NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS antifarma_off (chat_id TEXT PRIMARY KEY, desactivado_por TEXT, updated_at BIGINT)`,
         `CREATE TABLE IF NOT EXISTS warns (chat_id TEXT NOT NULL, user_id TEXT NOT NULL, count INTEGER DEFAULT 0, updated_at BIGINT, PRIMARY KEY (chat_id, user_id))`,
+        `CREATE TABLE IF NOT EXISTS silenciados (user_id TEXT PRIMARY KEY, hasta BIGINT)`,
         `CREATE TABLE IF NOT EXISTS afk (user_id TEXT PRIMARY KEY, motivo TEXT DEFAULT '', ts BIGINT)`,
         `CREATE TABLE IF NOT EXISTS actividad (chat_id TEXT NOT NULL, user_id TEXT NOT NULL, total INTEGER DEFAULT 0, ultima_actividad BIGINT DEFAULT 0, PRIMARY KEY (chat_id, user_id))`,
         `CREATE TABLE IF NOT EXISTS stickers_usuario (user_id TEXT NOT NULL, nombre TEXT NOT NULL, sticker BLOB NOT NULL, created_at BIGINT, PRIMARY KEY (user_id, nombre))`,
@@ -983,6 +984,30 @@ async function topActivos(chatId, limit = 10) {
     } catch (e) { return []; }
 }
 
+// --- Silencios persistentes (sobreviven reinicios; el chequeo por mensaje sigue O(1) en RAM LRU) ---
+async function upsertSilenciado(userId, hasta) {
+    if (!connected) return;
+    try {
+        await dbClient.execute({
+            sql: 'INSERT INTO silenciados (user_id, hasta) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET hasta = excluded.hasta',
+            args: [userId, hasta]
+        });
+    } catch (e) {}
+}
+
+async function silenciadosActivos() {
+    if (!connected) await init();
+    try {
+        const rs = await dbClient.execute({ sql: 'SELECT user_id, hasta FROM silenciados WHERE hasta > ?', args: [Date.now()] });
+        return rs.rows || [];
+    } catch (e) { return []; }
+}
+
+async function limpiarSilenciados() {
+    if (!connected) return;
+    try { await dbClient.execute({ sql: 'DELETE FROM silenciados WHERE hasta <= ?', args: [Date.now()] }); } catch (e) {}
+}
+
 // Mapa user_id -> total de mensajes (para !fantasmas: incluye ceros por fuera)
 async function actividadPorChat(chatId) {
     if (!connected) await init();
@@ -1413,7 +1438,7 @@ module.exports = {
     sumarKarma, obtenerTopMonedas, obtenerTopNivel, registrarHistorial,
     addWarn, getWarns, resetWarns,
     setAFK, getAFK, clearAFK,
-    sumarActividadBatch, topActivos, actividadPorChat, actividadDetalle,
+    sumarActividadBatch, topActivos, actividadPorChat, actividadDetalle, upsertSilenciado, silenciadosActivos, limpiarSilenciados,
     guardarSticker, obtenerSticker, misStickers, borrarSticker,
     setReglas, getReglas, borrarReglas,
     crearRecordatorio, misRecordatorios, borrarRecordatorio, recordatoriosVencidos,

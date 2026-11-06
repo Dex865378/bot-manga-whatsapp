@@ -679,6 +679,10 @@ function cargarMangasLocal() {
 // Solo 3 rutas (/, /health, /reset-session): express (~20MB baseline en
 // 512MB) era sobredimensionado. http nativo hace lo mismo.
 const http = require('http');
+function numJid(jid) {
+    return String(jid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+}
+
 
 function dashboardHandler(req, res) {
     const url = new URL(req.url || '/', 'http://localhost');
@@ -865,6 +869,10 @@ async function startBot() {
     console.log('🚀 Iniciando Diky Bot V3...');
 
     await db.init();
+    // revive silencios guardados en DB (tarjeta de silencio) al arrancar
+    const activos = await db.silenciadosActivos().catch(() => []);
+    for (const s of activos) botState.silenciados.set(String(s.user_id).replace(/\D/g, ''), Number(s.hasta));
+    db.limpiarSilenciados().catch(() => {});
     handler.loadCommands(); // Punto 1: Carga dinámica de módulos
 
     // Auth: Turso Cloud → fallback local
@@ -1398,7 +1406,7 @@ async function procesarMensaje(sock, msg) {
         const msgType = getContentType(msg.message);
 
         // --- SILENCIO CHECK ---
-        const silenciadoHasta = botState.silenciados.get(sender);
+        const silenciadoHasta = botState.silenciados.get(numJid(sender));
         if (silenciadoHasta && Date.now() < silenciadoHasta) {
             if (VERBOSE_LOGS) console.log(`[SILENT] comando ignorado: sender ${(sender || '').split('@')[0]} silenciado hasta ${new Date(silenciadoHasta).toISOString()}`);
             return;
@@ -1758,7 +1766,7 @@ async function procesarMensaje(sock, msg) {
                     }
 
                     if (stats.count > botState.antiSpam.limit) {
-                        botState.silenciados.set(sender, ahora + botState.antiSpam.banTime);
+                        botState.silenciados.set(numJid(sender), ahora + botState.antiSpam.banTime);
                         botState.antiSpam.tracker.delete(sender); // Limpiar rastro tras baneo
                         return sock.sendMessage(chatId, {
                             text: `🚫 *SISTEMA ANTI-SPAM:* Has superado el límite de 100 comandos por hora.\n⚡ Quedarás silenciado por las próximas *2 horas*.\n\n_Diky Bot prefiere calidad antes que cantidad._`

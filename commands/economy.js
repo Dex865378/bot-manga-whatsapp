@@ -2,6 +2,10 @@
  * 💰 MÓDULO DE ECONOMÍA Y SOCIAL
  */
 const { findPetData, calcATK } = require('./mascotas.js');
+function numJid(jid) {
+    return String(jid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+}
+
 module.exports = {
     name: 'economy',
     isMultiple: true,
@@ -267,7 +271,10 @@ module.exports = {
             if (!it) return sock.sendMessage(chatId, { text: '❌ Item o mascota no válida. Usa !tienda o !mascotas p/ ver.' });
 
             let finalPrice = it.p;
-            if (u.clase === 'Hacker') finalPrice = Math.floor(it.p * 0.9);
+            let stockUsed = false;
+            let invPre = {}; try { invPre = JSON.parse(u.inventario || '{}'); } catch (e) {}
+            if (it.type === 'target_timer' && (invPre['silencio'] || 0) > 0) { finalPrice = 0; stockUsed = true; }
+            if (u.clase === 'Hacker' && !stockUsed) finalPrice = Math.floor(it.p * 0.9);
 
             if (balance < finalPrice) return sock.sendMessage(chatId, { text: '💸 No tienes suficiente capital (ni con tu pareja).' });
 
@@ -312,12 +319,23 @@ module.exports = {
                         await db.actualizarUsuario(sender, { inventario: JSON.stringify(invS) });
                     } else {
                         const targetUser = await db.obtenerUsuario(sMent[0]);
+                        if (targetUser && targetUser.guardaespalda_fin > ahora) {
+                            await db.deducirMonedas(sender, 1200).catch(() => {});
+                            return sock.sendMessage(chatId, { text: `🛡️ ¡@${sMent[0].split('@')[0]} tiene GUARDAESPALDA! El sellador ha sido multado: *-1200 diky*.`, mentions: [sMent[0]] }, { quoted: msg });
+                        }
                         if (targetUser && targetUser.escudo_fin > ahora) {
                             return sock.sendMessage(chatId, { text: `🛡️ ¡EL ESCUDO DE ORO HA PROTEGIDO A @${sMent[0].split('@')[0]}! La Tarjeta Silencio se ha roto sin efecto.`, mentions: [sMent[0]] }, { quoted: msg });
                         }
-                        botState.silenciados[sMent[0]] = ahora + 300000;
+                        if (stockUsed) {
+                            invPre['silencio'] = Math.max(0, (invPre['silencio'] || 0) - 1);
+                            await db.actualizarUsuario(sender, { inventario: JSON.stringify(invPre) });
+                        }
+                        const silenceTargetKey = numJid(sMent[0]);
+                        botState.silenciados.set(silenceTargetKey, ahora + 300000);
+                        db.upsertSilenciado(silenceTargetKey, ahora + 300000).catch(() => {});
                         const tname = sMent[0].split('@')[0];
-                        return sock.sendMessage(chatId, { text: `🔇 @${tname} ha sido silenciado por 5 minutos.`, mentions: [sMent[0]] }, { quoted: msg });
+                        const notaStock = stockUsed ? ' (usaste una tarjeta guardada, sin costo)' : '';
+                        return sock.sendMessage(chatId, { text: `🔇 @${tname} ha sido silenciado por 5 minutos${notaStock}.`, mentions: [sMent[0]] }, { quoted: msg });
                     }
                     break;
                 case 'random_effect':

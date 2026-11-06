@@ -279,7 +279,12 @@ module.exports = {
             const r = Math.random();
             const exito = r < 0.48;
             if (exito) {
-                const r2 = Math.random() * 100;
+                let r2 = Math.random() * 100;
+                let bonusMsg = '';
+                let brujulaUsada = false;
+                if (u.luck_fin > Date.now()) { r2 *= 0.5; bonusMsg += '\n🍀 *(Poción de Suerte activa)*'; }
+                if (u.brujula_usos > 0) { r2 = 0; brujulaUsada = true; bonusMsg += '\n🧭 *(Brújula usada, hallazgo garantizado)*'; }
+                if (brujulaUsada) await db.actualizarUsuario(sender, { brujula_usos: u.brujula_usos - 1 });
                 let rarityFilter;
                 let probText;
 
@@ -318,6 +323,7 @@ module.exports = {
 
                 let resC = `🎯 *¡CACERÍA EXITOSA!* 🏹\n━━━━━━━━━━━━━━\n✨ Has cazado: *${a.n}*\n💎 Rareza: [${a.r}]\n🍀 Probabilidad: [${bar}] ${probText}${limitMsg}\n✨ +${a.x} XP\n━━━━━━━━━━━━━━`;
                 if (u.clase === 'Cazador') resC += `\n🏹 *(Bonus Cazador: Mejor probabilidad)*`;
+                if (bonusMsg) resC += bonusMsg;
                 return sock.sendMessage(chatId, { text: resC }, { quoted: msg });
             }
             return sock.sendMessage(chatId, { text: `🍃 El animal escapó silenciosamente.` }, { quoted: msg });
@@ -327,7 +333,11 @@ module.exports = {
         if (start === '!minar') {
             const minerales = MINERALES_MINA;
 
-            const r2 = Math.random() * 100;
+            let r2 = Math.random() * 100;
+            let bonusMsg = '';
+            let brujulaUsada = false;
+            if (u.luck_fin > Date.now()) { r2 *= 0.5; bonusMsg += '\n🍀 *(Poción de Suerte activa)*'; }
+            if (u.brujula_usos > 0) { r2 = 0; brujulaUsada = true; bonusMsg += '\n🧭 *(Brújula usada, hallazgo garantizado)*'; }
             let rarityFilter;
             let probText;
 
@@ -342,9 +352,10 @@ module.exports = {
             const m_min = possible[Math.floor(Math.random() * possible.length)] || minerales[0];
 
             let val = m_min.v;
-            if (u.pico_usos > 0) {
-                await db.actualizarUsuario(sender, { pico_usos: u.pico_usos - 1 });
-            }
+            let updates = {};
+            if (u.pico_usos > 0) updates.pico_usos = u.pico_usos - 1;
+            if (brujulaUsada) updates.brujula_usos = u.brujula_usos - 1;
+            if (Object.keys(updates).length) await db.actualizarUsuario(sender, updates);
 
             let inv = {}; try { inv = JSON.parse(u.inventario || '{}'); } catch (e) { }
             const currCount = inv[m_min.n.toLowerCase()] || 0;
@@ -368,6 +379,7 @@ module.exports = {
 
             let resM = `⛏️ *MINERÍA EXITOSA* 🏛️\n━━━━━━━━━━━━━━\n✨ ¡Has picado: *${m_min.n}*!\n💎 Rareza: [${m_min.r}]\n🍀 Probabilidad: [${bar}] ${probText}${limitMsg}\n✨ XP: *${m_min.x}*\n━━━━━━━━━━━━━━`;
             if (u.clase === 'Minero') resM += `\n⛏️ *(Bonus Minero: Mejor suerte)*`;
+            if (bonusMsg) resM += bonusMsg;
             return sock.sendMessage(chatId, { text: resM }, { quoted: msg });
         }
 
@@ -375,7 +387,11 @@ module.exports = {
         if (start === '!pescar') {
             const peces = PECES_PESCA;
 
-            const r2 = Math.random() * 100;
+            let r2 = Math.random() * 100;
+            let bonusMsg = '';
+            let brujulaUsada = false;
+            if (u.luck_fin > Date.now()) { r2 *= 0.5; bonusMsg += '\n🍀 *(Poción de Suerte activa)*'; }
+            if (u.brujula_usos > 0) { r2 = 0; brujulaUsada = true; bonusMsg += '\n🧭 *(Brújula usada, hallazgo garantizado)*'; }
             let rarityFilter;
             let probText;
 
@@ -389,9 +405,10 @@ module.exports = {
             const possible = peces.filter(p => rarityFilter.includes(p.r));
             const p = possible[Math.floor(Math.random() * possible.length)] || peces[0];
 
-            if (u.cebo_usos > 0) {
-                await db.actualizarUsuario(sender, { cebo_usos: u.cebo_usos - 1 });
-            }
+            let updates = {};
+            if (u.cebo_usos > 0) updates.cebo_usos = u.cebo_usos - 1;
+            if (brujulaUsada) updates.brujula_usos = u.brujula_usos - 1;
+            if (Object.keys(updates).length) await db.actualizarUsuario(sender, updates);
 
             let weightBonus = (u.clase === 'Pescador') ? 1.30 : 1.0;
             const peso = (p.w ? (p.w * (0.6 + Math.random() * 0.8) * weightBonus).toFixed(2) : (Math.random() * 5 + 1).toFixed(2));
@@ -434,6 +451,7 @@ module.exports = {
             if (nuevoRecord) resP += `\n🎯 *¡NUEVO RÉCORD PERSONAL DE PESO!*`;
             resP += `\n━━━━━━━━━━━━━━`;
             if (u.clase === 'Pescador') resP += `\n🎖️ *(Bonus Pescador: Peces más pesados)*`;
+            if (bonusMsg) resP += bonusMsg;
             return sock.sendMessage(chatId, { text: resP }, { quoted: msg });
         }
 
