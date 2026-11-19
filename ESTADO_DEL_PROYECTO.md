@@ -181,5 +181,12 @@ Plan completo en `PLAN_RENDIMIENTO_RENDER.md`. Resumen de lo aplicado:
 - **Bug corregido**: `activarModoAdmin` / `activarAntiSpam` / `activarModoManga` devolvían `true` aunque el UPDATE afectara 0 filas (grupo nunca activado con `!bot on`). Ahora devuelven si se guardó de verdad y los comandos avisan.
 - **Seguridad**: eliminadas las claves de OpenRouter (IA ya removida) de `CONFIGURACION_RENDER.md` y `CONFIGURACION_HUGGINGFACE.md`; token de HF movido de `.git/config` a `bot_whatsapp_2_credenciales_render.txt` (ignorado por git).
 
+### Fix !toimg — WebP animado (2026-11-19)
+- **Causa real**: los stickers de WhatsApp son WebP **animados** y **NINGUNA versión de ffmpeg los decodifica** (verificado en 5.1, 6.0 y 7.0: `Invalid data found when processing input`). `dwebp` de libwebp tampoco los soporta. Por eso `!toimg` fallaba con cualquier sticker animado, que es la mayoría.
+- **Solución**: `utils/media.primerFrameWebp()` extrae el **primer frame** del contenedor RIFF en JS puro (chunk `ANMF` → WebP fijo, agregando `VP8X` si el frame trae `ALPH`) y ese frame sí lo convierte ffmpeg. Sin dependencias nuevas ni binarios extra.
+- `!toimg` ahora: detecta animado por `isAnimated` **o** por magic bytes, extrae el frame, convierte con `-frames:v 1`, y borra los temporales siempre (`finally`).
+- Probado de punta a punta con ffmpeg real: animado con alpha → PNG 53 KB en ~117 ms; animado sin alpha y fijo → PNG 49 KB en ~100 ms.
+- **Ojo**: nunca usar `ffmpeg` directo sobre un sticker animado; siempre pasar por `primerFrameWebp()` primero.
+
 ---
 *Documento actualizado por Antigravity (IA) — 2026-03-11 17:27 EST*

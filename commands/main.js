@@ -5,7 +5,7 @@ const { helpData } = require('./help');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { esWebpAnimado } = require('../utils/media');
+const { esWebpAnimado, primerFrameWebp } = require('../utils/media');
 
 // Portada del menú: configurada con !setportada menu (cacheada en RAM por
 // db.getPortada) o la imagen por defecto del bot. Así el menú sale como UN
@@ -567,7 +567,7 @@ module.exports = {
             }
         }
 
-        // !toimg — sticker → imagen (o video si el sticker es animado)
+        // !toimg — sticker → imagen
         if (start === '!toimg') {
             const cInfo = msg.message?.extendedTextMessage?.contextInfo
                 || msg.message?.imageMessage?.contextInfo
@@ -598,7 +598,6 @@ module.exports = {
             const uid = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
             const tmpIn = path.join(os.tmpdir(), `toimg_in_${uid}.webp`);
             const tmpPng = path.join(os.tmpdir(), `toimg_out_${uid}.png`);
-            const tmpMp4 = path.join(os.tmpdir(), `toimg_out_${uid}.mp4`);
 
             try {
                 const buffer = await downloadMediaMessage(
@@ -606,41 +605,34 @@ module.exports = {
                     'buffer', {}
                 );
                 if (!buffer || buffer.length === 0) throw new Error('sticker vacio');
-                fs.writeFileSync(tmpIn, buffer);
 
-                // Animado: se manda como video (conserva el movimiento). Si la
-                // conversión falla (ffmpeg sin libx264), se cae a PNG abajo.
-                if (sticker.isAnimated === true || esWebpAnimado(buffer)) {
-                    try {
-                        await execFileAsync(FFMPEG_PATH, [
-                            '-threads', '1', '-i', tmpIn,
-                            '-an',
-                            '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
-                            '-pix_fmt', 'yuv420p', '-t', '6',
-                            '-y', tmpMp4
-                        ], { timeout: 30000, windowsHide: true });
-                        const vid = fs.readFileSync(tmpMp4);
-                        if (vid && vid.length > 0) {
-                            return sock.sendMessage(chatId, {
-                                video: vid, gifPlayback: true,
-                                caption: '🎬 Sticker animado convertido a video.'
-                            }, { quoted: msg });
-                        }
-                    } catch (eAnim) {
-                        console.warn('[toimg] animado->mp4 fallo, se usa PNG:', String(eAnim.stderr || eAnim.message || '').slice(0, 200));
-                    }
+                // Los stickers animados son WebP con animación y NINGÚN ffmpeg
+                // los decodifica (probado: 5.1, 6.0 y 7.0 fallan con "Invalid
+                // data found when processing input"; dwebp tampoco). Por eso se
+                // extrae el primer frame del contenedor en JS y ese frame, que
+                // ya es un WebP fijo, sí lo convierte ffmpeg.
+                const esAnim = sticker.isAnimated === true || esWebpAnimado(buffer);
+                let entrada = buffer;
+                if (esAnim) {
+                    const frame = primerFrameWebp(buffer);
+                    if (!frame) throw new Error('no se pudo extraer el primer frame del sticker animado');
+                    entrada = frame;
                 }
+                fs.writeFileSync(tmpIn, entrada);
 
-                // `-frames:v 1` es OBLIGATORIO: sin eso, un sticker animado hace
-                // que el muxer image2 de ffmpeg 5.x (Debian bookworm) falle con
-                // "Cannot write more than one file with the same name. Are you
-                // missing the -update option?" — ese era el error que rompía
-                // !toimg con cualquier sticker animado.
+                // `-frames:v 1` deja el resultado determinista (un solo PNG) y
+                // evita el error del muxer image2 con entradas multi-frame.
                 await execFileAsync(FFMPEG_PATH, [
                     '-threads', '2', '-i', tmpIn, '-frames:v', '1', '-an', '-y', tmpPng
                 ], { timeout: 15000, windowsHide: true });
                 const imgBuffer = fs.readFileSync(tmpPng);
-                return sock.sendMessage(chatId, { image: imgBuffer, caption: '🖼️ Sticker convertido a imagen.' }, { quoted: msg });
+                if (!imgBuffer || imgBuffer.length === 0) throw new Error('PNG vacio');
+                return sock.sendMessage(chatId, {
+                    image: imgBuffer,
+                    caption: esAnim
+                        ? '🖼️ Sticker animado convertido a imagen (primer frame).'
+                        : '🖼️ Sticker convertido a imagen.'
+                }, { quoted: msg });
             } catch (e) {
                 console.error('❌ [toimg] Error:', e.message, '| stderr:', String(e.stderr || '').slice(0, 300));
                 return sock.sendMessage(chatId, { text: '❌ No pude convertir ese sticker.\n\nProbá con otro: los stickers de *Lottie* (animación vectorial) no se pueden convertir a imagen.' }, { quoted: msg });
@@ -648,7 +640,6 @@ module.exports = {
                 // Antes los temporales quedaban en disco si ffmpeg fallaba.
                 try { fs.unlinkSync(tmpIn); } catch (e) { }
                 try { fs.unlinkSync(tmpPng); } catch (e) { }
-                try { fs.unlinkSync(tmpMp4); } catch (e) { }
             }
         }
     }
