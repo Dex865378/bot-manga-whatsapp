@@ -5,13 +5,16 @@
 
 Este es el respaldo de todas las variables que DEBEN estar en Render para que el bot funcione correctamente.
 
+> [!WARNING]
+> Este repo es **público**. Nunca pegues tokens reales acá: los valores van en Render → Environment (o en el archivo `.env` local, que no se versiona).
+
 > [!NOTE]
 > Las claves de OpenRouter (IA) fueron **eliminadas** de este documento: la IA se quitó del bot en el commit `6ef48ff`. No hace falta configurar ninguna API de IA.
 
 | VARIABLE | VALOR EXACTO (COPIAR Y PEGAR) | NOTA |
 | :--- | :--- | :--- |
-| **TURSO_DATABASE_URL** | `libsql://manga-bot-dex865378.aws-us-east-1.turso.io` | Dirección de tu base de datos. |
-| **TURSO_AUTH_TOKEN** | `eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NzIyMzMwNzksImlkIjoiNzBjZjYyYmItOTdmNS00OTEyLWI2NmItMGVhMDkxNWNkZDdkIiwicmlkIjoiNzllZDU3MDQtZTYxMi00MGMwLWE1YzMtYTUzZDRmNmY3NDMzIn0.NQ7nTgWNmK07uRi8MT2MONNBKE1y-IWTxSabwFROdYT4XPxNXwzuE0IBPxVC7Rwl8eNx0v1hnO83GeIGZZ45BA` | El token de persistencia (NO CAMBIAR). |
+| **TURSO_DATABASE_URL** | *(oculto — está en Render → Environment y en el .env local)* | Dirección de tu base de datos. |
+| **TURSO_AUTH_TOKEN** | *(oculto — está en Render → Environment y en el .env local)* | El token de persistencia (NO CAMBIAR). |
 | **NUMERO_ADMIN** | `109938613481683,50760541202` | Permisos de administrador. |
 | **RENDER_EXTERNAL_URL** | `https://diky1.onrender.com` | URL para evitar que el bot se duerma. |
 | **PORT** | `10000` | Puerto fijo. |
