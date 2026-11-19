@@ -840,25 +840,9 @@ http.createServer(dashboardHandler).listen(PORT, '0.0.0.0', () => console.log(`�
 // ============================================================
 //                     STICKER UTILS
 // ============================================================
-// Detecta formato animado ANTES de invocar ffmpeg. Antes se intentaba primero
-// como imagen y, al fallar, se repetía TODO el proceso como video: el doble de
-// CPU (y hasta 2x de tiempo) en cada GIF / webp animado.
-function esBufferAnimado(buffer) {
-    if (!buffer || buffer.length < 16) return false;
-    if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46) return true; // GIF8
-    const cabecera = buffer.subarray(0, Math.min(buffer.length, 64)).toString('latin1');
-    if (cabecera.includes('WEBP') && cabecera.includes('ANIM')) return true;         // WebP animado
-    if (buffer.subarray(4, 8).toString('latin1') === 'ftyp') return true;            // MP4/MOV
-    return false;
-}
-
-// Formato original -> extensión que espera ffmpeg para detectar el contenedor.
-function extParaBuffer(buffer, comoVideo) {
-    if (!comoVideo) return 'png';
-    if (buffer && buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46) return 'gif';
-    if (buffer && buffer.subarray(8, 12).toString('latin1') === 'WEBP') return 'webp';
-    return 'mp4';
-}
+// La detección de formato vive en utils/media.js (la comparten este archivo y
+// los comandos: !s, !toimg, !setportada).
+const { esBufferAnimado, extParaBuffer } = require('./utils/media');
 
 async function convertirAWebp(buffer, isVideo = false) {
     // -threads acotado: en Render Free (0.1 vCPU) dejar que ffmpeg abra 8

@@ -4,6 +4,8 @@
 const { helpData } = require('./help');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const { esWebpAnimado } = require('../utils/media');
 
 // Portada del menú: configurada con !setportada menu (cacheada en RAM por
 // db.getPortada) o la imagen por defecto del bot. Así el menú sale como UN
@@ -565,39 +567,88 @@ module.exports = {
             }
         }
 
-        // !toimg
+        // !toimg — sticker → imagen (o video si el sticker es animado)
         if (start === '!toimg') {
-            const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-            const stickerMsg = msg.message?.stickerMessage || quoted?.stickerMessage;
-            if (!stickerMsg) return sock.sendMessage(chatId, { text: '🖼️ Responde a un *sticker* con *!toimg* para convertirlo a imagen.' }, { quoted: msg });
+            const cInfo = msg.message?.extendedTextMessage?.contextInfo
+                || msg.message?.imageMessage?.contextInfo
+                || msg.message?.videoMessage?.contextInfo;
+            const quoted = cInfo?.quotedMessage;
+
+            // El sticker citado no siempre está en el primer nivel: WhatsApp lo
+            // envuelve en viewOnce / ephemeral / documentWithCaption / edited.
+            let sticker = msg.message?.stickerMessage || null;
+            if (!sticker && quoted) {
+                let q = quoted;
+                for (let i = 0; i < 3 && q && !q.stickerMessage; i++) {
+                    q = q.viewOnceMessage?.message
+                        || q.viewOnceMessageV2?.message
+                        || q.viewOnceMessageV2Extension?.message
+                        || q.ephemeralMessage?.message
+                        || q.documentWithCaptionMessage?.message
+                        || q.editedMessage?.message
+                        || null;
+                }
+                sticker = q?.stickerMessage || null;
+            }
+            if (!sticker) return sock.sendMessage(chatId, { text: '🖼️ Responde a un *sticker* con *!toimg* para convertirlo a imagen.' }, { quoted: msg });
+
+            const { execFile } = require('child_process');
+            const { promisify } = require('util');
+            const execFileAsync = promisify(execFile);
+            const uid = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+            const tmpIn = path.join(os.tmpdir(), `toimg_in_${uid}.webp`);
+            const tmpPng = path.join(os.tmpdir(), `toimg_out_${uid}.png`);
+            const tmpMp4 = path.join(os.tmpdir(), `toimg_out_${uid}.mp4`);
 
             try {
                 const buffer = await downloadMediaMessage(
-                    quoted?.stickerMessage ? { message: quoted } : msg,
+                    msg.message?.stickerMessage ? msg : { message: quoted },
                     'buffer', {}
                 );
-
-                // Convertir WebP a PNG usando ffmpeg
-                const tmpIn = require('path').join(require('os').tmpdir(), `toimg_in_${Date.now()}.webp`);
-                const tmpOut = require('path').join(require('os').tmpdir(), `toimg_out_${Date.now()}.png`);
-                const fs = require('fs');
+                if (!buffer || buffer.length === 0) throw new Error('sticker vacio');
                 fs.writeFileSync(tmpIn, buffer);
 
-                const { execFile } = require('child_process');
-                const { promisify } = require('util');
-                const execFileAsync = promisify(execFile);
+                // Animado: se manda como video (conserva el movimiento). Si la
+                // conversión falla (ffmpeg sin libx264), se cae a PNG abajo.
+                if (sticker.isAnimated === true || esWebpAnimado(buffer)) {
+                    try {
+                        await execFileAsync(FFMPEG_PATH, [
+                            '-threads', '1', '-i', tmpIn,
+                            '-an',
+                            '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+                            '-pix_fmt', 'yuv420p', '-t', '6',
+                            '-y', tmpMp4
+                        ], { timeout: 30000, windowsHide: true });
+                        const vid = fs.readFileSync(tmpMp4);
+                        if (vid && vid.length > 0) {
+                            return sock.sendMessage(chatId, {
+                                video: vid, gifPlayback: true,
+                                caption: '🎬 Sticker animado convertido a video.'
+                            }, { quoted: msg });
+                        }
+                    } catch (eAnim) {
+                        console.warn('[toimg] animado->mp4 fallo, se usa PNG:', String(eAnim.stderr || eAnim.message || '').slice(0, 200));
+                    }
+                }
 
-                await execFileAsync(FFMPEG_PATH, ['-i', tmpIn, '-y', tmpOut], { timeout: 15000, windowsHide: true });
-                const imgBuffer = fs.readFileSync(tmpOut);
-
-                // Limpiar archivos temporales
-                try { fs.unlinkSync(tmpIn); } catch (e) { }
-                try { fs.unlinkSync(tmpOut); } catch (e) { }
-
+                // `-frames:v 1` es OBLIGATORIO: sin eso, un sticker animado hace
+                // que el muxer image2 de ffmpeg 5.x (Debian bookworm) falle con
+                // "Cannot write more than one file with the same name. Are you
+                // missing the -update option?" — ese era el error que rompía
+                // !toimg con cualquier sticker animado.
+                await execFileAsync(FFMPEG_PATH, [
+                    '-threads', '2', '-i', tmpIn, '-frames:v', '1', '-an', '-y', tmpPng
+                ], { timeout: 15000, windowsHide: true });
+                const imgBuffer = fs.readFileSync(tmpPng);
                 return sock.sendMessage(chatId, { image: imgBuffer, caption: '🖼️ Sticker convertido a imagen.' }, { quoted: msg });
             } catch (e) {
-                console.error('❌ [toimg] Error:', e.message);
-                return sock.sendMessage(chatId, { text: '❌ Error al convertir el sticker a imagen.' }, { quoted: msg });
+                console.error('❌ [toimg] Error:', e.message, '| stderr:', String(e.stderr || '').slice(0, 300));
+                return sock.sendMessage(chatId, { text: '❌ No pude convertir ese sticker.\n\nProbá con otro: los stickers de *Lottie* (animación vectorial) no se pueden convertir a imagen.' }, { quoted: msg });
+            } finally {
+                // Antes los temporales quedaban en disco si ffmpeg fallaba.
+                try { fs.unlinkSync(tmpIn); } catch (e) { }
+                try { fs.unlinkSync(tmpPng); } catch (e) { }
+                try { fs.unlinkSync(tmpMp4); } catch (e) { }
             }
         }
     }
