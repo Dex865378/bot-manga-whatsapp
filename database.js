@@ -47,7 +47,7 @@ async function crearTablas() {
         `CREATE TABLE IF NOT EXISTS antifarma_off (chat_id TEXT PRIMARY KEY, desactivado_por TEXT, updated_at BIGINT)`,
         `CREATE TABLE IF NOT EXISTS warns (chat_id TEXT NOT NULL, user_id TEXT NOT NULL, count INTEGER DEFAULT 0, updated_at BIGINT, PRIMARY KEY (chat_id, user_id))`,
         `CREATE TABLE IF NOT EXISTS silenciados (user_id TEXT PRIMARY KEY, hasta BIGINT)`,
-        `CREATE TABLE IF NOT EXISTS bot_instancias (id TEXT PRIMARY KEY, servicio TEXT, commit TEXT, last_seen BIGINT, conectado INTEGER DEFAULT 0)`,
+        `CREATE TABLE IF NOT EXISTS bot_instancias (id TEXT PRIMARY KEY, servicio TEXT, commit_sha TEXT, last_seen BIGINT, conectado INTEGER DEFAULT 0)`,
         `CREATE TABLE IF NOT EXISTS afk (user_id TEXT PRIMARY KEY, motivo TEXT DEFAULT '', ts BIGINT)`,
         `CREATE TABLE IF NOT EXISTS actividad (chat_id TEXT NOT NULL, user_id TEXT NOT NULL, total INTEGER DEFAULT 0, ultima_actividad BIGINT DEFAULT 0, PRIMARY KEY (chat_id, user_id))`,
         `CREATE TABLE IF NOT EXISTS stickers_usuario (user_id TEXT NOT NULL, nombre TEXT NOT NULL, sticker BLOB NOT NULL, created_at BIGINT, PRIMARY KEY (user_id, nombre))`,
@@ -92,7 +92,12 @@ async function crearTablas() {
         )`
     ];
     try {
-        for (const sql of tablas) await dbClient.execute(sql);
+        // Cada DDL va por separado: antes, UNA sentencia invalida abortaba el
+        // bucle completo y init() marcaba la DB como desconectada (bug real
+        // que dejó al bot sin base por una columna llamada "commit").
+        for (const sql of tablas) {
+            try { await dbClient.execute(sql); } catch (e) { console.error("⚠️ [DB] DDL falló:", e.message); }
+        }
 
         // Limpieza IA (irreversible, decisión del dueño): las tablas de IA ya
         // no se crean arriba; se dropean si existen de instalaciones previas.
@@ -1099,7 +1104,7 @@ async function latirInstancia(id, servicio, commit, conectado) {
     if (!connected) return;
     try {
         await dbClient.execute({
-            sql: 'INSERT INTO bot_instancias (id, servicio, commit, last_seen, conectado) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET servicio = excluded.servicio, commit = excluded.commit, last_seen = excluded.last_seen, conectado = excluded.conectado',
+            sql: 'INSERT INTO bot_instancias (id, servicio, commit_sha, last_seen, conectado) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET servicio = excluded.servicio, commit_sha = excluded.commit_sha, last_seen = excluded.last_seen, conectado = excluded.conectado',
             args: [id, servicio || '', commit || '', Date.now(), conectado ? 1 : 0]
         });
     } catch (e) {}
@@ -1111,13 +1116,13 @@ async function instanciasActivas(ttlMs = 90000) {
     try {
         const ahora = Date.now();
         const rs = await dbClient.execute({
-            sql: 'SELECT id, servicio, commit, last_seen, conectado FROM bot_instancias WHERE last_seen > ? ORDER BY last_seen DESC',
+            sql: 'SELECT id, servicio, commit_sha, last_seen, conectado FROM bot_instancias WHERE last_seen > ? ORDER BY last_seen DESC',
             args: [ahora - ttlMs]
         });
         return (rs.rows || []).map(r => ({
             id: r.id,
             servicio: r.servicio || '',
-            commit: (r.commit || '').slice(0, 7),
+            commit: (r.commit_sha || '').slice(0, 7),
             haceSeg: Math.round((ahora - Number(r.last_seen)) / 1000),
             conectado: Number(r.conectado) === 1
         }));
