@@ -794,6 +794,12 @@ function dashboardHandler(req, res) {
         sendJson(200, {
             ok: true,
             connected: botState.isConnected,
+            instancia: {
+                id: botState.instanceId,
+                servicio: process.env.RENDER_SERVICE_ID || os.hostname(),
+                commit: process.env.RENDER_GIT_COMMIT || '(local)',
+                uptimeSeg: Math.floor((Date.now() - botState.startTime) / 1000)
+            },
             memMB: {
                 rss: +(mem.rss / 1048576).toFixed(1),
                 heapUsed: +(mem.heapUsed / 1048576).toFixed(1),
@@ -802,6 +808,15 @@ function dashboardHandler(req, res) {
             latencia: resumenLatencias(),
             queues
         });
+        return;
+    }
+
+    if (url.pathname === '/instancias' && req.method === 'GET') {
+        // Cuántos procesos están vivos AHORA con la misma sesión de WhatsApp.
+        // 1 = todo bien. 2+ = error 440 y comandos atendidos por el que gane.
+        db.instanciasActivas().then(lista => {
+            sendJson(200, { ok: true, total: lista.length, instancias: lista });
+        }).catch(e => sendJson(500, { ok: false, error: e.message }));
         return;
     }
 
@@ -977,6 +992,16 @@ async function startBot() {
 
     // PRIMERO registrar event handlers
     sock.ev.on('creds.update', saveCreds);
+
+    // Latido de instancia: permite detectar dos procesos peleando la misma
+    // sesión de WhatsApp (error 440) y ver qué commit corre cada uno desde
+    // /health, sin acceso a los logs de Render.
+    const SERVICIO_RENDER = process.env.RENDER_SERVICE_ID || os.hostname();
+    const COMMIT_DESPLEGADO = process.env.RENDER_GIT_COMMIT || '(local)';
+    onceInterval('latido-instancia', () => {
+        db.latirInstancia(botState.instanceId, SERVICIO_RENDER, COMMIT_DESPLEGADO, botState.isConnected).catch(() => { });
+    }, 30000);
+    db.limpiarInstanciasViejas().catch(() => { });
 
     // --- CONEXIÓN ---
     sock.ev.on('connection.update', async (update) => {

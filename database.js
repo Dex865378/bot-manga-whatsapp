@@ -47,6 +47,7 @@ async function crearTablas() {
         `CREATE TABLE IF NOT EXISTS antifarma_off (chat_id TEXT PRIMARY KEY, desactivado_por TEXT, updated_at BIGINT)`,
         `CREATE TABLE IF NOT EXISTS warns (chat_id TEXT NOT NULL, user_id TEXT NOT NULL, count INTEGER DEFAULT 0, updated_at BIGINT, PRIMARY KEY (chat_id, user_id))`,
         `CREATE TABLE IF NOT EXISTS silenciados (user_id TEXT PRIMARY KEY, hasta BIGINT)`,
+        `CREATE TABLE IF NOT EXISTS bot_instancias (id TEXT PRIMARY KEY, servicio TEXT, commit TEXT, last_seen BIGINT, conectado INTEGER DEFAULT 0)`,
         `CREATE TABLE IF NOT EXISTS afk (user_id TEXT PRIMARY KEY, motivo TEXT DEFAULT '', ts BIGINT)`,
         `CREATE TABLE IF NOT EXISTS actividad (chat_id TEXT NOT NULL, user_id TEXT NOT NULL, total INTEGER DEFAULT 0, ultima_actividad BIGINT DEFAULT 0, PRIMARY KEY (chat_id, user_id))`,
         `CREATE TABLE IF NOT EXISTS stickers_usuario (user_id TEXT NOT NULL, nombre TEXT NOT NULL, sticker BLOB NOT NULL, created_at BIGINT, PRIMARY KEY (user_id, nombre))`,
@@ -1090,6 +1091,44 @@ async function limpiarSilenciados() {
     try { await dbClient.execute({ sql: 'DELETE FROM silenciados WHERE hasta <= ?', args: [Date.now()] }); } catch (e) {}
 }
 
+// --- Instancias vivas (diagnóstico de instancias duplicadas / error 440) ---
+// Cada proceso escribe su latido cada 30s. Si hay 2+ filas frescas, hay dos
+// procesos peleando la misma sesión de WhatsApp (440 Stream Errored).
+async function latirInstancia(id, servicio, commit, conectado) {
+    if (!connected) await init();
+    if (!connected) return;
+    try {
+        await dbClient.execute({
+            sql: 'INSERT INTO bot_instancias (id, servicio, commit, last_seen, conectado) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET servicio = excluded.servicio, commit = excluded.commit, last_seen = excluded.last_seen, conectado = excluded.conectado',
+            args: [id, servicio || '', commit || '', Date.now(), conectado ? 1 : 0]
+        });
+    } catch (e) {}
+}
+
+async function instanciasActivas(ttlMs = 90000) {
+    if (!connected) await init();
+    if (!connected) return [];
+    try {
+        const ahora = Date.now();
+        const rs = await dbClient.execute({
+            sql: 'SELECT id, servicio, commit, last_seen, conectado FROM bot_instancias WHERE last_seen > ? ORDER BY last_seen DESC',
+            args: [ahora - ttlMs]
+        });
+        return (rs.rows || []).map(r => ({
+            id: r.id,
+            servicio: r.servicio || '',
+            commit: (r.commit || '').slice(0, 7),
+            haceSeg: Math.round((ahora - Number(r.last_seen)) / 1000),
+            conectado: Number(r.conectado) === 1
+        }));
+    } catch (e) { return []; }
+}
+
+async function limpiarInstanciasViejas() {
+    if (!connected) return;
+    try { await dbClient.execute({ sql: 'DELETE FROM bot_instancias WHERE last_seen < ?', args: [Date.now() - 24 * 60 * 60 * 1000] }); } catch (e) {}
+}
+
 // Mapa user_id -> total de mensajes (para !fantasmas: incluye ceros por fuera)
 async function actividadPorChat(chatId) {
     if (!connected) await init();
@@ -1533,6 +1572,7 @@ module.exports = {
     sumarActividadBatch, topActivos, actividadPorChat, actividadDetalle, upsertSilenciado, silenciadosActivos, limpiarSilenciados,
     guardarSticker, obtenerSticker, misStickers, borrarSticker,
     setReglas, getReglas, borrarReglas,
+    latirInstancia, instanciasActivas, limpiarInstanciasViejas,
     crearRecordatorio, misRecordatorios, borrarRecordatorio, recordatoriosVencidos,
     getRecord, saveRecord,
     crearSubasta, obtenerSubastasActivas, pujarSubasta, finalizarSubasta, obtenerSubasta,
