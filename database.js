@@ -540,6 +540,8 @@ async function removerItem(userId, itemName, cantidad = 1) {
     return { ok, restante: ok ? restante : current };
 }
 
+// (Legacy/API) Registra +1 comando con SELECT + UPDATE. El bot YA NO usa esta
+// función: usa registrarComandosBatch() más abajo (1 sola escritura por lote).
 async function registrarComando(userId) {
     const u = await obtenerUsuario(userId);
     if (!u) return false;
@@ -547,6 +549,85 @@ async function registrarComando(userId) {
     return await actualizarUsuario(userId, { total_comandos: n });
 }
 
+// --- Estadísticas en lote (mucho menos tráfico a Turso) ---
+// Envía las sentencias en lotes de 100: un batch único con cientos de
+// statements puede pasarse del tamaño máximo de request del protocolo HTTP
+// de Turso. Aun así son ~10x menos viajes que antes.
+async function ejecutarEnLotes(stmts, max = 100) {
+    if (!connected || !stmts || stmts.length === 0) return;
+    for (let i = 0; i < stmts.length; i += max) {
+        await dbClient.batch(stmts.slice(i, i + max), 'write');
+    }
+}
+
+// Antes: por cada usuario se hacía SELECT + UPDATE (2 roundtrips) en tandas de
+// 5, o sea ~200 viajes de red por minuto con 100 usuarios activos. Ahora es un
+// UPSERT atómico por usuario dentro de un batch: sin lecturas y sin pisar
+// conteos concurrentes.
+async function registrarComandosBatch(entries) {
+    if (!connected || !entries || entries.length === 0) return;
+    try {
+        const stmts = entries.map(([userId, n]) => ({
+            sql: `INSERT INTO usuarios (user_id, total_comandos) VALUES (?, ?)
+                  ON CONFLICT(user_id) DO UPDATE SET total_comandos = COALESCE(total_comandos, 0) + excluded.total_comandos`,
+            args: [userId, n]
+        }));
+        await ejecutarEnLotes(stmts);
+        // Espejo en la caché: mismo efecto que tenía actualizarUsuario (que
+        // dejaba el valor nuevo en caché) pero sin invalidar la fila entera.
+        for (const [userId, n] of entries) {
+            const cached = userCache.get(userId);
+            if (cached && cached.data) {
+                cached.data = { ...cached.data, total_comandos: (cached.data.total_comandos || 0) + n };
+            }
+        }
+    } catch (e) {
+        console.error('❌ [DB] Error registrarComandosBatch:', e.message);
+    }
+}
+
+// Racha diaria en lote: MISMA lógica que actualizarRacha() pero resuelta en SQL
+// (antes era 1 SELECT por usuario + 1 UPDATE, en tandas de 5).
+const DIA_MS = 24 * 60 * 60 * 1000;
+async function actualizarRachasBatch(userIds) {
+    if (!connected || !userIds || userIds.length === 0) return;
+    const ahora = Date.now();
+    const stmts = userIds.map((userId) => ({
+        sql: `UPDATE usuarios SET
+                racha_diaria = CASE
+                    WHEN ultima_actividad_racha IS NULL OR ultima_actividad_racha = 0 THEN 1
+                    WHEN ? - ultima_actividad_racha > ? THEN 1
+                    WHEN ? - ultima_actividad_racha > ? THEN COALESCE(racha_diaria, 0) + 1
+                    ELSE racha_diaria END,
+                ultima_actividad_racha = CASE
+                    WHEN ultima_actividad_racha IS NULL OR ultima_actividad_racha = 0 THEN ?
+                    WHEN ? - ultima_actividad_racha > ? THEN ?
+                    ELSE ultima_actividad_racha END
+              WHERE user_id = ?`,
+        args: [ahora, DIA_MS * 2, ahora, DIA_MS, ahora, ahora, DIA_MS, ahora, userId]
+    }));
+    try {
+        await ejecutarEnLotes(stmts);
+    } catch (e) {
+        console.error('❌ [DB] Error actualizarRachasBatch:', e.message);
+        return;
+    }
+    // Espejo en caché (misma regla que el SQL, para no dejar valores viejos).
+    for (const userId of userIds) {
+        const cached = userCache.get(userId);
+        if (!cached || !cached.data) continue;
+        const ultima = cached.data.ultima_actividad_racha || 0;
+        let racha = cached.data.racha_diaria || 0;
+        let nuevaUltima = ultima;
+        if (ultima === 0) { racha = 1; nuevaUltima = ahora; }
+        else if (ahora - ultima > DIA_MS * 2) { racha = 1; nuevaUltima = ahora; }
+        else if (ahora - ultima > DIA_MS) { racha += 1; nuevaUltima = ahora; }
+        cached.data = { ...cached.data, racha_diaria: racha, ultima_actividad_racha: nuevaUltima };
+    }
+}
+
+// (Legacy/API) Versión de a un usuario. El flush de estadísticas usa
+// actualizarRachasBatch(), que hace lo mismo en SQL y sin leer la fila.
 async function actualizarRacha(userId) {
     const u = await obtenerUsuario(userId);
     if (!u) return false;
@@ -967,12 +1048,13 @@ async function clearAFK(userId) {
 async function sumarActividadBatch(items) {
     if (!connected || !items || items.length === 0) return;
     try {
-        for (const [chatId, userId, n] of items) {
-            await dbClient.execute({
-                sql: 'INSERT INTO actividad (chat_id, user_id, total, ultima_actividad) VALUES (?, ?, ?, ?) ON CONFLICT(chat_id, user_id) DO UPDATE SET total = actividad.total + ?, ultima_actividad = ?',
-                args: [chatId, userId, n, Date.now(), n, Date.now()]
-            });
-        }
+        // Un solo request: antes era un execute() por fila (20 viajes por tanda).
+        const ahora = Date.now();
+        const stmts = items.map(([chatId, userId, n]) => ({
+            sql: 'INSERT INTO actividad (chat_id, user_id, total, ultima_actividad) VALUES (?, ?, ?, ?) ON CONFLICT(chat_id, user_id) DO UPDATE SET total = actividad.total + ?, ultima_actividad = ?',
+            args: [chatId, userId, n, ahora, n, ahora]
+        }));
+        await ejecutarEnLotes(stmts);
     } catch (e) {}
 }
 
@@ -1136,8 +1218,12 @@ async function recordatoriosVencidos(ahora, limit = 10) {
     try {
         const rs = await dbClient.execute({ sql: 'SELECT id, chat_id, user_id, texto FROM recordatorios WHERE execute_at <= ? ORDER BY execute_at LIMIT ?', args: [ahora, limit] });
         const rows = rs.rows || [];
-        for (const r of rows) {
-            await dbClient.execute({ sql: 'DELETE FROM recordatorios WHERE id = ?', args: [r.id] });
+        if (rows.length > 0) {
+            // Un solo batch de DELETEs en vez de uno por recordatorio.
+            await dbClient.batch(
+                rows.map(r => ({ sql: 'DELETE FROM recordatorios WHERE id = ?', args: [r.id] })),
+                'write'
+            );
         }
         return rows;
     } catch (e) { return []; }
@@ -1167,69 +1253,74 @@ async function saveRecord(juego, userId, valor, menorEsMejor = true) {
     } catch (e) { return { nuevo: false, anterior: null }; }
 }
 
+// NOTA: estas funciones devuelven true SOLO si realmente se actualizó una fila.
+// En grupos que nunca se activaron con !bot on no existe la fila en
+// grupos_activados, así que el UPDATE afectaba 0 filas y los comandos
+// respondían "activado" sin guardar nada (bug silencioso). Ahora el caller
+// puede detectarlo y avisar.
 async function activarAntiSpam(chatId) {
     if (!connected) await init();
     try {
-        await dbClient.execute({
+        const rs = await dbClient.execute({
             sql: 'UPDATE grupos_activados SET antispam = 1 WHERE chat_id = ?',
             args: [chatId]
         });
-        return true;
+        return (rs.rowsAffected || 0) > 0;
     } catch (e) { return false; }
 }
 
 async function desactivarAntiSpam(chatId) {
     if (!connected) await init();
     try {
-        await dbClient.execute({
+        const rs = await dbClient.execute({
             sql: 'UPDATE grupos_activados SET antispam = 0 WHERE chat_id = ?',
             args: [chatId]
         });
-        return true;
+        return (rs.rowsAffected || 0) > 0;
     } catch (e) { return false; }
 }
 
 async function activarModoAdmin(chatId) {
     if (!connected) await init();
     try {
-        await dbClient.execute({
+        const rs = await dbClient.execute({
             sql: 'UPDATE grupos_activados SET modo_admin = 1 WHERE chat_id = ?',
             args: [chatId]
         });
-        return true;
+        return (rs.rowsAffected || 0) > 0;
     } catch (e) { return false; }
 }
 
 async function desactivarModoAdmin(chatId) {
     if (!connected) await init();
     try {
-        await dbClient.execute({
+        const rs = await dbClient.execute({
             sql: 'UPDATE grupos_activados SET modo_admin = 0 WHERE chat_id = ?',
             args: [chatId]
         });
-        return true;
+        return (rs.rowsAffected || 0) > 0;
     } catch (e) { return false; }
 }
 
 async function activarModoManga(chatId) {
     if (!connected) await init();
     try {
-        await dbClient.execute({
+        const rs = await dbClient.execute({
             sql: 'UPDATE grupos_activados SET modo_manga = 1 WHERE chat_id = ?',
             args: [chatId]
         });
-        return true;
+        return (rs.rowsAffected || 0) > 0;
     } catch (e) { return false; }
 }
 
 async function desactivarModoManga(chatId) {
     if (!connected) await init();
     try {
-        await dbClient.execute({
+        const rs = await dbClient.execute({
             sql: 'UPDATE grupos_activados SET modo_manga = 0 WHERE chat_id = ?',
             args: [chatId]
         });
-        return true;
+        return (rs.rowsAffected || 0) > 0;
     } catch (e) { return false; }
 }
 
@@ -1434,6 +1525,7 @@ module.exports = {
     getPortada, setPortada, limpiarCachePortada, PORTADAS_VALIDAS,
     obtenerUsuario, obtenerUsuariosBatch, actualizarUsuario, incrementarCampo, sumarMonedas, sumarXP, obtenerBalance, deducirMonedas, puedePremiar, premiarConLimite, NOTA_ANTIFARMA, antifarmaActivo, setAntifarma,
     registrarVictoriaDuelo, registrarDerrotaDuelo, registrarComando, actualizarRacha,
+    registrarComandosBatch, actualizarRachasBatch,
     agregarItem, removerItem,
     sumarKarma, obtenerTopMonedas, obtenerTopNivel, registrarHistorial,
     addWarn, getWarns, resetWarns,

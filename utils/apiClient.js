@@ -5,6 +5,18 @@
 
 const axios = require('axios');
 
+// --- Agentes HTTP con keep-alive (compartidos por TODO axios del proyecto) ---
+// Sin esto, cada llamada a AniList / MangaDex / traductor pagaba un handshake
+// TLS completo (~100-300ms desde Render). Reutilizando sockets ese tiempo se
+// ahorra en cada comando que consulta una API externa. Los topes existen para
+// no acumular conexiones abiertas en un plan de 512MB.
+const http = require('http');
+const https = require('https');
+const keepAliveHttpAgent = new http.Agent({ keepAlive: true, maxSockets: 16, maxFreeSockets: 8, keepAliveMsecs: 20000 });
+const keepAliveHttpsAgent = new https.Agent({ keepAlive: true, maxSockets: 16, maxFreeSockets: 8, keepAliveMsecs: 20000 });
+axios.defaults.httpAgent = keepAliveHttpAgent;
+axios.defaults.httpsAgent = keepAliveHttpsAgent;
+
 class CircuitBreaker {
     constructor(threshold = 5, timeout = 60000) {
         this.failureThreshold = threshold;

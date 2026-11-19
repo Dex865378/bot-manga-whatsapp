@@ -53,8 +53,9 @@ module.exports = {
                 }
             } else if (que === 'adm' || que === 'admin') {
                 if (modo === 'on') {
-                    await db.activarModoAdmin(objetivo);
+                    const aplicado = await db.activarModoAdmin(objetivo);
                     botState.groupCache.delete(objetivo);
+                    if (!aplicado) return sock.sendMessage(chatId, { text: `⚠️ No se pudo guardar el ajuste.\n\nSuele pasar cuando el bot no está activado en ese grupo: un admin debe ejecutar *!bot on* ahí primero.\n\nGrupo: \`${objetivo}\`` }, { quoted: msg });
                     return sock.sendMessage(chatId, { text: `🔒 Modo admin *activado* en:\n\`${objetivo}\`\n_Solo admins pueden usar comandos._` }, { quoted: msg });
                 } else if (modo === 'off') {
                     await db.desactivarModoAdmin(objetivo);
@@ -90,8 +91,9 @@ module.exports = {
 
             const mode = args[0]?.toLowerCase();
             if (mode === 'on') {
-                await db.activarAntiSpam(chatId);
+                const aplicado = await db.activarAntiSpam(chatId);
                 await refreshGroupCache(db, botState, chatId);
+                if (!aplicado) return sock.sendMessage(chatId, { text: '⚠️ No se pudo guardar el ajuste.\n\nSuele pasar cuando el bot no está activado en este grupo: un admin debe ejecutar *!bot on* primero. Si ya está activado, probá de nuevo en unos segundos.' }, { quoted: msg });
                 return sock.sendMessage(chatId, { text: '*SISTEMA ANTI-SPAM ACTIVADO EN ESTE GRUPO*\n_Limite: 100 comandos/hora por usuario._' }, { quoted: msg });
             } else if (mode === 'off') {
                 await db.desactivarAntiSpam(chatId);
@@ -208,6 +210,10 @@ module.exports = {
             if (mode === 'on') {
                 await db.activarModoAdmin(chatId);
                 await refreshGroupCache(db, botState, chatId);
+                const conf = botState.groupCache.get(chatId);
+                if (!(conf && conf.active && conf.active.modo_admin === 1)) {
+                    return sock.sendMessage(chatId, { text: '⚠️ No se pudo guardar el modo admin.\n\nSuele pasar cuando el bot no está activado en este grupo: un admin debe ejecutar *!bot on* primero. Si ya está activado, probá de nuevo en unos segundos.' }, { quoted: msg });
+                }
                 return sock.sendMessage(chatId, { text: '*MODO ADMIN ACTIVADO EN ESTE GRUPO*\n_Solo los administradores pueden usar comandos._' }, { quoted: msg });
             } else if (mode === 'off') {
                 await db.desactivarModoAdmin(chatId);
@@ -297,9 +303,14 @@ module.exports = {
             const mode = args[0]?.toLowerCase();
             if (mode === 'on') {
                 if (!isAdmin) return sock.sendMessage(chatId, { text: 'Solo admins.' }, { quoted: msg });
-                await db.activarModoManga(chatId);
+                const aplicado = await db.activarModoManga(chatId);
                 botState.mangaMode.set(chatId, true);
                 if (botState.groupCache) botState.groupCache.delete(chatId);
+                // El modo se aplica igual (fallback en RAM), pero avisamos que
+                // no queda guardado en la DB si el grupo nunca se activó.
+                if (!aplicado) {
+                    await sock.sendMessage(chatId, { text: '⚠️ Ojo: el bot no está activado en este grupo, así que el modo manga *no quedará guardado* y se perderá si el bot se reinicia.\n\nEjecutá *!bot on* para fijarlo.' }, { quoted: msg });
+                }
 
                 let mt = `📚 *DIKY BOT — MODO MANGA ACTIVADO* 📚\n`;
                 mt += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;

@@ -9,7 +9,7 @@ function numJid(jid) {
 module.exports = {
     name: 'economy',
     isMultiple: true,
-    names: ['!daily', '!w', '!slut', '!robar', '!perfil', '!p', '!profile', '!tienda', '!comprar', '!inventario', '!mejor', '!bounty', '!dar', '!canjear', '!marry', '!divorce', '!regalaritem', '!regalar', '!clase', '!prestigio', '!loteria'],
+    names: ['!daily', '!w', '!slut', '!robar', '!perfil', '!p', '!profile', '!tienda', '!comprar', '!inventario', '!mejor', '!bounty', '!dar', '!canjear', '!marry', '!proponer', '!divorce', '!regalaritem', '!regalar', '!clase', '!prestigio', '!loteria'],
     async execute(sock, chatId, msg, args, { start, cmd, txt, sender, isGroup, isGlobalAdmin, db, botState, delay, ADMIN_NUM }) {
 
         // !clase <nombre>
@@ -822,7 +822,7 @@ module.exports = {
         }
 
         // !marry @user
-        if (start === '!marry') {
+        if (start === '!marry' || start === '!proponer') {
             const ment = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
             if (!ment[0]) return sock.sendMessage(chatId, { text: '💍 Menciona a la persona con la que te quieres casar.' });
             if (ment[0] === sender) return sock.sendMessage(chatId, { text: '❓ No puedes casarte contigo mismo.' });

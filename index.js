@@ -50,10 +50,19 @@ const ADMIN_NUMBERS_CLEAN = (process.env.NUMERO_ADMIN || '')
     .map(n => (n || '').split('@')[0].replace(/\D/g, ''))
     .filter(n => n && n.length >= 7);
 const VERBOSE_LOGS = process.env.VERBOSE_LOGS === '1';
+
+// parseInt seguro para variables de entorno: si el valor es basura (NaN) usa el
+// default. Importante: un NaN en un semáforo o en MAX_PROCESOS deja
+// comparaciones siempre falsas y bloquearía comandos para siempre.
+function envInt(nombre, porDefecto, minimo = 0) {
+    const n = parseInt(process.env[nombre], 10);
+    if (!Number.isFinite(n)) return porDefecto;
+    return Math.max(minimo, n);
+}
 const FAST_COMMANDS = new Set(['!ping']); // !menu excluido para respetar el filtro de manga mode
-const PAIRING_CODE_TTL_MS = Math.max(60000, parseInt(process.env.PAIRING_CODE_TTL_MS || '180000', 10));
-const PAIRING_MIN_INTERVAL_MS = Math.max(60000, parseInt(process.env.PAIRING_MIN_INTERVAL_MS || '180000', 10));
-const PAIRING_RATE_LIMIT_BACKOFF_MS = Math.max(300000, parseInt(process.env.PAIRING_RATE_LIMIT_BACKOFF_MS || '3600000', 10));
+const PAIRING_CODE_TTL_MS = envInt('PAIRING_CODE_TTL_MS', 180000, 60000);
+const PAIRING_MIN_INTERVAL_MS = envInt('PAIRING_MIN_INTERVAL_MS', 180000, 60000);
+const PAIRING_RATE_LIMIT_BACKOFF_MS = envInt('PAIRING_RATE_LIMIT_BACKOFF_MS', 3600000, 300000);
 const PAIRING_METHOD = (process.env.PAIRING_METHOD || 'qr').toLowerCase();
 
 let FFMPEG_PATH = 'ffmpeg';
@@ -63,6 +72,13 @@ try { FFMPEG_PATH = require('@ffmpeg-installer/ffmpeg').path; } catch (e) { }
 const adminCache = new Map();
 const TTL_ADMIN = 10 * 60 * 1000; // 10 minutos
 const cooldowns = new Map(); // ESCUDO ANTI-SPAM
+
+// Sincronización del nombre de WhatsApp: antes hacía un SELECT por CADA
+// comando (la caché de 30s lo aliviaba, pero un usuario activo igual
+// refrescaba 2 veces por minuto). El nombre es cosmético: con refrescar
+// cada 10 min alcanza y sobra.
+const nombreWaSync = new Map(); // sender -> timestamp del último chequeo
+const NOMBRE_WA_TTL_MS = 10 * 60 * 1000;
 
 // 🧹 Limpieza de cooldowns caducados cada 10 minutos (anti memory-leak)
 setInterval(() => {
@@ -142,7 +158,13 @@ global.colaSalida = colaSalida; // Exponer para diagnósticos
 const slowChats = new Map(); // chatId -> timestamp hasta cuando se reducen envios extra
 const MAX_COLA_SALIDA = 50; // Límite máximo de mensajes en cola por chat
 
-const SEND_MESSAGE_TIMEOUT_MS = Math.max(5000, parseInt(process.env.SEND_MESSAGE_TIMEOUT_MS || '25000', 10));
+// Pausa base entre mensajes del mismo chat. 250ms fijos hacían que un comando
+// de 4 mensajes (!leer, !perfil) tardara 1s solo en esperas. Ahora la base es
+// baja y el ritmo conservador se activa SOLO si el chat ya falló (esChatLento
+// se marca ante timeout/429). Override sin redeploy: PERF_QUEUE_MIN_MS.
+const QUEUE_MIN_DELAY_MS = envInt('PERF_QUEUE_MIN_MS', 80, 0);
+
+const SEND_MESSAGE_TIMEOUT_MS = envInt('SEND_MESSAGE_TIMEOUT_MS', 25000, 5000);
 
 function sendMessageConTimeout(sock, chatId, content, options) {
     return Promise.race([
@@ -209,12 +231,13 @@ async function procesarColaSalida(sock, chatId) {
                 reject(e);
             }
         }
-        // Pausa entre mensajes: ultra-dinámica según carga
-        // 50ms modo turbo (>10 msgs), 100ms normal, 250ms protección flood
+        // Pausa entre mensajes: turbo si la cola está cargada, conservadora
+        // (250ms) si este chat viene de un timeout/429, normal el resto.
         let delayMs;
-        if (estado.cola.length > 10) delayMs = 50;      // Modo turbo: cola colapsada
-        else if (estado.cola.length > 5) delayMs = 100; // Normal
-        else delayMs = 250;                             // Protección flood
+        if (estado.cola.length > 10) delayMs = 25;      // Modo turbo: cola colapsada
+        else if (estado.cola.length > 5) delayMs = 50;  // Normal
+        else if (esChatLento(chatId)) delayMs = 250;    // Protección flood
+        else delayMs = QUEUE_MIN_DELAY_MS;              // Base (80ms por defecto)
         if (estado.cola.length > 0) await new Promise(r => setTimeout(r, delayMs));
     }
 
@@ -227,8 +250,11 @@ async function procesarColaSalida(sock, chatId) {
 }
 
 // Helper: esperar turno en la cola de tareas pesadas
-const RENDER_MAX_PROCESOS = Math.max(1, parseInt(process.env.MAX_PROCESOS || '9', 10));
-const RENDER_MAX_COLA = Math.max(1, parseInt(process.env.MAX_COLA_HEAVY || '10', 10));
+// En Render Free (0.1 vCPU / 512MB) 9 conversiones de ffmpeg a la vez no van
+// más rápido: se pelean por la CPU y congelan TODOS los demás comandos.
+// 3 es el punto donde todavía hay paralelismo útil sin thrashing.
+const RENDER_MAX_PROCESOS = envInt('MAX_PROCESOS', 3, 1);
+const RENDER_MAX_COLA = envInt('MAX_COLA_HEAVY', 10, 1);
 
 function esperarSlotHeavy() {
     return new Promise((resolve) => {
@@ -298,35 +324,29 @@ async function flushStatsBatch() {
     statsBatch.rachas.clear();
     statsBatch.dirty = false;
 
-    // Flush comandos en paralelo con concurrencia acotada (antes: secuencial N+1).
-    // 100 usuarios = 200 roundtrips seguidos; ahora van de 5 en 5.
-    const entries = [...comandosCopy.entries()];
-    for (let i = 0; i < entries.length; i += 5) {
-        await Promise.allSettled(entries.slice(i, i + 5).map(async ([userId, incremento]) => {
-            const u = await db.obtenerUsuario(userId);
-            if (u) await db.actualizarUsuario(userId, { total_comandos: (u.total_comandos || 0) + incremento });
-        }));
-    }
-
-    // Flush rachas igual, de 5 en 5
-    const rachas = [...rachasCopy];
-    for (let i = 0; i < rachas.length; i += 5) {
-        await Promise.allSettled(rachas.slice(i, i + 5).map((userId) => db.actualizarRacha(userId)));
-    }
-
-    // Flush actividad (!topactivos): insert/upsert directo, de 20 en 20
+    // Flush EN LOTE: 3 requests en total a Turso (antes: hasta 200, con un
+    // SELECT + UPDATE por usuario en tandas de 5). Cada sentencia es un UPSERT
+    // atómico, así que tampoco se pierden conteos por carrera.
+    let acts = [];
     if (actividadBatch.size > 0) {
-        const acts = [...actividadBatch.entries()];
+        acts = [...actividadBatch.entries()].map(([k, n]) => {
+            const sep = k.lastIndexOf('::');
+            return [k.slice(0, sep), k.slice(sep + 2), n];
+        });
         actividadBatch.clear();
         actividadUltima.clear();
-        for (let i = 0; i < acts.length; i += 20) {
-            const lote = acts.slice(i, i + 20).map(([k, n]) => {
-                const sep = k.lastIndexOf('::');
-                return [k.slice(0, sep), k.slice(sep + 2), n];
-            });
-            await db.sumarActividadBatch(lote).catch(() => {});
-        }
     }
+
+    // Orden importante: primero se asegura la fila del usuario (INSERT del
+    // contador) y recién después se actualiza la racha, que es un UPDATE y
+    // necesita que la fila exista. Actividad es independiente y va en paralelo.
+    if (comandosCopy.size > 0) {
+        await db.registrarComandosBatch([...comandosCopy.entries()]).catch(() => { });
+    }
+    await Promise.allSettled([
+        rachasCopy.size > 0 ? db.actualizarRachasBatch([...rachasCopy]) : Promise.resolve(),
+        acts.length > 0 ? db.sumarActividadBatch(acts) : Promise.resolve()
+    ]);
 
     if (comandosCopy.size > 0) console.log(`📊 [Batch] Sincronizados ${comandosCopy.size} usuarios, ${rachasCopy.size} rachas.`);
 }
@@ -334,9 +354,8 @@ async function flushStatsBatch() {
 // Flush automático cada 1 minuto (para grupos grandes, que se vea más rápido)
 setInterval(flushStatsBatch, 1 * 60 * 1000);
 
-// Flush al apagar el proceso para no perder datos
-process.on('SIGTERM', async () => { await flushStatsBatch(); process.exit(0); });
-process.on('SIGINT', async () => { await flushStatsBatch(); process.exit(0); });
+// Los handlers de SIGINT/SIGTERM viven SOLO al final del archivo (había dos
+// pares registrados y el primero cortaba la ejecución del segundo).
 
 // Normaliza un JID a solo dígitos para comparar (el formato varía: el JID
 // de una mención puede venir como s.whatsapp.net y el del remitente como
@@ -525,6 +544,31 @@ const botState = {
 
 botState.actividadPendiente = actividadBatch;
 botState.actividadUltima = actividadUltima;
+
+// 📊 MÉTRICAS DE LATENCIA (para /health)
+// Guarda las últimas 200 ejecuciones de comandos. Sirve para comprobar en
+// producción si el bot realmente responde más rápido y detectar regresiones
+// sin tener que adivinar.
+const latencias = [];
+function registrarLatencia(comando, ms) {
+    latencias.push({ c: comando, ms });
+    if (latencias.length > 200) latencias.shift();
+}
+function resumenLatencias() {
+    if (latencias.length === 0) return null;
+    const valores = latencias.map(x => x.ms).sort((a, b) => a - b);
+    const pct = (q) => valores[Math.min(valores.length - 1, Math.floor(valores.length * q))];
+    const porComando = {};
+    for (const { c, ms } of latencias) {
+        const e = porComando[c] || (porComando[c] = { n: 0, total: 0 });
+        e.n++; e.total += ms;
+    }
+    const masLentos = Object.entries(porComando)
+        .map(([comando, e]) => ({ comando, n: e.n, promedioMs: Math.round(e.total / e.n) }))
+        .sort((a, b) => b.promedioMs - a.promedioMs)
+        .slice(0, 5);
+    return { muestras: valores.length, p50: pct(0.5), p95: pct(0.95), max: valores[valores.length - 1], masLentos };
+}
 
 const TTL_CONFIG = 5 * 60 * 1000; // 5 minutos para caché de config
 // Throttle de groupMetadata: si el cache de admins expiró, no disparar 1
@@ -755,6 +799,7 @@ function dashboardHandler(req, res) {
                 heapUsed: +(mem.heapUsed / 1048576).toFixed(1),
                 heapTotal: +(mem.heapTotal / 1048576).toFixed(1)
             },
+            latencia: resumenLatencias(),
             queues
         });
         return;
@@ -795,10 +840,32 @@ http.createServer(dashboardHandler).listen(PORT, '0.0.0.0', () => console.log(`�
 // ============================================================
 //                     STICKER UTILS
 // ============================================================
+// Detecta formato animado ANTES de invocar ffmpeg. Antes se intentaba primero
+// como imagen y, al fallar, se repetía TODO el proceso como video: el doble de
+// CPU (y hasta 2x de tiempo) en cada GIF / webp animado.
+function esBufferAnimado(buffer) {
+    if (!buffer || buffer.length < 16) return false;
+    if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46) return true; // GIF8
+    const cabecera = buffer.subarray(0, Math.min(buffer.length, 64)).toString('latin1');
+    if (cabecera.includes('WEBP') && cabecera.includes('ANIM')) return true;         // WebP animado
+    if (buffer.subarray(4, 8).toString('latin1') === 'ftyp') return true;            // MP4/MOV
+    return false;
+}
+
+// Formato original -> extensión que espera ffmpeg para detectar el contenedor.
+function extParaBuffer(buffer, comoVideo) {
+    if (!comoVideo) return 'png';
+    if (buffer && buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46) return 'gif';
+    if (buffer && buffer.subarray(8, 12).toString('latin1') === 'WEBP') return 'webp';
+    return 'mp4';
+}
+
 async function convertirAWebp(buffer, isVideo = false) {
-    // Intento único de conversión ffmpeg (isVideo = ruta animada).
+    // -threads acotado: en Render Free (0.1 vCPU) dejar que ffmpeg abra 8
+    // threads no acelera nada, solo le roba ciclos al event loop y hace que
+    // el resto de comandos "se arrastren" mientras convierte.
     const intentar = async (comoVideo) => {
-        const ext = comoVideo ? 'mp4' : 'png';
+        const ext = extParaBuffer(buffer, comoVideo);
         const uid = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         const tmpIn = path.join(os.tmpdir(), `stk_in_${uid}.${ext}`);
         const tmpOut = path.join(os.tmpdir(), `stk_out_${uid}.webp`);
@@ -806,8 +873,8 @@ async function convertirAWebp(buffer, isVideo = false) {
         try {
             const vf = 'scale=512:512:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=white@0,format=yuva420p';
             const args = comoVideo
-                ? ['-i', tmpIn, '-vf', vf + ',fps=10', '-vcodec', 'libwebp', '-loop', '0', '-preset', 'default', '-an', '-vsync', '0', '-t', '6', '-quality', '50', '-compression_level', '3', '-y', tmpOut]
-                : ['-i', tmpIn, '-vf', vf, '-quality', '75', '-compression_level', '4', '-y', tmpOut];
+                ? ['-threads', '1', '-i', tmpIn, '-vf', vf + ',fps=10', '-vcodec', 'libwebp', '-loop', '0', '-preset', 'default', '-an', '-vsync', '0', '-t', '6', '-quality', '50', '-compression_level', '3', '-y', tmpOut]
+                : ['-threads', '2', '-i', tmpIn, '-vf', vf, '-quality', '75', '-compression_level', '4', '-y', tmpOut];
             // Videos/GIFs en Render (CPU chica) suelen tardar más de 15s:
             // timeout 30s para no matarlos a la mitad.
             await execFileAsync(FFMPEG_PATH, args, { timeout: comoVideo ? 30000 : 15000, windowsHide: true });
@@ -817,23 +884,19 @@ async function convertirAWebp(buffer, isVideo = false) {
             try { fs.unlinkSync(tmpOut); } catch (e) { }
         }
     };
+    // Se arranca directo por la ruta correcta según el contenido real del buffer.
+    const animado = isVideo || esBufferAnimado(buffer);
     try {
-        return await intentar(isVideo);
+        return await intentar(animado);
     } catch (e) {
-        // Si entró como imagen pero en realidad es animada (webp animado,
-        // GIF con otro mime), se reintenta UNA vez por la ruta de video
-        // en vez de devolver error directo.
-        if (!isVideo) {
-            try {
-                console.warn('[Sticker] Reintentando como animado:', e.message);
-                return await intentar(true);
-            } catch (e2) {
-                console.error('❌ [Sticker]', e2.message);
-                return null;
-            }
+        // Respaldo: si falló y todavía no probamos la otra ruta, se prueba UNA vez.
+        try {
+            console.warn(`[Sticker] Reintentando como ${animado ? 'imagen' : 'animado'}:`, e.message);
+            return await intentar(!animado);
+        } catch (e2) {
+            console.error('❌ [Sticker]', e2.message);
+            return null;
         }
-        console.error('❌ [Sticker]', e.message);
-        return null;
     }
 }
 
@@ -868,11 +931,23 @@ async function startBot() {
     botState.status = 'Cargando motor...';
     console.log('🚀 Iniciando Diky Bot V3...');
 
-    await db.init();
-    // revive silencios guardados en DB (tarjeta de silencio) al arrancar
-    const activos = await db.silenciadosActivos().catch(() => []);
-    for (const s of activos) botState.silenciados.set(String(s.user_id).replace(/\D/g, ''), Number(s.hasta));
-    db.limpiarSilenciados().catch(() => {});
+    // Turso y la versión del protocolo se piden EN PARALELO: antes eran dos
+    // esperas de red en serie que alargaban cada arranque en frío.
+    // (fetchLatestBaileysVersion NO se elimina: sin ella WhatsApp devuelve 405.)
+    const [dbListo, versionWa] = await Promise.all([
+        db.init().catch(() => false),
+        fetchLatestBaileysVersion().then(r => r.version).catch(() => undefined)
+    ]);
+    let waVersion = versionWa;
+    if (waVersion) console.log(`📡 Versión WA Web: ${waVersion.join('.')}`);
+    else console.warn('⚠️ No se pudo obtener versión WA, usando default');
+
+    if (dbListo) {
+        // revive silencios guardados en DB (tarjeta de silencio) al arrancar
+        const activos = await db.silenciadosActivos().catch(() => []);
+        for (const s of activos) botState.silenciados.set(String(s.user_id).replace(/\D/g, ''), Number(s.hasta));
+        db.limpiarSilenciados().catch(() => {});
+    }
     handler.loadCommands(); // Punto 1: Carga dinámica de módulos
 
     // Auth: Turso Cloud → fallback local
@@ -887,17 +962,6 @@ async function startBot() {
         const local = await useMultiFileAuthState(AUTH_DIR);
         authState = local.state;
         saveCreds = local.saveCreds;
-    }
-
-    // Obtener la versión más reciente del protocolo WA Web (SOLUCIONA ERROR 405)
-    let waVersion;
-    try {
-        const { version } = await fetchLatestBaileysVersion();
-        waVersion = version;
-        console.log(`📡 Versión WA Web: ${version.join('.')}`);
-    } catch (e) {
-        console.warn('⚠️ No se pudo obtener versión WA, usando default');
-        waVersion = undefined;
     }
 
     // Cerrar socket anterior si sigue vivo (evita 2 sockets con la misma
@@ -1063,13 +1127,19 @@ async function startBot() {
                 } catch (e) { console.error('Error en intervalo recordatorios:', e.message); }
             }, 30000);
 
-            // Sincronización automática de mangas (Silenciosa)
+            // Sincronización del catálogo EN SEGUNDO PLANO: antes eran 21
+            // escrituras EN SERIE dentro del handler de conexión, así que el
+            // bot tardaba en quedar listo después de cada reinicio.
             const local = cargarMangasLocal();
             if (local.length > 0 && db.isConnected()) {
-                console.log('🔄 Sincronizando catálogo con la DB...');
-                for (const m of local) {
-                    await db.guardarManga(m.codigo, m.titulo, m.carpeta, m.resumen, m.generos);
-                }
+                setImmediate(() => {
+                    (async () => {
+                        console.log('🔄 Sincronizando catálogo con la DB (fondo)...');
+                        for (const m of local) {
+                            await db.guardarManga(m.codigo, m.titulo, m.carpeta, m.resumen, m.generos).catch(() => { });
+                        }
+                    })().catch(() => { });
+                });
             }
             // Heartbeat: Guardar credenciales cada 10 minutos para asegurar persistencia
             onceInterval('heartbeat', async () => {
@@ -1146,6 +1216,25 @@ async function startBot() {
     // candados/sesiones entre ambas ejecuciones simultaneas.
     const mensajesProcesadosIds = new Map(); // msg.key.id -> timestamp
     const TTL_DEDUP_MS = 2 * 60 * 1000; // 2 minutos es de sobra para cualquier reenvio
+
+    // Semáforo de mensajes en vuelo (ver PROCESAMIENTO CONCURRENTE más abajo).
+    const MAX_MSG_CONCURRENT = envInt('PERF_MAX_MSG_CONCURRENT', 16, 4);
+    let mensajesEnVuelo = 0;
+    const esperaSlotMensaje = [];
+    function adquirirSlotMensaje() {
+        if (mensajesEnVuelo < MAX_MSG_CONCURRENT) {
+            mensajesEnVuelo++;
+            return Promise.resolve(true);
+        }
+        return new Promise(resolve => esperaSlotMensaje.push(resolve));
+    }
+    function liberarSlotMensaje() {
+        if (esperaSlotMensaje.length > 0) {
+            esperaSlotMensaje.shift()(true);
+            return;
+        }
+        mensajesEnVuelo = Math.max(0, mensajesEnVuelo - 1);
+    }
 
     // Deduplicador de bienvenidas: el mismo join puede llegar por 2 vías
     // (messageStubType en upsert + evento group-participants.update). Ventana
@@ -1260,6 +1349,15 @@ async function startBot() {
             if (msgId) {
                 if (mensajesProcesadosIds.has(msgId)) continue;
                 mensajesProcesadosIds.set(msgId, Date.now());
+                // Tope duro: el barrido periódico corre cada 5 min, así que en
+                // ráfagas muy grandes el Map podía crecer sin límite.
+                if (mensajesProcesadosIds.size > 2000) {
+                    const limite = Date.now() - TTL_DEDUP_MS;
+                    for (const [id, ts] of mensajesProcesadosIds) {
+                        if (ts < limite) mensajesProcesadosIds.delete(id);
+                        if (mensajesProcesadosIds.size <= 1500) break;
+                    }
+                }
             }
 
             const tipo = getContentType(msg.message);
@@ -1280,7 +1378,7 @@ async function startBot() {
             const sender = msg.key.participant || chatId;
             const juegoActivo = botState.juegos[chatId];
             let tieneMangaSesionUpsert = false;
-            if (botState.mangaSessions) {
+            if (botState.mangaSessions && botState.mangaSessions.size > 0) {
                 const TTL_MANGA_UPSERT = 5 * 60 * 1000;
                 const nowUpsert = Date.now();
                 for (const [k, s] of botState.mangaSessions.entries()) {
@@ -1291,7 +1389,7 @@ async function startBot() {
                 }
             }
             let tieneNovelaSesionUpsert = false;
-            if (botState.novelaSessions) {
+            if (botState.novelaSessions && botState.novelaSessions.size > 0) {
                 const TTL_NOVELA_UPSERT = 5 * 60 * 1000;
                 const nowUpsertN = Date.now();
                 for (const [k, s] of botState.novelaSessions.entries()) {
@@ -1318,10 +1416,22 @@ async function startBot() {
             );
 
             if (!isCommand && !participaEnJuego && !isMentioned) continue;
-            // PROCESAMIENTO CONCURRENTE
-            procesarMensaje(sock, msg)
-                .then(() => { botState.msgCount++; })
-                .catch(e => console.error('❌ Error procesando mensaje:', e.message));
+            // PROCESAMIENTO CONCURRENTE (con tope): un pico de mensajes ya no
+            // dispara cientos de handlers a la vez pidiéndole RAM y queries a
+            // Turso al mismo tiempo (era la forma más fácil de llegar a OOM en
+            // 512MB). Solo frena bajo sobrecarga real; en uso normal el tope
+            // nunca se toca, así que no agrega espera perceptible.
+            (async () => {
+                await adquirirSlotMensaje();
+                try {
+                    await procesarMensaje(sock, msg);
+                    botState.msgCount++;
+                } catch (e) {
+                    console.error('❌ Error procesando mensaje:', e.message);
+                } finally {
+                    liberarSlotMensaje();
+                }
+            })();
         }
     });
 
@@ -1473,19 +1583,24 @@ async function procesarMensaje(sock, msg) {
         // Nunca con mensajes propios (fromMe): el pushName ahí es el del
         // perfil del teléfono del bot y renombraría filas ajenas a 'Dex'.
         if (pushName && isCommand && !msg.key.fromMe) {
-            db.obtenerUsuario(sender)
-                .then(u => {
-                    if (u && u.nombre_wa !== pushName) {
-                        return db.actualizarUsuario(sender, { nombre_wa: pushName });
-                    }
-                })
-                .catch(() => { });
+            const ahoraNombre = Date.now();
+            if (ahoraNombre - (nombreWaSync.get(sender) || 0) > NOMBRE_WA_TTL_MS) {
+                nombreWaSync.set(sender, ahoraNombre);
+                if (nombreWaSync.size > 1000) nombreWaSync.delete(nombreWaSync.keys().next().value);
+                db.obtenerUsuario(sender)
+                    .then(u => {
+                        if (u && u.nombre_wa !== pushName) {
+                            return db.actualizarUsuario(sender, { nombre_wa: pushName });
+                        }
+                    })
+                    .catch(() => { });
+            }
         }
 
         // --- FILTRO DE RELEVANCIA (Ahorro de CPU) ---
         const senderJidClean = (sender || '').split('@')[0].split(':')[0];
         let tieneMangaSesion = false;
-        if (botState.mangaSessions) {
+        if (botState.mangaSessions && botState.mangaSessions.size > 0) {
             const TTL_MANGA_SES = 5 * 60 * 1000;
             const nowMs = Date.now();
             for (const [k, s] of botState.mangaSessions.entries()) {
@@ -1496,7 +1611,7 @@ async function procesarMensaje(sock, msg) {
             }
         }
         let tieneNovelaSesion = false;
-        if (botState.novelaSessions) {
+        if (botState.novelaSessions && botState.novelaSessions.size > 0) {
             const TTL_NOVELA_SES = 5 * 60 * 1000;
             const nowMsN = Date.now();
             for (const [k, s] of botState.novelaSessions.entries()) {
@@ -1636,7 +1751,7 @@ async function procesarMensaje(sock, msg) {
                 '!tag', '!reglas', '!setreglas', '!borrareglas', '!kick', '!adm', '!promover', '!bot', '!bienvenida', '!setbienvenida', '!despedida', '!setdespedida', '!setportada', '!setsticker', '!news', '!broadcast', '!anuncio', '!sorteo', '!rifa',
                 '!tienda', '!comprar', '!vender', '!inventario', '!mejor', '!bounty', '!regalar', '!regalaritem', '!dar',
                 '!antispam', '!mododios', '!remoto', '!autoadmin', '!antifarma',
-                '!prestigio', '!loteria', '!clase', '!pedir', '!plantarse', '!pl', '!trivia', '!daily', '!w', '!slut', '!robar', '!canjear',
+                '!prestigio', '!loteria', '!clase', '!trivia', '!daily', '!w', '!slut', '!robar', '!canjear',
                 '!subastar', '!subastas', '!ofertar',
                 '!waifus', '!mascotas', '!alimentar', '!casar', '!proponer', '!logros', '!tareas',
                 '!ver',
@@ -1670,8 +1785,12 @@ async function procesarMensaje(sock, msg) {
                     quotedMsgId, quotedParticipant, msgType,
                     sockOriginal: sock
                 };
+                const fastStart = Date.now();
                 const executedFast = await handler.handleCommand(start, sockProxy, chatId, msg, args, extras);
-                if (executedFast) return;
+                if (executedFast) {
+                    registrarLatencia(start, Date.now() - fastStart);
+                    return;
+                }
             }
 
             // --- COOLDOWN GLOBAL (anti-spam / anti rate-limit de WhatsApp) ---
@@ -1822,9 +1941,6 @@ async function procesarMensaje(sock, msg) {
                     case '!minas': emoji = '💣'; break;
                     case '!quiz': case '!quizanime': case '!adivina': case '!bandera': emoji = '❓'; break;
                     case '!robar': emoji = '🦹‍♂️'; break;
-
-                    case '!pedir': emoji = '➕'; break;
-                    case '!plantarse': case '!pl': emoji = '✋'; break;
                     case '!bienvenida': case '!setbienvenida': emoji = '👋'; break;
                     case '!waifus': emoji = '🎀'; break;
                     case '!mascotas': emoji = '🐾'; break;
@@ -1910,6 +2026,7 @@ async function procesarMensaje(sock, msg) {
                     const cmdStartTime = Date.now();
                     const mExecuted = await handler.handleCommand(start, sockProxy, chatId, msg, args, extras);
                     const cmdDuration = Date.now() - cmdStartTime;
+                    registrarLatencia(start, cmdDuration);
                     // Log comandos lentos (>1s) para identificar bottlenecks
                     if (cmdDuration > 1000) {
                         console.log(`[SLOW CMD] ${start}: ${cmdDuration}ms - posible bottleneck`);
@@ -1920,6 +2037,16 @@ async function procesarMensaje(sock, msg) {
                 } finally {
                     // SIEMPRE liberar el slot, sin importar si hubo error o no
                     if (isHeavy) liberarSlotHeavy();
+                }
+            } else if (!isGroup || isAdmin || isGlobalAdmin || (botState.groupCache.get(chatId) || {}).active) {
+                // El mensaje empieza con "!" pero ese comando no existe. Antes el
+                // bot se quedaba en silencio y el usuario no sabía si lo habían
+                // ignorado. Se avisa una vez cada 15s por usuario, y solo en
+                // grupos donde el bot está activado (para no meter ruido).
+                if (verificarCooldown(sender, 'cmd-desconocido', 15000) === 0) {
+                    sock.sendMessage(chatId, {
+                        text: `🤔 No conozco el comando *${start}*.\n\n👉 Escribí *!menu* para ver la lista completa.`
+                    }, { quoted: msg }).catch(() => { });
                 }
             }
         }
@@ -1936,16 +2063,23 @@ console.log('😺 Iniciando Diky Bot V3...');
 startBot();
 
 // --- CIERRE LIMPIO (FLUSH DB) ---
-process.on('SIGINT', async () => {
-    console.log('🛑 [Shutdown] Guardando datos...');
-    if (db.flushPendingUpdates) await db.flushPendingUpdates();
+// Un solo par de handlers: antes había dos registrados y el primero en
+// ejecutarse cortaba al segundo, así que el flush del batch podía quedar a
+// medias. Ahora se hace todo acá, en orden y con try/catch.
+let cerrando = false;
+async function apagar(motivo) {
+    if (cerrando) return;
+    cerrando = true;
+    console.log(`🛑 [Shutdown] Guardando datos... (${motivo})`);
+    // Tope de seguridad: si Turso no responde, el proceso igual termina
+    // (antes un flush colgado dejaba el deploy viejo "vivo" hasta el SIGKILL).
+    const tope = new Promise(r => setTimeout(r, 8000));
+    try { await Promise.race([flushStatsBatch(), tope]); } catch (e) { console.error('❌ [Shutdown] flush stats:', e.message); }
+    try { if (db.flushPendingUpdates) await Promise.race([db.flushPendingUpdates(), tope]); } catch (e) { }
     process.exit(0);
-});
-process.on('SIGTERM', async () => {
-    console.log('🛑 [Shutdown] Guardando datos...');
-    if (db.flushPendingUpdates) await db.flushPendingUpdates();
-    process.exit(0);
-});
+}
+process.on('SIGINT', () => apagar('SIGINT'));
+process.on('SIGTERM', () => apagar('SIGTERM'));
 
 // --- MANEJO DE ERRORES GLOBALES (Para evitar crashes silenciosos en Render) ---
 process.on('uncaughtException', (err) => {

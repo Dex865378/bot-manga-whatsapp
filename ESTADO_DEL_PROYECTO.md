@@ -169,5 +169,17 @@ Este documento es la BIBLIA del proyecto. TODO asistente DEBE leerlo PRIMERO ant
     - Añadida sección **"👑 Top 1 Waifu"** en el perfil, que muestra automáticamente la primera waifu de la lista personalizada del usuario (`!waifus top`).
 - **Sincronización de Inventario**: La lógica del perfil ahora parsea el inventario en tiempo real para extraer el ranking de waifus.
 
+### Rendimiento para Render Free 512MB — v11.1.0 (2026-11-18)
+Plan completo en `PLAN_RENDIMIENTO_RENDER.md`. Resumen de lo aplicado:
+- **Estadísticas en 1-3 requests**: `flushStatsBatch` ya no hace SELECT+UPDATE por usuario. Usa `registrarComandosBatch` / `actualizarRachasBatch` / `sumarActividadBatch` con `dbClient.batch` y UPSERT atómico. Antes: hasta ~200 roundtrips por minuto con 100 usuarios activos.
+- **Rachas en SQL**: `actualizarRachasBatch` replica la lógica de `actualizarRacha` con CASE (misma semántica, verificada contra libSQL local).
+- **Cola de salida adaptativa**: piso de 80ms (`PERF_QUEUE_MIN_MS`) en vez de 250ms fijos; si el chat viene de un timeout/429, `esChatLento()` lo devuelve a 250ms por 5 min.
+- **ffmpeg**: detección de animado por firma del buffer (GIF/WebP animado/MP4) para NO convertir dos veces; `-threads` acotado (1 video / 2 imagen); `MAX_PROCESOS` default 3 (antes 9) por thrashing de CPU.
+- **Arranque**: `db.init()` y `fetchLatestBaileysVersion()` en paralelo; sync de los 21 mangas en segundo plano (antes bloqueaba el handler de conexión).
+- **Red**: agentes HTTP con keep-alive compartidos por todo axios (~100-300ms menos por llamada a APIs externas).
+- **Estabilidad**: semáforo de 16 mensajes en vuelo (`PERF_MAX_MSG_CONCURRENT`), tope del mapa de deduplicación, un solo par de handlers de `SIGINT`/`SIGTERM`.
+- **Bug corregido**: `activarModoAdmin` / `activarAntiSpam` / `activarModoManga` devolvían `true` aunque el UPDATE afectara 0 filas (grupo nunca activado con `!bot on`). Ahora devuelven si se guardó de verdad y los comandos avisan.
+- **Seguridad**: eliminadas las claves de OpenRouter (IA ya removida) de `CONFIGURACION_RENDER.md` y `CONFIGURACION_HUGGINGFACE.md`; token de HF movido de `.git/config` a `bot_whatsapp_2_credenciales_render.txt` (ignorado por git).
+
 ---
 *Documento actualizado por Antigravity (IA) — 2026-03-11 17:27 EST*
